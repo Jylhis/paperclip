@@ -805,10 +805,14 @@ export function pluginRoutes(
       return;
     }
 
+    const scopedParameters = (parameters && typeof parameters === "object")
+      ? { ...parameters as Record<string, unknown>, companyId: runContext.companyId }
+      : { companyId: runContext.companyId };
+
     try {
       const result = await toolDeps.toolDispatcher.executeTool(
         tool,
-        parameters ?? {},
+        scopedParameters,
         runContext,
       );
       res.json(result);
@@ -1237,7 +1241,9 @@ export function pluginRoutes(
       renderEnvironment?: PluginLauncherRenderContextSnapshot | null;
     } | undefined;
 
-    assertPluginBridgeScope(req, body?.companyId);
+    const scopedCompanyId = assertPluginBridgeScope(req, body?.companyId);
+    const params = body?.params ?? {};
+    const scopedParams = scopedCompanyId ? { ...params, companyId: scopedCompanyId } : params;
 
     try {
       const result = await bridgeDeps.workerManager.call(
@@ -1245,7 +1251,7 @@ export function pluginRoutes(
         "getData",
         {
           key,
-          params: body?.params ?? {},
+          params: scopedParams,
           renderEnvironment: body?.renderEnvironment ?? null,
         },
       );
@@ -1314,7 +1320,9 @@ export function pluginRoutes(
       renderEnvironment?: PluginLauncherRenderContextSnapshot | null;
     } | undefined;
 
-    assertPluginBridgeScope(req, body?.companyId);
+    const scopedCompanyId = assertPluginBridgeScope(req, body?.companyId);
+    const params = body?.params ?? {};
+    const scopedParams = scopedCompanyId ? { ...params, companyId: scopedCompanyId } : params;
 
     try {
       const result = await bridgeDeps.workerManager.call(
@@ -1322,7 +1330,7 @@ export function pluginRoutes(
         "performAction",
         {
           key,
-          params: body?.params ?? {},
+          params: scopedParams,
           renderEnvironment: body?.renderEnvironment ?? null,
         },
       );
