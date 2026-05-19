@@ -513,10 +513,14 @@ function ConflictResolutionList({
 
 // ── Adapter type options for import ───────────────────────────────────
 
-const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters().map((adapter) => ({
-  value: adapter.type,
-  label: adapterLabels[adapter.type] ?? getAdapterLabel(adapter.type),
-}));
+const IMPORT_ADAPTER_ALLOWLIST = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local", "cursor"]);
+
+const IMPORT_ADAPTER_OPTIONS: { value: string; label: string }[] = listUIAdapters()
+  .filter((adapter) => IMPORT_ADAPTER_ALLOWLIST.has(adapter.type))
+  .map((adapter) => ({
+    value: adapter.type,
+    label: adapterLabels[adapter.type] ?? getAdapterLabel(adapter.type),
+  }));
 
 // ── Adapter picker for imported agents ───────────────────────────────
 
