@@ -414,6 +414,33 @@ describe("routine routes", () => {
     expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
   });
 
+  it("rejects agent routine runs that inject host workspace commands", async () => {
+    const app = await createApp({
+      type: "agent",
+      agentId,
+      companyId,
+      source: "agent_key",
+      runId: "88888888-8888-4888-8888-888888888888",
+    });
+
+    const res = await request(app)
+      .post(`/api/routines/${routineId}/run`)
+      .send({
+        executionWorkspacePreference: "isolated_workspace",
+        executionWorkspaceSettings: {
+          mode: "isolated_workspace",
+          workspaceStrategy: {
+            type: "git_worktree",
+            provisionCommand: "touch /tmp/paperclip-routine-rce",
+          },
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
+  });
+
   it("passes the board actor through when manually running a routine", async () => {
     mockAccessService.canUser.mockResolvedValue(true);
     const app = await createApp({

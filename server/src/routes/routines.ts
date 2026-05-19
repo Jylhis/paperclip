@@ -15,6 +15,10 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { forbidden, unauthorized } from "../errors.js";
 import { getTelemetryClient } from "../telemetry.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
+import {
+  assertNoAgentHostWorkspaceCommandMutation,
+  collectIssueWorkspaceCommandPaths,
+} from "./workspace-command-authz.js";
 
 export function routineRoutes(
   db: Db,
@@ -418,6 +422,12 @@ export function routineRoutes(
       return;
     }
     await assertBoardCanAssignTasks(req, routine.companyId);
+    assertNoAgentHostWorkspaceCommandMutation(
+      req,
+      collectIssueWorkspaceCommandPaths({
+        executionWorkspaceSettings: req.body.executionWorkspaceSettings,
+      }),
+    );
     const run = await svc.runRoutine(routine.id, req.body, {
       agentId: req.actor.type === "agent" ? req.actor.agentId : null,
       userId: req.actor.type === "board" ? req.actor.userId ?? null : null,
