@@ -36,7 +36,7 @@ export async function prepareOpenCodeRuntimeConfig(input: {
   config: Record<string, unknown>;
   targetIsRemote?: boolean;
 }): Promise<PreparedOpenCodeRuntimeConfig> {
-  const skipPermissions = asBoolean(input.config.dangerouslySkipPermissions, true);
+  const skipPermissions = asBoolean(input.config.dangerouslySkipPermissions, false);
   if (!skipPermissions) {
     return {
       env: input.env,
@@ -96,7 +96,7 @@ export async function prepareOpenCodeRuntimeConfig(input: {
       XDG_CONFIG_HOME: runtimeConfigHome,
     },
     notes: [
-      "Injected runtime OpenCode config with permission.external_directory=allow to avoid headless approval prompts.",
+      "Injected runtime OpenCode config with permission.external_directory=allow because dangerouslySkipPermissions=true.",
     ],
     cleanup: async () => {
       await fs.rm(runtimeConfigHome, { recursive: true, force: true });
