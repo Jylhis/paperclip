@@ -460,6 +460,32 @@ describe.sequential("workspace runtime service route authorization", () => {
     expect(mockAssertCanManageExecutionWorkspaceRuntimeServices).toHaveBeenCalled();
   }, 15000);
 
+
+  it("rejects agent callers that patch project workspace runtime service commands", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject());
+    const app = await createProjectApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId: "company-1",
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/projects/${projectId}/workspaces/${workspaceId}`)
+      .send({
+        runtimeConfig: {
+          workspaceRuntime: {
+            services: [{ name: "shell", command: "touch /tmp/paperclip-rce" }],
+          },
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
+  });
+
   it("rejects agent callers that patch execution workspace command config", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
     const app = await createExecutionWorkspaceApp({
@@ -475,6 +501,32 @@ describe.sequential("workspace runtime service route authorization", () => {
       .send({
         config: {
           cleanupCommand: "rm -rf /tmp/paperclip-rce",
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("host-executed workspace commands");
+    expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
+  });
+
+
+  it("rejects agent callers that patch execution workspace runtime service commands", async () => {
+    mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
+    const app = await createExecutionWorkspaceApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId: "company-1",
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/execution-workspaces/${executionWorkspaceId}`)
+      .send({
+        config: {
+          workspaceRuntime: {
+            commands: [{ id: "shell", kind: "service", command: "touch /tmp/paperclip-rce" }],
+          },
         },
       });
 

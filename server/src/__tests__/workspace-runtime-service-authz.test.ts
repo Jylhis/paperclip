@@ -131,7 +131,7 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
     })).resolves.toBeUndefined();
   });
 
-  it("allows CEO agents to manage any project workspace runtime services in their company", async () => {
+  it("rejects CEO agents because runtime service controls are board-only", async () => {
     const companyId = await seedCompany();
     const { projectWorkspaceId } = await seedProjectWorkspace(companyId);
     const ceoAgentId = await seedAgent(companyId, { role: "ceo", name: "CEO" });
@@ -146,10 +146,13 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
     } as any, {
       companyId,
       projectWorkspaceId,
-    })).resolves.toBeUndefined();
+    })).rejects.toMatchObject({
+      status: 403,
+      message: "Board access required to manage workspace runtime services",
+    });
   });
 
-  it("allows agents with a non-terminal assigned issue in the target project workspace", async () => {
+  it("rejects agents with a non-terminal assigned issue in the target project workspace", async () => {
     const companyId = await seedCompany();
     const { projectId, projectWorkspaceId } = await seedProjectWorkspace(companyId);
     const agentId = await seedAgent(companyId, { name: "Engineer" });
@@ -175,10 +178,13 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
     } as any, {
       companyId,
       projectWorkspaceId,
-    })).resolves.toBeUndefined();
+    })).rejects.toMatchObject({
+      status: 403,
+      message: "Board access required to manage workspace runtime services",
+    });
   });
 
-  it("allows managers to manage execution workspace runtime services for their reporting subtree", async () => {
+  it("rejects managers for execution workspace runtime services even with reporting subtree issues", async () => {
     const companyId = await seedCompany();
     const { projectId, projectWorkspaceId } = await seedProjectWorkspace(companyId);
     const executionWorkspaceId = await seedExecutionWorkspace(companyId, projectId, projectWorkspaceId);
@@ -207,7 +213,10 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
     } as any, {
       companyId,
       executionWorkspaceId,
-    })).resolves.toBeUndefined();
+    })).rejects.toMatchObject({
+      status: 403,
+      message: "Board access required to manage workspace runtime services",
+    });
   });
 
   it("rejects unrelated same-company agents without matching workspace assignments", async () => {
@@ -241,7 +250,7 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
       executionWorkspaceId,
     })).rejects.toMatchObject({
       status: 403,
-      message: "Missing permission to manage workspace runtime services",
+      message: "Board access required to manage workspace runtime services",
     });
   });
 
@@ -273,7 +282,7 @@ describeEmbeddedPostgres("workspace runtime service authz helper", () => {
       projectWorkspaceId,
     })).rejects.toMatchObject({
       status: 403,
-      message: "Missing permission to manage workspace runtime services",
+      message: "Board access required to manage workspace runtime services",
     });
   });
 });

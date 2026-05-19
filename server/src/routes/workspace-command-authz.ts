@@ -25,6 +25,26 @@ function collectWorkspaceStrategyCommandPaths(raw: unknown, prefix: string): str
   return paths;
 }
 
+function collectWorkspaceRuntimeEntryCommandPaths(raw: unknown, prefix: string): string[] {
+  if (!Array.isArray(raw)) return [];
+  const paths: string[] = [];
+  raw.forEach((entry, index) => {
+    if (isRecord(entry) && hasOwn(entry, "command")) {
+      paths.push(prefixPath(`${prefix}.${index}`, "command"));
+    }
+  });
+  return paths;
+}
+
+function collectWorkspaceRuntimeCommandPaths(raw: unknown, prefix: string): string[] {
+  if (!isRecord(raw)) return [];
+  return [
+    ...collectWorkspaceRuntimeEntryCommandPaths(raw.commands, prefixPath(prefix, "commands")),
+    ...collectWorkspaceRuntimeEntryCommandPaths(raw.services, prefixPath(prefix, "services")),
+    ...collectWorkspaceRuntimeEntryCommandPaths(raw.jobs, prefixPath(prefix, "jobs")),
+  ];
+}
+
 function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: string): string[] {
   if (!isRecord(raw)) return [];
   const paths: string[] = [];
@@ -37,6 +57,7 @@ function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: strin
   if (hasOwn(raw, "cleanupCommand")) {
     paths.push(prefixPath(prefix, "cleanupCommand"));
   }
+  paths.push(...collectWorkspaceRuntimeCommandPaths(raw.workspaceRuntime, prefixPath(prefix, "workspaceRuntime")));
   return paths;
 }
 
@@ -71,9 +92,17 @@ export function collectProjectWorkspaceCommandPaths(
   prefix = "",
 ): string[] {
   if (!isRecord(workspacePatch)) return [];
-  return hasOwn(workspacePatch, "cleanupCommand")
-    ? [prefixPath(prefix, "cleanupCommand")]
-    : [];
+  const paths: string[] = [];
+  if (hasOwn(workspacePatch, "cleanupCommand")) {
+    paths.push(prefixPath(prefix, "cleanupCommand"));
+  }
+  if (isRecord(workspacePatch.runtimeConfig)) {
+    paths.push(...collectWorkspaceRuntimeCommandPaths(
+      workspacePatch.runtimeConfig.workspaceRuntime,
+      prefixPath(prefixPath(prefix, "runtimeConfig"), "workspaceRuntime"),
+    ));
+  }
+  return paths;
 }
 
 export function collectIssueWorkspaceCommandPaths(input: {
