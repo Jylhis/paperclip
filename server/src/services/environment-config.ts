@@ -200,28 +200,31 @@ async function persistConfigSecretRefs(input: {
 }): Promise<Record<string, unknown>> {
   let nextConfig = { ...input.config };
   for (const path of collectSecretRefPaths(input.schema)) {
-    const rawValue = readConfigValueAtPath(nextConfig, path);
-    if (typeof rawValue !== "string") continue;
-    const trimmed = rawValue.trim();
-    if (trimmed.length === 0) {
-      nextConfig = writeConfigValueAtPath(nextConfig, path, undefined);
-      continue;
+    const rawValues = readConfigValueAtPath(nextConfig, path);
+    const values = Array.isArray(rawValues) ? rawValues : [rawValues];
+    for (const rawValue of values) {
+      if (typeof rawValue !== "string") continue;
+      const trimmed = rawValue.trim();
+      if (trimmed.length === 0) {
+        nextConfig = writeConfigValueAtPath(nextConfig, path, undefined);
+        continue;
+      }
+      if (isUuidSecretRef(trimmed)) {
+        nextConfig = writeConfigValueAtPath(nextConfig, path, trimmed);
+        continue;
+      }
+      const created = await createEnvironmentSecret({
+        db: input.db,
+        companyId: input.companyId,
+        environmentName: input.environmentName,
+        driver: input.driver,
+        field: path.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
+        provider: input.secretProvider,
+        value: trimmed,
+        actor: input.actor,
+      });
+      nextConfig = writeConfigValueAtPath(nextConfig, path, created.secretId);
     }
-    if (isUuidSecretRef(trimmed)) {
-      nextConfig = writeConfigValueAtPath(nextConfig, path, trimmed);
-      continue;
-    }
-    const created = await createEnvironmentSecret({
-      db: input.db,
-      companyId: input.companyId,
-      environmentName: input.environmentName,
-      driver: input.driver,
-      field: path.replace(/[^a-z0-9]+/gi, "-").toLowerCase(),
-      provider: input.secretProvider,
-      value: trimmed,
-      actor: input.actor,
-    });
-    nextConfig = writeConfigValueAtPath(nextConfig, path, created.secretId);
   }
   return nextConfig;
 }
@@ -240,26 +243,29 @@ async function resolveConfigSecretRefsForRuntime(input: {
   const secrets = secretService(input.db);
   let nextConfig = { ...input.config };
   for (const path of collectSecretRefPaths(input.schema)) {
-    const current = readConfigValueAtPath(nextConfig, path);
-    if (typeof current !== "string") continue;
-    const trimmed = current.trim();
-    if (!isUuidSecretRef(trimmed)) continue;
+    const currentValues = readConfigValueAtPath(nextConfig, path);
+    const values = Array.isArray(currentValues) ? currentValues : [currentValues];
     if (!input.context.consumerId) {
       throw unprocessable("Runtime secret resolution requires an environment id");
     }
-    nextConfig = writeConfigValueAtPath(
-      nextConfig,
-      path,
-      await secrets.resolveSecretValue(input.companyId, trimmed, "latest", {
-        consumerType: "environment",
-        consumerId: input.context.consumerId,
-        actorType: "system",
-        actorId: null,
-        issueId: input.context.issueId ?? null,
-        heartbeatRunId: input.context.heartbeatRunId ?? null,
-        configPath: path,
-      }),
-    );
+    for (const current of values) {
+      if (typeof current !== "string") continue;
+      const trimmed = current.trim();
+      if (!isUuidSecretRef(trimmed)) continue;
+      nextConfig = writeConfigValueAtPath(
+        nextConfig,
+        path,
+        await secrets.resolveSecretValue(input.companyId, trimmed, "latest", {
+          consumerType: "environment",
+          consumerId: input.context.consumerId,
+          actorType: "system",
+          actorId: null,
+          issueId: input.context.issueId ?? null,
+          heartbeatRunId: input.context.heartbeatRunId ?? null,
+          configPath: path,
+        }),
+      );
+    }
   }
   return nextConfig;
 }
@@ -280,9 +286,12 @@ export async function collectEnvironmentSecretRefs(input: {
     const schema = await getSandboxProviderConfigSchema(input.db, parsed.config.provider);
     const refs: Array<{ secretId: string; configPath: string; versionSelector?: SecretVersionSelector }> = [];
     for (const path of collectSecretRefPaths(schema)) {
-      const current = readConfigValueAtPath(parsed.config as Record<string, unknown>, path);
-      if (typeof current === "string" && isUuidSecretRef(current.trim())) {
-        refs.push({ secretId: current.trim(), configPath: path, versionSelector: "latest" });
+      const currentValues = readConfigValueAtPath(parsed.config as Record<string, unknown>, path);
+      const values = Array.isArray(currentValues) ? currentValues : [currentValues];
+      for (const current of values) {
+        if (typeof current === "string" && isUuidSecretRef(current.trim())) {
+          refs.push({ secretId: current.trim(), configPath: path, versionSelector: "latest" });
+        }
       }
     }
     return refs;

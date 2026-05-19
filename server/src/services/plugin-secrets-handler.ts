@@ -88,9 +88,12 @@ export function extractSecretRefPathsFromConfig(
   // If schema declares secret-ref paths, extract only those values.
   if (secretPaths.size > 0) {
     for (const dotPath of secretPaths) {
-      const current = readConfigValueAtPath(configJson as Record<string, unknown>, dotPath);
-      if (typeof current === "string" && isUuidSecretRef(current)) {
-        addRef(current, dotPath);
+      const currentValues = readConfigValueAtPath(configJson as Record<string, unknown>, dotPath);
+      const values = Array.isArray(currentValues) ? currentValues : [currentValues];
+      for (const current of values) {
+        if (typeof current === "string" && isUuidSecretRef(current)) {
+          addRef(current, dotPath);
+        }
       }
     }
     return refs;
