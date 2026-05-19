@@ -1079,6 +1079,16 @@ async function resolveActorHumanRole(
   return normalizeHumanRole(membership.membershipRole, "operator");
 }
 
+async function assertCanGrantInviteHumanRole(
+  req: Request,
+  access: ReturnType<typeof accessService>,
+  companyId: string,
+  humanRole: HumanCompanyMembershipRole | null,
+) {
+  if (!humanRole || humanRole === "viewer" || humanRole === "operator") return;
+  await assertCompanyPermission(req, companyId, "users:manage_permissions");
+}
+
 async function getProtectedMemberReason(
   req: Request,
   access: ReturnType<typeof accessService>,
@@ -2892,6 +2902,12 @@ export function accessRoutes(
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await assertCompanyPermission(req, companyId, "users:invite");
+      await assertCanGrantInviteHumanRole(
+        req,
+        access,
+        companyId,
+        req.body.humanRole ?? null,
+      );
       const { token, created, normalizedAgentMessage } =
         await createCompanyInviteForCompany({
           req,
