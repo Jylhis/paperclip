@@ -372,6 +372,39 @@ describe("realizeExecutionWorkspace", () => {
     expect(second.branchName).toBe(first.branchName);
   });
 
+  it("rejects branch reuse when the matching branch is checked out at the primary repo", async () => {
+    const repoRoot = await createTempRepo("main");
+
+    await expect(
+      realizeExecutionWorkspace({
+        base: {
+          baseCwd: repoRoot,
+          source: "project_primary",
+          projectId: "project-1",
+          workspaceId: "workspace-1",
+          repoUrl: null,
+          repoRef: "HEAD",
+        },
+        config: {
+          workspaceStrategy: {
+            type: "git_worktree",
+            branchTemplate: "main",
+          },
+        },
+        issue: {
+          id: "issue-1",
+          identifier: "PAP-447",
+          title: "Add Worktree Support",
+        },
+        agent: {
+          id: "agent-1",
+          name: "Codex Coder",
+          companyId: "company-1",
+        },
+      }),
+    ).rejects.toThrow(/outside the configured execution worktree path/);
+  });
+
   it("rejects reusing an empty directory that only looks like a worktree because it sits inside the repo", async () => {
     const repoRoot = await createTempRepo();
     const branchName = "PAP-447-add-worktree-support";

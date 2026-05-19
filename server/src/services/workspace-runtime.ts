@@ -632,6 +632,10 @@ async function listLinkedGitWorktreePaths(repoRoot: string): Promise<Set<string>
   return paths;
 }
 
+function isSameResolvedPath(left: string, right: string): boolean {
+  return path.resolve(left) === path.resolve(right);
+}
+
 async function validateLinkedGitWorktree(input: {
   repoRoot: string;
   worktreePath: string;
@@ -1089,8 +1093,19 @@ export async function realizeExecutionWorkspace(input: {
     throw new Error(`Configured worktree path "${worktreePath}" already exists and is not a reusable git worktree${reason}.`);
   }
 
+  function isAllowedRegisteredWorktreePath(reusablePath: string): boolean {
+    if (isSameResolvedPath(reusablePath, worktreePath)) return true;
+    if (isSameResolvedPath(reusablePath, repoRoot)) return false;
+    return isSameResolvedPath(reusablePath, input.base.baseCwd);
+  }
+
   const registeredBranchWorktree = await findRegisteredGitWorktreeByBranch(repoRoot, branchName);
   if (registeredBranchWorktree) {
+    if (!isAllowedRegisteredWorktreePath(registeredBranchWorktree)) {
+      throw new Error(
+        `Registered worktree for branch "${branchName}" at "${registeredBranchWorktree}" is outside the configured execution worktree path "${worktreePath}".`,
+      );
+    }
     const validation = await validateReusableWorktree(registeredBranchWorktree);
     if (validation?.valid) {
       return await reuseExistingWorktree(registeredBranchWorktree);
@@ -1139,7 +1154,7 @@ export async function realizeExecutionWorkspace(input: {
         throw attachError;
       }
       const reusablePath = await findRegisteredGitWorktreeByBranch(repoRoot, branchName);
-      if (!reusablePath || !await isGitCheckout(reusablePath)) {
+      if (!reusablePath || !isAllowedRegisteredWorktreePath(reusablePath) || !await isGitCheckout(reusablePath)) {
         throw attachError;
       }
       return await reuseExistingWorktree(reusablePath);
