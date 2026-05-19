@@ -55,7 +55,7 @@ import {
 import { requireOpenCodeModelId } from "@paperclipai/adapter-opencode-local/server";
 import { findServerAdapter } from "../adapters/index.js";
 import { forbidden, notFound, unprocessable } from "../errors.js";
-import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
+import { assertAllowedGitHubHost, assertSafeGitHubPath, ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
 import type { StorageService } from "../storage/types.js";
 import { accessService } from "./access.js";
 import { agentService } from "./agents.js";
@@ -2807,15 +2807,19 @@ export function parseGitHubSourceUrl(rawUrl: string) {
     throw unprocessable("GitHub source URL must use HTTPS");
   }
   const hostname = url.hostname;
+  assertAllowedGitHubHost(hostname);
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) {
     throw unprocessable("Invalid GitHub URL");
   }
-  const owner = parts[0]!;
-  const repo = parts[1]!.replace(/\.git$/i, "");
+  const owner = assertSafeGitHubPath(parts[0]!, "GitHub owner");
+  const repo = assertSafeGitHubPath(parts[1]!.replace(/\.git$/i, ""), "GitHub repository");
   const queryRef = url.searchParams.get("ref")?.trim();
+  if (queryRef) assertSafeGitHubPath(queryRef, "GitHub ref");
   const queryPath = normalizeGitHubSourcePath(url.searchParams.get("path"));
+  if (queryPath) assertSafeGitHubPath(queryPath, "GitHub path");
   const queryCompanyPath = normalizeGitHubSourcePath(url.searchParams.get("companyPath"));
+  if (queryCompanyPath) assertSafeGitHubPath(queryCompanyPath, "GitHub company path");
   if (queryRef || queryPath || queryCompanyPath) {
     const companyPath = queryCompanyPath || [queryPath, "COMPANY.md"].filter(Boolean).join("/") || "COMPANY.md";
     let basePath = queryPath;
@@ -2837,10 +2841,14 @@ export function parseGitHubSourceUrl(rawUrl: string) {
   let companyPath = "COMPANY.md";
   if (parts[2] === "tree") {
     ref = parts[3] ?? "main";
+    assertSafeGitHubPath(ref, "GitHub ref");
     basePath = parts.slice(4).join("/");
+    if (basePath) assertSafeGitHubPath(basePath, "GitHub path");
   } else if (parts[2] === "blob") {
     ref = parts[3] ?? "main";
+    assertSafeGitHubPath(ref, "GitHub ref");
     const blobPath = parts.slice(4).join("/");
+    if (blobPath) assertSafeGitHubPath(blobPath, "GitHub blob path");
     if (!blobPath) {
       throw unprocessable("Invalid GitHub blob URL");
     }
@@ -2986,7 +2994,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
     };
     const apiBase = gitHubApiBase(parsed.hostname);
     const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
-      `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
+      `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
     ).catch(() => ({ tree: [] }));
     const basePrefix = parsed.basePath ? `${parsed.basePath.replace(/^\/+|\/+$/g, "")}/` : "";
     const candidatePaths = (tree.tree ?? [])

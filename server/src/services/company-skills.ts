@@ -29,7 +29,7 @@ import type {
 import { normalizeAgentUrlKey } from "@paperclipai/shared";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { notFound, unprocessable } from "../errors.js";
-import { ghFetch, gitHubApiBase, resolveRawGitHubUrl } from "./github-fetch.js";
+import { assertAllowedGitHubHost, assertSafeGitHubPath, ghFetch, gitHubApiBase, isAllowedGitHubHost, resolveRawGitHubUrl } from "./github-fetch.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
 
@@ -584,27 +584,33 @@ function parseGitHubSourceUrl(rawUrl: string) {
   if (url.protocol !== "https:") {
     throw unprocessable("GitHub source URL must use HTTPS");
   }
+  const hostname = url.hostname;
+  assertAllowedGitHubHost(hostname);
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length < 2) {
     throw unprocessable("Invalid GitHub URL");
   }
-  const owner = parts[0]!;
-  const repo = parts[1]!.replace(/\.git$/i, "");
+  const owner = assertSafeGitHubPath(parts[0]!, "GitHub owner");
+  const repo = assertSafeGitHubPath(parts[1]!.replace(/\.git$/i, ""), "GitHub repository");
   let ref = "main";
   let basePath = "";
   let filePath: string | null = null;
   let explicitRef = false;
   if (parts[2] === "tree") {
     ref = parts[3] ?? "main";
+    assertSafeGitHubPath(ref, "GitHub ref");
     basePath = parts.slice(4).join("/");
+    if (basePath) assertSafeGitHubPath(basePath, "GitHub path");
     explicitRef = true;
   } else if (parts[2] === "blob") {
     ref = parts[3] ?? "main";
+    assertSafeGitHubPath(ref, "GitHub ref");
     filePath = parts.slice(4).join("/");
+    if (filePath) assertSafeGitHubPath(filePath, "GitHub blob path");
     basePath = filePath ? path.posix.dirname(filePath) : "";
     explicitRef = true;
   }
-  return { hostname: url.hostname, owner, repo, ref, basePath, filePath, explicitRef };
+  return { hostname, owner, repo, ref, basePath, filePath, explicitRef };
 }
 
 async function resolveGitHubPinnedRef(parsed: ReturnType<typeof parseGitHubSourceUrl>) {
@@ -1053,21 +1059,32 @@ async function readUrlSkillImports(
 ): Promise<{ skills: ImportedSkill[]; warnings: string[] }> {
   const url = sourceUrl.trim();
   const warnings: string[] = [];
-  const looksLikeRepoUrl = (() => { try {
-    const parsed = new URL(url);
+  const looksLikeRepoUrl = (() => {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return false;
+    }
     if (parsed.protocol !== "https:") return false;
     const h = parsed.hostname.toLowerCase();
     if (h.endsWith(".githubusercontent.com") || h === "gist.github.com") return false;
     const segments = parsed.pathname.split("/").filter(Boolean);
-    return segments.length >= 2 && !parsed.pathname.endsWith(".md");
-  } catch { return false; } })();
+    const repoShaped = segments.length >= 2 && !parsed.pathname.endsWith(".md");
+    if (repoShaped && !isAllowedGitHubHost(h)) {
+      throw unprocessable(
+        "GitHub skill repository imports must use github.com or a configured GitHub Enterprise host.",
+      );
+    }
+    return repoShaped;
+  })();
   if (looksLikeRepoUrl) {
     const parsed = parseGitHubSourceUrl(url);
     const apiBase = gitHubApiBase(parsed.hostname);
     const { pinnedRef, trackingRef } = await resolveGitHubPinnedRef(parsed);
     let ref = pinnedRef;
     const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
-      `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
+      `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`,
     ).catch(() => {
       throw unprocessable(`Failed to read GitHub tree for ${url}`);
     });
