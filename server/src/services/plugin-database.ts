@@ -325,6 +325,15 @@ function bindSql(statement: string, params: readonly unknown[] = []): SQL {
   return sql.join(chunks, sql.raw(""));
 }
 
+async function setLocalPluginSearchPath(
+  client: PluginDatabaseClient,
+  namespace: string,
+): Promise<void> {
+  await client.execute(
+    sql.raw(`SET LOCAL search_path TO ${quoteIdentifier(namespace)}, pg_temp`),
+  );
+}
+
 async function listSqlMigrationFiles(migrationsDir: string): Promise<string[]> {
   const entries = await readdir(migrationsDir, { withFileTypes: true });
   return entries
@@ -478,6 +487,7 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
 
       const applyWithClient = async (client: PluginDatabaseClient) => {
         await client.execute(sql`SELECT pg_advisory_xact_lock(${lockKey})`);
+        await setLocalPluginSearchPath(client, namespace.namespaceName);
         for (const migrationKey of migrationFiles) {
           const content = await readFile(path.join(migrationDir, migrationKey), "utf8");
           const checksum = createHash("sha256").update(content).digest("hex");
@@ -558,6 +568,15 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
       const plugin = await getPluginRecord(pluginId);
       const namespace = await getRuntimeNamespace(pluginId);
       validatePluginRuntimeQuery(statement, namespace, plugin.manifestJson.database?.coreReadTables ?? []);
+      if (typeof db.transaction === "function") {
+        return db.transaction(async (tx) => {
+          const client = tx as PluginDatabaseClient;
+          await setLocalPluginSearchPath(client, namespace);
+          const result = await client.execute(bindSql(statement, params));
+          return Array.from(result as Iterable<T>);
+        });
+      }
+
       const result = await db.execute(bindSql(statement, params));
       return Array.from(result as Iterable<T>);
     },
@@ -565,7 +584,14 @@ export function pluginDatabaseService(db: PluginDatabaseRootClient) {
     async execute(pluginId: string, statement: string, params?: unknown[]): Promise<{ rowCount: number }> {
       const namespace = await getRuntimeNamespace(pluginId);
       validatePluginRuntimeExecute(statement, namespace);
-      const result = await db.execute(bindSql(statement, params));
+      const result =
+        typeof db.transaction === "function"
+          ? await db.transaction(async (tx) => {
+              const client = tx as PluginDatabaseClient;
+              await setLocalPluginSearchPath(client, namespace);
+              return client.execute(bindSql(statement, params));
+            })
+          : await db.execute(bindSql(statement, params));
       return { rowCount: Number((result as { count?: number | string }).count ?? 0) };
     },
   };

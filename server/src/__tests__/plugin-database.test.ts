@@ -458,6 +458,42 @@ describeEmbeddedPostgres("plugin database namespaces", () => {
     ).rejects.toThrow(/plugin namespace/i);
   });
 
+  it("rejects unqualified runtime reads from public tables", async () => {
+    const pluginManifest = manifest("paperclip.unqualified.read");
+    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
+    const packageRoot = await createPluginPackage(
+      pluginManifest,
+      `CREATE TABLE ${namespace}.notes (id uuid PRIMARY KEY, body text NOT NULL);`,
+    );
+    const pluginId = await installPluginRecord(pluginManifest);
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Secret Company",
+      issuePrefix: "SEC",
+      requireBoardApprovalForNewAgents: false,
+    });
+    const pluginDb = pluginDatabaseService(db);
+    await pluginDb.applyMigrations(pluginId, pluginManifest, packageRoot);
+
+    await expect(pluginDb.query(pluginId, "SELECT id, name FROM companies"))
+      .rejects.toThrow(/relation .*companies.* does not exist/i);
+  });
+
+  it("rejects migrations that use unqualified reads inside namespaced views", async () => {
+    const pluginManifest = manifest("paperclip.unqualified.migration");
+    const namespace = derivePluginDatabaseNamespace(pluginManifest.id);
+    const packageRoot = await createPluginPackage(
+      pluginManifest,
+      `CREATE VIEW ${namespace}.leak AS SELECT id, name FROM companies;`,
+    );
+    const pluginId = await installPluginRecord(pluginManifest);
+
+    await expect(
+      pluginDatabaseService(db).applyMigrations(pluginId, pluginManifest, packageRoot),
+    ).rejects.toThrow(/relation .*companies.* does not exist/i);
+  });
+
   it("records a failed migration when SQL escapes the plugin namespace", async () => {
     const pluginManifest = manifest("paperclip.escape");
     const packageRoot = await createPluginPackage(
