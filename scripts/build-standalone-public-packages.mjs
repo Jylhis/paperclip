@@ -123,11 +123,12 @@ function main() {
     }
 
     const installArgs = existsSync(packageLockfilePath)
-      ? ["install", "--ignore-workspace", "--frozen-lockfile"]
+      ? ["install", "--ignore-workspace", "--frozen-lockfile", "--ignore-scripts"]
       : [
         "install",
         "--ignore-workspace",
         "--no-lockfile",
+        "--ignore-scripts",
         // Standalone packages intentionally avoid committed lockfile churn in the repo.
       ];
 
