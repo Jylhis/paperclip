@@ -478,26 +478,33 @@ function isManagedSecretRefForContext(
 }
 
 function isManagedSecretNamespaceRef(
-  config: AwsSecretsManagerConfig,
+  namespacePrefix: string,
   externalRef: string | null | undefined,
 ) {
   if (!externalRef?.trim()) return false;
-  const namespacePrefix = [
-    sanitizePathSegment(config.prefix),
-    sanitizePathSegment(config.deploymentId),
-  ]
-    .filter(Boolean)
-    .join("/");
   if (!namespacePrefix) return false;
   const actualName = extractAwsSecretName(externalRef);
   return actualName === namespacePrefix || actualName.startsWith(`${namespacePrefix}/`);
+}
+
+function getManagedNamespacePrefixes(config: AwsSecretsManagerConfig) {
+  const selectedPrefix = [
+    sanitizePathSegment(config.prefix),
+    sanitizePathSegment(config.deploymentId),
+  ].filter(Boolean).join("/");
+  const runtimePrefix = [
+    sanitizePathSegment(process.env.PAPERCLIP_SECRETS_AWS_PREFIX?.trim() || DEFAULT_PREFIX),
+    sanitizePathSegment(process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID?.trim() || ""),
+  ].filter(Boolean).join("/");
+  return Array.from(new Set([selectedPrefix, runtimePrefix].filter(Boolean)));
 }
 
 function assertNotManagedNamespaceExternalRef(
   config: AwsSecretsManagerConfig,
   externalRef: string,
 ) {
-  if (!isManagedSecretNamespaceRef(config, externalRef)) return;
+  const namespacePrefixes = getManagedNamespacePrefixes(config);
+  if (!namespacePrefixes.some((prefix) => isManagedSecretNamespaceRef(prefix, externalRef))) return;
   throw unprocessable(
     "AWS Paperclip-managed namespace secrets cannot be imported as external references",
   );
@@ -972,6 +979,12 @@ export function createAwsSecretsManagerProvider(
           nextToken: listed.NextToken ?? null,
           secrets: (listed.SecretList ?? [])
             .filter((entry) => Boolean(entry.ARN ?? entry.Name))
+            .filter((entry) => {
+              const externalRef = entry.ARN ?? entry.Name ?? null;
+              return !getManagedNamespacePrefixes(config).some((prefix) =>
+                isManagedSecretNamespaceRef(prefix, externalRef),
+              );
+            })
             .map((entry) => ({
               externalRef: entry.ARN ?? entry.Name ?? "",
               name: entry.Name ?? entry.ARN ?? "",

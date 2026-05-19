@@ -8,6 +8,7 @@ describe("awsSecretsManagerProvider", () => {
     AWS_REGION: process.env.AWS_REGION,
     AWS_DEFAULT_REGION: process.env.AWS_DEFAULT_REGION,
     PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID: process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID,
+    PAPERCLIP_SECRETS_AWS_PREFIX: process.env.PAPERCLIP_SECRETS_AWS_PREFIX,
     PAPERCLIP_SECRETS_AWS_KMS_KEY_ID: process.env.PAPERCLIP_SECRETS_AWS_KMS_KEY_ID,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
@@ -373,7 +374,34 @@ describe("awsSecretsManagerProvider", () => {
     ).rejects.toThrow(/Paperclip-managed namespace/i);
   });
 
+  it("rejects linked external references under the runtime Paperclip-managed namespace", async () => {
+    process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID = "prod-global";
+    process.env.PAPERCLIP_SECRETS_AWS_PREFIX = "paperclip";
+    const provider = createAwsSecretsManagerProvider({
+      config: {
+        region: "us-east-1",
+        endpoint: "https://secretsmanager.us-east-1.amazonaws.com",
+        deploymentId: "tenant-vault",
+        prefix: "tenant",
+        kmsKeyId: "arn:aws:kms:us-east-1:123456789012:key/test",
+        environmentTag: "production",
+        providerOwnerTag: "paperclip",
+        deleteRecoveryWindowDays: 30,
+      },
+    });
+
+    await expect(
+      provider.linkExternalSecret({
+        externalRef:
+          "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-global/company-2/openai-api-key",
+        providerVersionRef: "linked-version-7",
+      }),
+    ).rejects.toThrow(/Paperclip-managed namespace/i);
+  });
+
   it("lists remote AWS secrets with metadata only and never resolves plaintext", async () => {
+    process.env.PAPERCLIP_SECRETS_AWS_DEPLOYMENT_ID = "prod-global";
+    process.env.PAPERCLIP_SECRETS_AWS_PREFIX = "paperclip";
     const calls: Array<{ op: string; input: Record<string, unknown> }> = [];
     const provider = createAwsSecretsManagerProvider({
       config: {
@@ -404,6 +432,10 @@ describe("awsSecretsManagerProvider", () => {
           return {
             NextToken: "token-2",
             SecretList: [
+              {
+                ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:paperclip/prod-global/company-2/openai-api-key",
+                Name: "paperclip/prod-global/company-2/openai-api-key",
+              },
               {
                 ARN: "arn:aws:secretsmanager:us-east-1:123456789012:secret:prod/openai",
                 Name: "prod/openai",
