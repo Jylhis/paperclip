@@ -23,7 +23,7 @@ import {
   startRuntimeServicesForWorkspaceControl,
   stopRuntimeServicesForExecutionWorkspace,
 } from "../services/workspace-runtime.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
   collectExecutionWorkspaceCommandPaths,
@@ -481,6 +481,7 @@ export function executionWorkspaceRoutes(db: Db) {
     );
 
     if (req.body.status === "archived" && existing.status !== "archived") {
+      assertBoard(req);
       const readiness = await svc.getCloseReadiness(existing.id);
       if (!readiness) {
         res.status(404).json({ error: "Execution workspace not found" });
