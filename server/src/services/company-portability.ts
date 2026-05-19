@@ -4461,6 +4461,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         if (!projectId) continue;
 
         for (const workspace of manifestProject.workspaces) {
+          const allowWorkspaceCommands = mode !== "agent_safe";
           const createdWorkspace = await projects.createWorkspace(projectId, {
             name: workspace.name,
             sourceType: workspace.sourceType ?? undefined,
@@ -4468,8 +4469,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
             repoRef: workspace.repoRef ?? undefined,
             defaultRef: workspace.defaultRef ?? undefined,
             visibility: workspace.visibility ?? undefined,
-            setupCommand: workspace.setupCommand ?? undefined,
-            cleanupCommand: workspace.cleanupCommand ?? undefined,
+            setupCommand: allowWorkspaceCommands
+              ? (workspace.setupCommand ?? undefined)
+              : undefined,
+            cleanupCommand: allowWorkspaceCommands
+              ? (workspace.cleanupCommand ?? undefined)
+              : undefined,
             metadata: workspace.metadata ?? undefined,
             isPrimary: workspace.isPrimary,
           });

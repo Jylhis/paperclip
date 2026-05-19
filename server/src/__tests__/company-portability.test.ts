@@ -2881,6 +2881,94 @@ describe("company portability", () => {
     expect(agentSvc.create).not.toHaveBeenCalled();
   });
 
+  it("strips workspace commands on agent-safe imports", async () => {
+    const portability = companyPortabilityService({} as any);
+    projectSvc.list.mockResolvedValue([
+      {
+        id: "project-1",
+        name: "Launch",
+        urlKey: "launch",
+        description: null,
+        leadAgentId: null,
+        targetDate: null,
+        color: null,
+        status: "planned",
+        executionWorkspacePolicy: null,
+        workspaces: [
+          {
+            id: "workspace-1",
+            companyId: "company-1",
+            projectId: "project-1",
+            name: "Main Repo",
+            sourceType: "git_repo",
+            cwd: null,
+            repoUrl: "https://github.com/paperclipai/paperclip.git",
+            repoRef: "main",
+            defaultRef: "main",
+            visibility: "default",
+            setupCommand: "pnpm install",
+            cleanupCommand: "rm -rf .paperclip-tmp",
+            remoteProvider: null,
+            remoteWorkspaceRef: null,
+            sharedWorkspaceKey: null,
+            metadata: null,
+            isPrimary: true,
+            createdAt: new Date("2026-03-01T00:00:00Z"),
+            updatedAt: new Date("2026-03-01T00:00:00Z"),
+          },
+        ],
+        archivedAt: null,
+      },
+    ]);
+    const exported = await portability.exportBundle("company-1", {
+      include: {
+        company: false,
+        agents: false,
+        projects: true,
+        issues: false,
+      },
+    });
+
+    projectSvc.list.mockResolvedValue([]);
+    projectSvc.create.mockResolvedValue({
+      id: "project-imported",
+      name: "Launch",
+      urlKey: "launch",
+    });
+    projectSvc.createWorkspace.mockImplementation(async (_projectId: string, data: Record<string, unknown>) => ({
+      id: "workspace-imported",
+      ...data,
+    }));
+
+    await portability.importBundle({
+      source: {
+        type: "inline",
+        rootPath: exported.rootPath,
+        files: exported.files,
+      },
+      include: {
+        company: false,
+        agents: false,
+        projects: true,
+        issues: false,
+      },
+      target: {
+        mode: "existing_company",
+        companyId: "company-1",
+      },
+      collisionStrategy: "rename",
+    }, "user-1", {
+      mode: "agent_safe",
+      sourceCompanyId: "company-1",
+    });
+
+    expect(projectSvc.createWorkspace).toHaveBeenCalledWith("project-imported", expect.objectContaining({
+      name: "Main Repo",
+      setupCommand: undefined,
+      cleanupCommand: undefined,
+    }));
+  });
+
   it("imports new agents as active while preserving future hire approval settings", async () => {
     const portability = companyPortabilityService({} as any);
     const exported = await portability.exportBundle("company-1", {
