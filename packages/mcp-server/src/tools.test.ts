@@ -341,4 +341,38 @@ describe("paperclip MCP tools", () => {
 
     expect(response.content[0]?.text).toContain("must not contain '..'");
   });
+
+  it("keeps generic request absolute-looking paths under the configured API origin", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse({ ok: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipApiRequest");
+    await tool.execute({
+      method: "POST",
+      path: "/https://attacker.example/collect",
+      jsonBody: JSON.stringify({ probe: true }),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/https://attacker.example/collect");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer token-123");
+  });
+
+  it("rejects generic request paths that URL-decode outside /api", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("paperclipApiRequest");
+    const response = await tool.execute({
+      method: "GET",
+      path: "/%2e%2e/admin",
+    });
+
+    expect(response.content[0]?.text).toContain("API path must stay under /api/");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });

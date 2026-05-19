@@ -38,6 +38,21 @@ function buildErrorMessage(method: string, path: string, status: number, body: u
   return `${method} ${path} failed with ${status}`;
 }
 
+function resolveApiUrl(apiUrl: string, path: string): URL {
+  if (!path.startsWith("/")) {
+    throw new Error(`API path must start with "/": ${path}`);
+  }
+
+  const baseUrl = new URL(`${apiUrl.replace(/\/+$/, "")}/`);
+  const resolvedUrl = new URL(`.${path}`, baseUrl);
+
+  if (resolvedUrl.origin !== baseUrl.origin || !resolvedUrl.pathname.startsWith(baseUrl.pathname)) {
+    throw new Error(`API path must stay under ${baseUrl.pathname}: ${path}`);
+  }
+
+  return resolvedUrl;
+}
+
 async function parseResponseBody(response: Response): Promise<unknown> {
   const text = await response.text();
   if (!text) return null;
@@ -76,11 +91,7 @@ export class PaperclipApiClient {
   }
 
   async requestJson<T>(method: string, path: string, options: JsonRequestOptions = {}): Promise<T> {
-    if (!path.startsWith("/")) {
-      throw new Error(`API path must start with "/": ${path}`);
-    }
-
-    const url = new URL(path.slice(1), `${this.config.apiUrl}/`);
+    const url = resolveApiUrl(this.config.apiUrl, path);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.config.apiKey}`,
       Accept: "application/json",
