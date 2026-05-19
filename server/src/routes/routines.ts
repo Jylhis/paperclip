@@ -57,6 +57,19 @@ export function routineRoutes(
     return routine;
   }
 
+  function assertCanRunRoutineWithOverrides(
+    req: Request,
+    routine: { companyId: string; assigneeAgentId?: string | null },
+  ) {
+    assertCompanyAccess(req, routine.companyId);
+    if (req.actor.type === "board") return;
+    if (req.actor.type !== "agent" || !req.actor.agentId) throw unauthorized();
+    const requestedAssigneeAgentId = req.body.assigneeAgentId ?? routine.assigneeAgentId ?? null;
+    if (requestedAssigneeAgentId !== req.actor.agentId) {
+      throw forbidden("Agents can only run routines assigned to themselves");
+    }
+  }
+
   async function logRoutineRevisionCreated(req: Request, input: {
     companyId: string;
     routineId: string;
@@ -418,6 +431,7 @@ export function routineRoutes(
       return;
     }
     await assertBoardCanAssignTasks(req, routine.companyId);
+    assertCanRunRoutineWithOverrides(req, routine);
     const run = await svc.runRoutine(routine.id, req.body, {
       agentId: req.actor.type === "agent" ? req.actor.agentId : null,
       userId: req.actor.type === "board" ? req.actor.userId ?? null : null,

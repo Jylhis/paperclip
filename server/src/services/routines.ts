@@ -2116,6 +2116,12 @@ export function routineService(
       if (!routine) throw notFound("Routine not found");
       if (routine.status === "archived") throw conflict("Routine is archived");
       await assertProject(routine.companyId, input.projectId ?? null);
+      if (actor?.agentId) {
+        const requestedAssigneeAgentId = input.assigneeAgentId ?? routine.assigneeAgentId ?? null;
+        if (requestedAssigneeAgentId !== actor.agentId) {
+          throw forbidden("Agents can only run routines assigned to themselves");
+        }
+      }
       await assertAssignableAgent(routine.companyId, input.assigneeAgentId ?? null);
       const trigger = input.triggerId ? await getTriggerById(input.triggerId) : null;
       if (trigger && trigger.routineId !== routine.id) throw forbidden("Trigger does not belong to routine");

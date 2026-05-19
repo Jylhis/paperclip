@@ -414,6 +414,25 @@ describe("routine routes", () => {
     expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
   });
 
+  it("prevents agents from overriding routine runs to another assignee", async () => {
+    const app = await createApp({
+      type: "agent",
+      agentId,
+      companyId,
+      runId: "88888888-8888-4888-8888-888888888888",
+    });
+
+    const res = await request(app)
+      .post(`/api/routines/${routineId}/run`)
+      .send({
+        assigneeAgentId: otherAgentId,
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("Agents can only run routines assigned to themselves");
+    expect(mockRoutineService.runRoutine).not.toHaveBeenCalled();
+  });
+
   it("passes the board actor through when manually running a routine", async () => {
     mockAccessService.canUser.mockResolvedValue(true);
     const app = await createApp({

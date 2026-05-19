@@ -626,6 +626,35 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     expect(inboxIssues.map((issue) => issue.id)).toContain(run.linkedIssueId);
   });
 
+  it("prevents agent actors from overriding routine runs to another assignee", async () => {
+    const { companyId, agentId, routine, svc } = await seedFixture();
+    const otherAgentId = randomUUID();
+    await db.insert(agents).values({
+      id: otherAgentId,
+      companyId,
+      name: "OtherAgent",
+      role: "reviewer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await expect(
+      svc.runRoutine(
+        routine.id,
+        {
+          source: "manual",
+          assigneeAgentId: otherAgentId,
+        },
+        {
+          agentId,
+        },
+      ),
+    ).rejects.toThrow("Agents can only run routines assigned to themselves");
+  });
+
   it("waits for the assignee wakeup to be queued before returning the routine run", async () => {
     let wakeupResolved = false;
     const { routine, svc } = await seedFixture({
