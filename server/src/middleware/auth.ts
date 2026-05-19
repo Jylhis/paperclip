@@ -214,6 +214,7 @@ async function resolveCloudTenantActor(db: Db, req: Request): Promise<Express.Re
   const paperclipCompanyId = req.header("x-paperclip-cloud-paperclip-company-id")?.trim();
   const companyId = cloudTenantCompanyId(stackId);
   const companyName = paperclipCompanyId || `${stackId} Paperclip`;
+  const isInstanceAdmin = stackRole === "owner" || stackRole === "admin";
   const now = new Date();
 
   await db
@@ -237,16 +238,22 @@ async function resolveCloudTenantActor(db: Db, req: Request): Promise<Express.Re
       },
     });
 
-  await db
-    .insert(instanceUserRoles)
-    .values({
-      userId,
-      role: "instance_admin",
-      updatedAt: now,
-    })
-    .onConflictDoNothing({
-      target: [instanceUserRoles.userId, instanceUserRoles.role],
-    });
+  if (isInstanceAdmin) {
+    await db
+      .insert(instanceUserRoles)
+      .values({
+        userId,
+        role: "instance_admin",
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [instanceUserRoles.userId, instanceUserRoles.role],
+      });
+  } else {
+    await db
+      .delete(instanceUserRoles)
+      .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")));
+  }
 
   await db
     .insert(companies)
@@ -303,7 +310,7 @@ async function resolveCloudTenantActor(db: Db, req: Request): Promise<Express.Re
       membershipRole: membership.membershipRole,
       status: membership.status,
     }],
-    isInstanceAdmin: true,
+    isInstanceAdmin,
     source: "cloud_tenant",
   };
 }
