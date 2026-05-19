@@ -75,7 +75,7 @@ describe("opencode remote environment diagnostics", () => {
     vi.clearAllMocks();
   });
 
-  it("stages remote runtime config assets for sandbox hello probes", async () => {
+  it("does not stage host runtime config assets for remote sandbox probes", async () => {
     const remoteTarget: AdapterExecutionTarget = {
       kind: "remote",
       transport: "sandbox",
@@ -112,18 +112,12 @@ describe("opencode remote environment diagnostics", () => {
     >;
     const runtimeInput = runtimeCalls[0]?.[0];
     expect(runtimeInput?.adapterKey).toBe("opencode");
-    expect(runtimeInput?.assets).toEqual([
-      expect.objectContaining({
-        key: "xdgConfig",
-      }),
-    ]);
+    expect(runtimeInput?.assets).toEqual([]);
 
     const probeCall = runAdapterExecutionTargetProcess.mock.calls[0] as unknown as
       | [string, AdapterExecutionTarget, string, string[], { cwd: string; env: Record<string, string> }]
       | undefined;
     expect(probeCall?.[4].cwd).toBe("/remote/workspace/.paperclip-runtime/runs/test/workspace");
-    expect(probeCall?.[4].env.XDG_CONFIG_HOME).toBe(
-      "/remote/workspace/.paperclip-runtime/runs/test/workspace/.paperclip-runtime/opencode/xdgConfig",
-    );
+    expect(probeCall?.[4].env.XDG_CONFIG_HOME).toBeUndefined();
   });
 });
