@@ -6,7 +6,6 @@ import { resolvePaperclipInstanceRootForAdapter } from "@paperclipai/adapter-uti
 
 const TRUTHY_ENV_RE = /^(1|true|yes|on)$/i;
 const COPIED_SHARED_FILES = ["config.json", "config.toml", "instructions.md"] as const;
-const SYMLINKED_SHARED_FILES = ["auth.json"] as const;
 
 function nonEmpty(value: string | undefined): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -45,28 +44,6 @@ async function ensureParentDir(target: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
 }
 
-async function ensureSymlink(target: string, source: string): Promise<void> {
-  const existing = await fs.lstat(target).catch(() => null);
-  if (!existing) {
-    await ensureParentDir(target);
-    await fs.symlink(source, target);
-    return;
-  }
-
-  if (!existing.isSymbolicLink()) {
-    return;
-  }
-
-  const linkedPath = await fs.readlink(target).catch(() => null);
-  if (!linkedPath) return;
-
-  const resolvedLinkedPath = path.resolve(path.dirname(target), linkedPath);
-  if (resolvedLinkedPath === source) return;
-
-  await fs.unlink(target);
-  await fs.symlink(source, target);
-}
-
 async function ensureCopiedFile(target: string, source: string): Promise<void> {
   const existing = await fs.lstat(target).catch(() => null);
   if (existing) return;
@@ -102,24 +79,17 @@ export async function prepareManagedCodexHome(
   await fs.mkdir(targetHome, { recursive: true });
 
   // If a previous run wrote an apikey-mode auth.json (regular file) and this
-  // run has no apiKey, remove it so the chatgpt-mode symlink can be restored.
-  // Without this cleanup, ensureSymlink bails on a non-symlink and Codex keeps
-  // authenticating with the stale key after it is removed from configuration.
+  // run has no apiKey, remove it so managed homes do not retain stale
+  // credentials across runs.
   if (!apiKey && seedFromShared) {
     const authPath = path.join(targetHome, "auth.json");
     const existing = await fs.lstat(authPath).catch(() => null);
-    if (existing && !existing.isSymbolicLink()) {
+    if (existing) {
       await fs.rm(authPath, { force: true });
     }
   }
 
   if (seedFromShared) {
-    for (const name of SYMLINKED_SHARED_FILES) {
-      const source = path.join(sourceHome, name);
-      if (!(await pathExists(source))) continue;
-      await ensureSymlink(path.join(targetHome, name), source);
-    }
-
     for (const name of COPIED_SHARED_FILES) {
       const source = path.join(sourceHome, name);
       if (!(await pathExists(source))) continue;

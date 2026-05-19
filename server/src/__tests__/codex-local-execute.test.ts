@@ -93,7 +93,7 @@ function createLocalSandboxRunner() {
 }
 
 describe("codex execute", () => {
-  it("uses a Paperclip-managed CODEX_HOME outside worktree mode while preserving shared auth and config", async () => {
+  it("uses a Paperclip-managed CODEX_HOME outside worktree mode while only preserving shared config", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-execute-default-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "codex");
@@ -163,10 +163,8 @@ describe("codex execute", () => {
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.codexHome).toBe(managedCodexHome);
 
-      const managedAuth = path.join(managedCodexHome, "auth.json");
       const managedConfig = path.join(managedCodexHome, "config.toml");
-      expect((await fs.lstat(managedAuth)).isSymbolicLink()).toBe(true);
-      expect(await fs.realpath(managedAuth)).toBe(await fs.realpath(path.join(sharedCodexHome, "auth.json")));
+      await expect(fs.lstat(path.join(managedCodexHome, "auth.json"))).rejects.toThrow();
       expect((await fs.lstat(managedConfig)).isFile()).toBe(true);
       expect(await fs.readFile(managedConfig, "utf8")).toBe('model = "codex-mini-latest"\n');
       await expect(fs.lstat(path.join(sharedCodexHome, "companies", "company-1"))).rejects.toThrow();
