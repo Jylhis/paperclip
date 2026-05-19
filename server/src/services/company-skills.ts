@@ -974,76 +974,9 @@ export async function discoverProjectWorkspaceSkillDirectories(target: ProjectSk
 }
 
 async function readLocalSkillImports(companyId: string, sourcePath: string): Promise<ImportedSkill[]> {
-  const resolvedPath = path.resolve(sourcePath);
-  const stat = await fs.stat(resolvedPath).catch(() => null);
-  if (!stat) {
-    throw unprocessable(`Skill source path does not exist: ${sourcePath}`);
-  }
-
-  if (stat.isFile()) {
-    const markdown = await fs.readFile(resolvedPath, "utf8");
-    const parsed = parseFrontmatterMarkdown(markdown);
-    const slug = deriveImportedSkillSlug(parsed.frontmatter, path.basename(path.dirname(resolvedPath)));
-    const parsedMetadata = isPlainRecord(parsed.frontmatter.metadata) ? parsed.frontmatter.metadata : null;
-    const skillKey = readCanonicalSkillKey(parsed.frontmatter, parsedMetadata);
-    const metadata = {
-      ...(skillKey ? { skillKey } : {}),
-      ...(parsedMetadata ?? {}),
-      sourceKind: "local_path",
-    };
-    const inventory: CompanySkillFileInventoryEntry[] = [
-      { path: "SKILL.md", kind: "skill" },
-    ];
-    return [{
-      key: deriveCanonicalSkillKey(companyId, {
-        slug,
-        sourceType: "local_path",
-        sourceLocator: path.dirname(resolvedPath),
-        metadata,
-      }),
-      slug,
-      name: asString(parsed.frontmatter.name) ?? slug,
-      description: asString(parsed.frontmatter.description),
-      markdown,
-      packageDir: path.dirname(resolvedPath),
-      sourceType: "local_path",
-      sourceLocator: path.dirname(resolvedPath),
-      sourceRef: null,
-      trustLevel: deriveTrustLevel(inventory),
-      compatibility: "compatible",
-      fileInventory: inventory,
-      metadata,
-    }];
-  }
-
-  const root = resolvedPath;
-  const allFiles: string[] = [];
-  await walkLocalFiles(root, root, allFiles);
-  const skillPaths = allFiles.filter((entry) => path.posix.basename(entry).toLowerCase() === "skill.md");
-  if (skillPaths.length === 0) {
-    throw unprocessable("No SKILL.md files were found in the provided path.");
-  }
-
-  const imports: ImportedSkill[] = [];
-  for (const skillPath of skillPaths) {
-    const skillDir = path.posix.dirname(skillPath);
-    const inventory = allFiles
-      .filter((entry) => entry === skillPath || entry.startsWith(`${skillDir}/`))
-      .map((entry) => {
-        const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
-        return {
-          path: normalizePortablePath(relative),
-          kind: classifyInventoryKind(relative),
-        };
-      })
-      .sort((left, right) => left.path.localeCompare(right.path));
-    const imported = await readLocalSkillImportFromDirectory(companyId, path.join(root, skillDir));
-    imported.fileInventory = inventory;
-    imported.trustLevel = deriveTrustLevel(inventory);
-    imports.push(imported);
-  }
-
-  return imports;
+  void companyId;
+  void sourcePath;
+  throw unprocessable("Local filesystem skill import is disabled. Use a GitHub source URL.");
 }
 
 async function readUrlSkillImports(
@@ -1156,45 +1089,10 @@ async function readUrlSkillImports(
   }
 
   if (url.startsWith("http://") || url.startsWith("https://")) {
-    const markdown = await fetchText(url);
-    const parsedMarkdown = parseFrontmatterMarkdown(markdown);
-    const urlObj = new URL(url);
-    const fileName = path.posix.basename(urlObj.pathname);
-    const slug = deriveImportedSkillSlug(parsedMarkdown.frontmatter, fileName.replace(/\.md$/i, ""));
-    const skillKey = readCanonicalSkillKey(
-      parsedMarkdown.frontmatter,
-      isPlainRecord(parsedMarkdown.frontmatter.metadata) ? parsedMarkdown.frontmatter.metadata : null,
-    );
-    const metadata = {
-      ...(skillKey ? { skillKey } : {}),
-      sourceKind: "url",
-    };
-    const inventory: CompanySkillFileInventoryEntry[] = [{ path: "SKILL.md", kind: "skill" }];
-    return {
-      skills: [{
-        key: deriveCanonicalSkillKey(companyId, {
-          slug,
-          sourceType: "url",
-          sourceLocator: url,
-          metadata,
-        }),
-        slug,
-        name: asString(parsedMarkdown.frontmatter.name) ?? slug,
-        description: asString(parsedMarkdown.frontmatter.description),
-        markdown,
-        sourceType: "url",
-        sourceLocator: url,
-        sourceRef: null,
-        trustLevel: deriveTrustLevel(inventory),
-        compatibility: "compatible",
-        fileInventory: inventory,
-        metadata,
-      }],
-      warnings,
-    };
+    throw unprocessable("Direct HTTP(S) skill import is disabled. Use a GitHub repository or tree URL.");
   }
 
-  throw unprocessable("Unsupported skill source. Use a local path or URL.");
+  throw unprocessable("Unsupported skill source. Use a GitHub repository or tree URL.");
 }
 
 function toCompanySkill(row: CompanySkillRow): CompanySkill {
