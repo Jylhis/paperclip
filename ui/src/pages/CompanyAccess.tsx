@@ -36,6 +36,7 @@ const permissionLabels: Record<PermissionKey, string> = {
   "tasks:manage_active_checkouts": "Manage active task checkouts",
   "joins:approve": "Approve join requests",
   "environments:manage": "Manage environments",
+  "workspace_commands:manage": "Manage host workspace commands",
 };
 
 function formatGrantSummary(member: CompanyMember) {
@@ -44,8 +45,8 @@ function formatGrantSummary(member: CompanyMember) {
 }
 
 const implicitRoleGrantMap: Record<NonNullable<CompanyMember["membershipRole"]>, PermissionKey[]> = {
-  owner: ["agents:create", "users:invite", "users:manage_permissions", "tasks:assign", "joins:approve"],
-  admin: ["agents:create", "users:invite", "tasks:assign", "joins:approve"],
+  owner: ["agents:create", "users:invite", "users:manage_permissions", "tasks:assign", "joins:approve", "workspace_commands:manage"],
+  admin: ["agents:create", "users:invite", "tasks:assign", "joins:approve", "workspace_commands:manage"],
   operator: ["tasks:assign"],
   viewer: [],
 };

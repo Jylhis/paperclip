@@ -79,7 +79,7 @@ import { logger } from "../middleware/logger.js";
 import { conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
-  assertNoAgentHostWorkspaceCommandMutation,
+  assertCanMutateHostWorkspaceCommands,
   collectIssueWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
@@ -2997,7 +2997,12 @@ export function issueRoutes(
   router.post("/companies/:companyId/issues", applyCreateIssueStatusDefault, validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    await assertCanMutateHostWorkspaceCommands(
+      req,
+      companyId,
+      collectIssueWorkspaceCommandPaths(req.body),
+      { hasExplicitGrant: () => access.canUser(companyId, req.actor.userId, "workspace_commands:manage") },
+    );
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, companyId);
     }
@@ -3092,7 +3097,12 @@ export function issueRoutes(
       return;
     }
     assertCompanyAccess(req, parent.companyId);
-    assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    await assertCanMutateHostWorkspaceCommands(
+      req,
+      parent.companyId,
+      collectIssueWorkspaceCommandPaths(req.body),
+      { hasExplicitGrant: () => access.canUser(parent.companyId, req.actor.userId, "workspace_commands:manage") },
+    );
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, parent.companyId);
     }
@@ -3237,7 +3247,12 @@ export function issueRoutes(
       return;
     }
     assertCompanyAccess(req, existing.companyId);
-    assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    await assertCanMutateHostWorkspaceCommands(
+      req,
+      existing.companyId,
+      collectIssueWorkspaceCommandPaths(req.body),
+      { hasExplicitGrant: () => access.canUser(existing.companyId, req.actor.userId, "workspace_commands:manage") },
+    );
     if (!(await assertAgentIssueMutationAllowed(req, res, existing))) return;
 
     const actor = getActorInfo(req);

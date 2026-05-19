@@ -13,7 +13,7 @@ import {
 import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
 import { trackProjectCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
-import { projectService, logActivity, workspaceOperationService } from "../services/index.js";
+import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
 import { conflict, forbidden } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
@@ -24,7 +24,7 @@ import {
   stopRuntimeServicesForProjectWorkspace,
 } from "../services/workspace-runtime.js";
 import {
-  assertNoAgentHostWorkspaceCommandMutation,
+  assertCanMutateHostWorkspaceCommands,
   collectProjectExecutionWorkspaceCommandPaths,
   collectProjectWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
@@ -41,6 +41,7 @@ const SHARED_WORKSPACE_STOP_AND_RESTART_ACTIONS = new Set(["stop", "restart"]);
 export function projectRoutes(db: Db) {
   const router = Router();
   const svc = projectService(db);
+  const access = accessService(db);
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
@@ -127,12 +128,14 @@ export function projectRoutes(db: Db) {
       companyId,
       readProjectPolicyEnvironmentId(projectData.executionWorkspacePolicy),
     );
-    assertNoAgentHostWorkspaceCommandMutation(
+    await assertCanMutateHostWorkspaceCommands(
       req,
+      companyId,
       [
         ...collectProjectExecutionWorkspaceCommandPaths(projectData.executionWorkspacePolicy),
         ...collectProjectWorkspaceCommandPaths(workspace, "workspace"),
       ],
+      { hasExplicitGrant: () => access.canUser(companyId, req.actor.userId, "workspace_commands:manage") },
     );
     if (projectData.env !== undefined) {
       projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
@@ -192,9 +195,11 @@ export function projectRoutes(db: Db) {
     }
     assertCompanyAccess(req, existing.companyId);
     const body = { ...req.body };
-    assertNoAgentHostWorkspaceCommandMutation(
+    await assertCanMutateHostWorkspaceCommands(
       req,
+      existing.companyId,
       collectProjectExecutionWorkspaceCommandPaths(body.executionWorkspacePolicy),
+      { hasExplicitGrant: () => access.canUser(existing.companyId, req.actor.userId, "workspace_commands:manage") },
     );
     await assertProjectEnvironmentSelection(
       existing.companyId,
@@ -263,9 +268,11 @@ export function projectRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
-    assertNoAgentHostWorkspaceCommandMutation(
+    await assertCanMutateHostWorkspaceCommands(
       req,
+      existing.companyId,
       collectProjectWorkspaceCommandPaths(req.body),
+      { hasExplicitGrant: () => access.canUser(existing.companyId, req.actor.userId, "workspace_commands:manage") },
     );
     const workspace = await svc.createWorkspace(id, req.body);
     if (!workspace) {
@@ -305,9 +312,11 @@ export function projectRoutes(db: Db) {
         return;
       }
       assertCompanyAccess(req, existing.companyId);
-      assertNoAgentHostWorkspaceCommandMutation(
+      await assertCanMutateHostWorkspaceCommands(
         req,
+        existing.companyId,
         collectProjectWorkspaceCommandPaths(req.body),
+        { hasExplicitGrant: () => access.canUser(existing.companyId, req.actor.userId, "workspace_commands:manage") },
       );
       const workspaceExists = (await svc.listWorkspaces(id)).some((workspace) => workspace.id === workspaceId);
       if (!workspaceExists) {

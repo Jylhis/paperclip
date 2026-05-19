@@ -40,6 +40,35 @@ function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: strin
   return paths;
 }
 
+function hasPrivilegedBoardWorkspaceCommandRole(req: Request, companyId: string) {
+  if (req.actor.type !== "board") return false;
+  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+  const membership = req.actor.memberships?.find((item) => item.companyId === companyId);
+  return membership?.status === "active" && (membership.membershipRole === "owner" || membership.membershipRole === "admin");
+}
+
+export async function assertCanMutateHostWorkspaceCommands(
+  req: Request,
+  companyId: string,
+  paths: string[],
+  options: { hasExplicitGrant?: () => Promise<boolean> } = {},
+) {
+  if (paths.length === 0) return;
+
+  if (req.actor.type === "agent") {
+    throw forbidden(
+      `Agent keys cannot modify host-executed workspace commands (${paths.join(", ")}).`,
+    );
+  }
+
+  if (hasPrivilegedBoardWorkspaceCommandRole(req, companyId)) return;
+  if (await options.hasExplicitGrant?.()) return;
+
+  throw forbidden(
+    `Missing permission to modify host-executed workspace commands (${paths.join(", ")}).`,
+  );
+}
+
 export function assertNoAgentHostWorkspaceCommandMutation(req: Request, paths: string[]) {
   if (req.actor.type !== "agent" || paths.length === 0) return;
   throw forbidden(
@@ -71,9 +100,14 @@ export function collectProjectWorkspaceCommandPaths(
   prefix = "",
 ): string[] {
   if (!isRecord(workspacePatch)) return [];
-  return hasOwn(workspacePatch, "cleanupCommand")
-    ? [prefixPath(prefix, "cleanupCommand")]
-    : [];
+  const paths: string[] = [];
+  if (hasOwn(workspacePatch, "setupCommand")) {
+    paths.push(prefixPath(prefix, "setupCommand"));
+  }
+  if (hasOwn(workspacePatch, "cleanupCommand")) {
+    paths.push(prefixPath(prefix, "cleanupCommand"));
+  }
+  return paths;
 }
 
 export function collectIssueWorkspaceCommandPaths(input: {

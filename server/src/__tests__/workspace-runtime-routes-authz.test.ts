@@ -25,6 +25,10 @@ const mockEnvironmentService = vi.hoisted(() => ({
   getById: vi.fn(),
 }));
 
+const mockAccessService = vi.hoisted(() => ({
+  canUser: vi.fn(),
+}));
+
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
@@ -36,6 +40,7 @@ vi.mock("../telemetry.js", () => ({
 }));
 
 vi.mock("../services/index.js", () => ({
+  accessService: () => mockAccessService,
   environmentService: () => mockEnvironmentService,
   executionWorkspaceService: () => mockExecutionWorkspaceService,
   logActivity: mockLogActivity,
@@ -62,6 +67,7 @@ function registerWorkspaceRouteMocks() {
   }));
 
   vi.doMock("../services/index.js", () => ({
+    accessService: () => mockAccessService,
     environmentService: () => mockEnvironmentService,
     executionWorkspaceService: () => mockExecutionWorkspaceService,
     logActivity: mockLogActivity,
@@ -192,6 +198,7 @@ describe.sequential("workspace runtime service route authorization", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAccessService.canUser.mockResolvedValue(false);
     mockEnvironmentService.getById.mockResolvedValue(null);
     mockSecretService.normalizeEnvBindingsForPersistence.mockImplementation(async (_companyId, env) => env);
     mockProjectService.resolveByReference.mockResolvedValue({ ambiguous: false, project: null });
@@ -417,6 +424,58 @@ describe.sequential("workspace runtime service route authorization", () => {
     expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
   });
 
+  it("rejects non-admin board callers that update project workspace host commands", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject());
+    const app = await createProjectApp({
+      type: "board",
+      userId: "operator-1",
+      companyIds: ["company-1"],
+      source: "session",
+      isInstanceAdmin: false,
+      memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
+    });
+
+    const res = await request(app)
+      .patch(`/api/projects/${projectId}/workspaces/${workspaceId}`)
+      .send({
+        setupCommand: "touch /tmp/paperclip-setup-rce",
+        cleanupCommand: "rm -rf /tmp/paperclip-rce",
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("Missing permission to modify host-executed workspace commands");
+    expect(mockProjectService.updateWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("allows company admins to update project workspace host commands", async () => {
+    mockProjectService.getById.mockResolvedValue(buildProject());
+    const app = await createProjectApp({
+      type: "board",
+      userId: "admin-1",
+      companyIds: ["company-1"],
+      source: "session",
+      isInstanceAdmin: false,
+      memberships: [{ companyId: "company-1", membershipRole: "admin", status: "active" }],
+    });
+
+    const res = await request(app)
+      .patch(`/api/projects/${projectId}/workspaces/${workspaceId}`)
+      .send({
+        setupCommand: "pnpm install",
+        cleanupCommand: "pkill -f vite || true",
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockProjectService.updateWorkspace).toHaveBeenCalledWith(
+      projectId,
+      workspaceId,
+      expect.objectContaining({
+        setupCommand: "pnpm install",
+        cleanupCommand: "pkill -f vite || true",
+      }),
+    );
+  });
+
   it("allows board callers through the project workspace runtime auth gate", async () => {
     mockProjectService.getById.mockResolvedValue(null);
     const app = await createProjectApp({
@@ -480,6 +539,30 @@ describe.sequential("workspace runtime service route authorization", () => {
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("host-executed workspace commands");
+    expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin board callers that patch execution workspace command config", async () => {
+    mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
+    const app = await createExecutionWorkspaceApp({
+      type: "board",
+      userId: "operator-1",
+      companyIds: ["company-1"],
+      source: "session",
+      isInstanceAdmin: false,
+      memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
+    });
+
+    const res = await request(app)
+      .patch(`/api/execution-workspaces/${executionWorkspaceId}`)
+      .send({
+        config: {
+          cleanupCommand: "rm -rf /tmp/paperclip-rce",
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("Missing permission to modify host-executed workspace commands");
     expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
   });
 

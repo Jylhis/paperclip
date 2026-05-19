@@ -72,6 +72,7 @@ describe("human invite roles", () => {
       { permissionKey: "users:manage_permissions", scope: null },
       { permissionKey: "tasks:assign", scope: null },
       { permissionKey: "joins:approve", scope: null },
+      { permissionKey: "workspace_commands:manage", scope: null },
     ]);
   });
 

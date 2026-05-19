@@ -51,7 +51,7 @@ import {
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo } from "./authz.js";
 import {
-  assertNoAgentHostWorkspaceCommandMutation,
+  assertCanMutateHostWorkspaceCommands,
   collectAgentAdapterWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -919,9 +919,9 @@ export function agentRoutes(
     return entries;
   }
 
-  function assertNoAgentRuntimeConfigAdapterConfigMutation(req: Request, runtimeConfig: unknown) {
+  async function assertNoAgentRuntimeConfigAdapterConfigMutation(req: Request, companyId: string, runtimeConfig: unknown) {
     for (const entry of listRuntimeModelProfileAdapterConfigs(runtimeConfig)) {
-      assertNoAgentAdapterConfigMutation(req, entry.adapterConfig, entry.path);
+      await assertNoAgentAdapterConfigMutation(req, companyId, entry.adapterConfig, entry.path);
     }
   }
 
@@ -1163,15 +1163,18 @@ export function agentRoutes(
     return KNOWN_INSTRUCTIONS_BUNDLE_KEYS.some((key) => adapterConfig[key] !== undefined);
   }
 
-  function assertNoAgentAdapterConfigMutation(
+  async function assertNoAgentAdapterConfigMutation(
     req: Request,
+    companyId: string,
     adapterConfig: Record<string, unknown>,
     path = "adapterConfig",
   ) {
     assertNoAgentInstructionsConfigMutation(req, adapterConfig, path);
-    assertNoAgentHostWorkspaceCommandMutation(
+    await assertCanMutateHostWorkspaceCommands(
       req,
+      companyId,
       collectAgentAdapterWorkspaceCommandPaths(adapterConfig, path),
+      { hasExplicitGrant: () => access.canUser(companyId, req.actor.userId, "workspace_commands:manage") },
     );
   }
 
@@ -1969,8 +1972,8 @@ export function agentRoutes(
       hireInput.adapterType,
       rawHireAdapterConfig,
     );
-    assertNoAgentAdapterConfigMutation(req, rawHireAdapterConfig);
-    assertNoAgentRuntimeConfigAdapterConfigMutation(req, hireInput.runtimeConfig);
+    await assertNoAgentAdapterConfigMutation(req, companyId, rawHireAdapterConfig);
+    await assertNoAgentRuntimeConfigAdapterConfigMutation(req, companyId, hireInput.runtimeConfig);
     const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
       hireInput.adapterType,
       rawHireAdapterConfig,
@@ -2155,8 +2158,8 @@ export function agentRoutes(
       createInput.adapterType,
       rawCreateAdapterConfig,
     );
-    assertNoAgentAdapterConfigMutation(req, rawCreateAdapterConfig);
-    assertNoAgentRuntimeConfigAdapterConfigMutation(req, createInput.runtimeConfig);
+    await assertNoAgentAdapterConfigMutation(req, companyId, rawCreateAdapterConfig);
+    await assertNoAgentRuntimeConfigAdapterConfigMutation(req, companyId, createInput.runtimeConfig);
     const requestedAdapterConfig = applyCreateDefaultsByAdapterType(
       createInput.adapterType,
       rawCreateAdapterConfig,
@@ -2570,7 +2573,7 @@ export function agentRoutes(
         res.status(422).json({ error: "adapterConfig must be an object" });
         return;
       }
-      assertNoAgentAdapterConfigMutation(req, adapterConfig);
+      await assertNoAgentAdapterConfigMutation(req, existing.companyId, adapterConfig);
       const changingInstructionsConfig = adapterConfigTouchesInstructionsConfig(adapterConfig);
       if (changingInstructionsConfig) {
         await assertCanManageInstructionsPath(req, existing);
@@ -2588,7 +2591,7 @@ export function agentRoutes(
         res.status(422).json({ error: "runtimeConfig must be an object" });
         return;
       }
-      assertNoAgentRuntimeConfigAdapterConfigMutation(req, runtimeConfig);
+      await assertNoAgentRuntimeConfigAdapterConfigMutation(req, existing.companyId, runtimeConfig);
       requestedRuntimeConfig = runtimeConfig;
     }
     const touchesAdapterConfiguration =

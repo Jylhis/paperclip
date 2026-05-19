@@ -6,6 +6,7 @@ import { ArrowLeft, Check, ExternalLink, Loader2, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ChoosePathButton } from "../components/PathInstructionsModal";
+import { accessApi, type CurrentBoardAccess } from "../api/access";
 import { projectsApi } from "../api/projects";
 import {
   buildWorkspaceRuntimeControlSections,
@@ -113,6 +114,14 @@ function parseRuntimeConfigJson(value: string) {
       error: error instanceof Error ? error.message : "Invalid JSON.",
     };
   }
+}
+
+
+function canManageHostWorkspaceCommands(access: CurrentBoardAccess | undefined, companyId: string | null | undefined) {
+  if (!access || !companyId) return false;
+  if (access.source === "local_implicit" || access.isInstanceAdmin) return true;
+  const membership = access.memberships?.find((item) => item.companyId === companyId);
+  return membership?.status === "active" && (membership.membershipRole === "owner" || membership.membershipRole === "admin");
 }
 
 function buildWorkspacePatch(initialState: WorkspaceFormState, nextState: WorkspaceFormState) {
@@ -238,6 +247,11 @@ export function ProjectWorkspaceDetail() {
     queryFn: () => projectsApi.get(routeProjectRef, lookupCompanyId),
     enabled: canFetchProject,
   });
+  const boardAccessQuery = useQuery({
+    queryKey: queryKeys.access.currentBoardAccess,
+    queryFn: () => accessApi.getCurrentBoardAccess(),
+    retry: false,
+  });
 
   const project = projectQuery.data ?? null;
   const workspace = useMemo(
@@ -350,6 +364,10 @@ export function ProjectWorkspaceDetail() {
     canRunJobs: canRunWorkspaceCommands,
   });
   const pendingRuntimeAction = controlRuntimeServices.isPending ? controlRuntimeServices.variables ?? null : null;
+  const canEditHostWorkspaceCommands = canManageHostWorkspaceCommands(boardAccessQuery.data, project.companyId);
+  const commandFieldHint = canEditHostWorkspaceCommands
+    ? undefined
+    : "Only company owners/admins or users with the host workspace command grant can edit this host-executed command.";
 
   const saveChanges = () => {
     const validationError = validateWorkspaceForm(form);
@@ -358,6 +376,10 @@ export function ProjectWorkspaceDetail() {
       return;
     }
     const patch = buildWorkspacePatch(initialState, form);
+    if (!canEditHostWorkspaceCommands) {
+      delete patch.setupCommand;
+      delete patch.cleanupCommand;
+    }
     if (Object.keys(patch).length === 0) return;
     updateWorkspace.mutate(patch);
   };
@@ -527,20 +549,22 @@ export function ProjectWorkspaceDetail() {
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Setup command" hint="Runs when this workspace needs custom bootstrap">
+                <Field label="Setup command" hint={commandFieldHint ?? "Runs when this workspace needs custom bootstrap"}>
                   <textarea
-                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     value={form.setupCommand}
                     onChange={(event) => setForm((current) => current ? { ...current, setupCommand: event.target.value } : current)}
                     placeholder="pnpm install && pnpm dev"
+                    disabled={!canEditHostWorkspaceCommands}
                   />
                 </Field>
-                <Field label="Cleanup command" hint="Runs before project-level execution workspace teardown">
+                <Field label="Cleanup command" hint={commandFieldHint ?? "Runs before project-level execution workspace teardown"}>
                   <textarea
-                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none"
+                    className="min-h-28 w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-sm outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     value={form.cleanupCommand}
                     onChange={(event) => setForm((current) => current ? { ...current, cleanupCommand: event.target.value } : current)}
                     placeholder="pkill -f vite || true"
+                    disabled={!canEditHostWorkspaceCommands}
                   />
                 </Field>
               </div>

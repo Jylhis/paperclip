@@ -10,7 +10,7 @@ import {
 } from "@paperclipai/shared";
 import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
-import { executionWorkspaceService, logActivity, workspaceOperationService } from "../services/index.js";
+import { accessService, executionWorkspaceService, logActivity, workspaceOperationService } from "../services/index.js";
 import { mergeExecutionWorkspaceConfig, readExecutionWorkspaceConfig } from "../services/execution-workspaces.js";
 import { parseProjectExecutionWorkspacePolicy } from "../services/execution-workspace-policy.js";
 import { readProjectWorkspaceRuntimeConfig } from "../services/project-workspace-runtime-config.js";
@@ -25,7 +25,7 @@ import {
 } from "../services/workspace-runtime.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import {
-  assertNoAgentHostWorkspaceCommandMutation,
+  assertCanMutateHostWorkspaceCommands,
   collectExecutionWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { assertCanManageExecutionWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
@@ -36,6 +36,7 @@ const WORKSPACE_CONTROL_OUTPUT_MAX_CHARS = 256 * 1024;
 export function executionWorkspaceRoutes(db: Db) {
   const router = Router();
   const svc = executionWorkspaceService(db);
+  const access = accessService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
 
   router.get("/companies/:companyId/execution-workspaces", async (req, res) => {
@@ -446,12 +447,14 @@ export function executionWorkspaceRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, existing.companyId);
-    assertNoAgentHostWorkspaceCommandMutation(
+    await assertCanMutateHostWorkspaceCommands(
       req,
+      existing.companyId,
       collectExecutionWorkspaceCommandPaths({
         config: req.body.config,
         metadata: req.body.metadata,
       }),
+      { hasExplicitGrant: () => access.canUser(existing.companyId, req.actor.userId, "workspace_commands:manage") },
     );
     const patch: Record<string, unknown> = {
       ...(req.body.name === undefined ? {} : { name: req.body.name }),
