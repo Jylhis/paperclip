@@ -34,6 +34,7 @@ import {
 } from "../lib/issueDetailBreadcrumb";
 import { resolveIssueActiveRun, shouldTrackIssueActiveRun } from "../lib/issueActiveRun";
 import { getIssueDetailQueryOptions } from "../lib/issueDetailCache";
+import { resolveSafeChatImageOpenUrl } from "../lib/chatImageUrl";
 import {
   hasBlockingShortcutDialog,
   resolveIssueDetailGoKeyAction,
@@ -2825,8 +2826,13 @@ export function IssueDetail() {
         setGalleryIndex(idx);
         setGalleryOpen(true);
       } else {
-        // Image not in attachment list — open in new tab
-        window.open(src, "_blank");
+        // Image not in attachment list — open only safe image URLs in a new tab.
+        const safeUrl = resolveSafeChatImageOpenUrl(src);
+        if (!safeUrl) return;
+        const opened = window.open(safeUrl, "_blank", "noopener,noreferrer");
+        if (opened) {
+          opened.opener = null;
+        }
       }
     },
     [imageAttachments],
