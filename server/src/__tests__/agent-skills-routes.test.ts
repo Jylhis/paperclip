@@ -239,7 +239,7 @@ describe.sequential("agent skill routes", () => {
       ambiguous: false,
       agent: makeAgent("claude_local"),
     });
-    mockSecretService.resolveAdapterConfigForRuntime.mockResolvedValue({ config: { env: {} } });
+    mockSecretService.resolveAdapterConfigForRuntime.mockResolvedValue({ config: { env: {} }, secretKeys: new Set() });
     mockCompanySkillService.listRuntimeSkillEntries.mockResolvedValue([
       {
         key: "paperclipai/paperclip/paperclip",
@@ -360,6 +360,44 @@ describe.sequential("agent skill routes", () => {
     );
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
+  });
+
+  it("redacts skill paths when HOME is secret-bound", async () => {
+    mockAgentService.getById.mockResolvedValue(makeAgent("cursor"));
+    mockSecretService.resolveAdapterConfigForRuntime.mockResolvedValue({
+      config: { env: { HOME: "/tmp/super-secret-home" } },
+      secretKeys: new Set(["HOME"]),
+    });
+    mockAdapter.listSkills.mockResolvedValue({
+      adapterType: "cursor",
+      supported: true,
+      mode: "persistent",
+      desiredSkills: ["paperclipai/paperclip/paperclip"],
+      entries: [{
+        key: "paperclipai/paperclip/paperclip",
+        runtimeName: "paperclip",
+        desired: true,
+        managed: true,
+        state: "installed",
+        sourcePath: "/tmp/source",
+        targetPath: "/tmp/super-secret-home/.cursor/skills/paperclip",
+        detail: "Installed in /tmp/super-secret-home/.cursor/skills/paperclip",
+      }],
+      warnings: [],
+    });
+
+    const res = await requestApp(
+      await createApp(),
+      (baseUrl) => request(baseUrl)
+        .get("/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1"),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.entries[0]).toMatchObject({
+      sourcePath: null,
+      targetPath: null,
+      detail: "Path details hidden because HOME is secret-bound.",
+    });
   });
 
   it("passes ACPX Claude config through the agent skill listing route", async () => {

@@ -116,6 +116,18 @@ function readLiveRunsQueryInt(value: unknown, max: number, fallback = 0) {
   return Math.min(max, Math.trunc(parsed));
 }
 
+function sanitizeSkillSnapshotForResponse(snapshot: AgentSkillSnapshot): AgentSkillSnapshot {
+  return {
+    ...snapshot,
+    entries: snapshot.entries.map((entry) => ({
+      ...entry,
+      sourcePath: null,
+      targetPath: null,
+      detail: entry.detail ? "Path details hidden because HOME is secret-bound." : entry.detail,
+    })),
+  };
+}
+
 export function agentRoutes(
   db: Db,
   options: { pluginWorkerManager?: PluginWorkerManager } = {},
@@ -1503,7 +1515,7 @@ export function agentRoutes(
       adapterType: agent.adapterType,
       config: runtimeSkillConfig,
     });
-    res.json(snapshot);
+    res.json(sanitizeSkillSnapshotForResponse(snapshot));
   });
 
   router.post(
@@ -1597,7 +1609,7 @@ export function agentRoutes(
         },
       });
 
-      res.json(snapshot);
+      res.json(sanitizeSkillSnapshotForResponse(snapshot));
     },
   );
 
