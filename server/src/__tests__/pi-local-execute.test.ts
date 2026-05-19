@@ -93,7 +93,7 @@ describe("pi_local execute", () => {
     }
   });
 
-  it("prepends installed skill bin/ dirs to the spawned Pi child PATH", async () => {
+  it("appends installed skill bin/ dirs to the spawned Pi child PATH", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-pi-path-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "pi");
@@ -140,8 +140,9 @@ describe("pi_local execute", () => {
 
       const capturedPath = await fs.readFile(envDumpPath, "utf8");
       const entries = capturedPath.split(path.delimiter);
-      expect(entries[0]).toBe(skillBinDir);
+      expect(entries).toContain(skillBinDir);
       expect(entries.filter((entry) => entry === skillBinDir)).toHaveLength(1);
+      expect(entries[entries.length - 1]).toBe(skillBinDir);
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -204,4 +205,5 @@ describe("pi_local execute", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
 });

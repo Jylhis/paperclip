@@ -338,7 +338,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const existing = basePath.split(path.delimiter).filter(Boolean);
     const additions = skillBinDirs.filter((dir) => !existing.includes(dir));
     if (additions.length > 0) {
-      mergedEnv[pathKey] = [...additions, basePath].filter(Boolean).join(path.delimiter);
+      mergedEnv[pathKey] = [basePath, ...additions].filter(Boolean).join(path.delimiter);
     }
   }
   const runtimeEnv = Object.fromEntries(
