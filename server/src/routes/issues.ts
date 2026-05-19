@@ -3267,9 +3267,14 @@ export function issueRoutes(
       res.status(400).json({ error: "Follow-up intent requires a comment" });
       return;
     }
+    const directClosedToTodoStatusRequested =
+      req.body.status === "todo" && isClosedIssueStatus(existing.status);
     if (resumeRequested === true && !(await assertExplicitResumeIntentAllowed(req, res, existing))) return;
     if (resumeRequested !== true && reopenRequested === true && req.actor.type === "agent") {
       if (!(await assertExplicitResumeIntentAllowed(req, res, existing))) return;
+    }
+    if (directClosedToTodoStatusRequested && !(await assertExplicitResumeIntentAllowed(req, res, existing))) {
+      return;
     }
     await assertIssueEnvironmentSelection(existing.companyId, updateFields.executionWorkspaceSettings?.environmentId);
     const requestedAssigneeAgentId =
