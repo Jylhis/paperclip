@@ -250,7 +250,7 @@ export const companyPortabilityPreviewSchema = z.object({
 export type CompanyPortabilityPreview = z.infer<typeof companyPortabilityPreviewSchema>;
 
 export const portabilityAdapterOverrideSchema = z.object({
-  adapterType: z.string().min(1),
+  adapterType: z.enum(["claude_local", "codex_local", "gemini_local", "opencode_local", "cursor"]),
   adapterConfig: z.record(z.string(), z.unknown()).optional(),
 });
 
