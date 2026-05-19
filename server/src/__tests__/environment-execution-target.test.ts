@@ -178,4 +178,46 @@ describe("resolveEnvironmentExecutionTarget", () => {
     });
     expect(target).not.toHaveProperty("paperclipApiUrl");
   });
+
+  it("does not resolve sandbox targets for acpx_local", async () => {
+    const target = await resolveEnvironmentExecutionTarget({
+      db: {} as never,
+      companyId: "company-1",
+      adapterType: "acpx_local",
+      environment: {
+        id: "env-1",
+        driver: "sandbox",
+        config: {
+          provider: "fake-plugin",
+        },
+      },
+      leaseId: "lease-1",
+      leaseMetadata: {},
+      lease: null,
+      environmentRuntime: null,
+    });
+
+    expect(target).toBeNull();
+    expect(mockResolveEnvironmentDriverConfigForRuntime).not.toHaveBeenCalled();
+  });
+
+  it("does not resolve SSH targets for acpx_local", async () => {
+    const target = await resolveEnvironmentExecutionTarget({
+      db: {} as never,
+      companyId: "company-1",
+      adapterType: "acpx_local",
+      environment: {
+        id: "env-ssh-1",
+        driver: "ssh",
+        config: {},
+      },
+      leaseId: "lease-ssh-1",
+      leaseMetadata: {},
+      lease: null,
+      environmentRuntime: null,
+    });
+
+    expect(target).toBeNull();
+    expect(mockResolveEnvironmentDriverConfigForRuntime).not.toHaveBeenCalled();
+  });
 });
