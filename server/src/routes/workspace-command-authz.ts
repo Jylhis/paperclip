@@ -40,6 +40,23 @@ function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: strin
   return paths;
 }
 
+function collectWorkspaceRuntimeCommandPaths(raw: unknown, prefix: string): string[] {
+  if (!isRecord(raw)) return [];
+  const paths: string[] = [];
+  const collectCommands = (entries: unknown, entriesPrefix: string) => {
+    if (!Array.isArray(entries)) return;
+    entries.forEach((entry, index) => {
+      if (isRecord(entry) && hasOwn(entry, "command")) {
+        paths.push(`${entriesPrefix}.${index}.command`);
+      }
+    });
+  };
+  collectCommands(raw.services, prefixPath(prefix, "services"));
+  collectCommands(raw.jobs, prefixPath(prefix, "jobs"));
+  collectCommands(raw.commands, prefixPath(prefix, "commands"));
+  return paths;
+}
+
 export function assertNoAgentHostWorkspaceCommandMutation(req: Request, paths: string[]) {
   if (req.actor.type !== "agent" || paths.length === 0) return;
   throw forbidden(
@@ -52,10 +69,16 @@ export function collectAgentAdapterWorkspaceCommandPaths(
   prefix = "adapterConfig",
 ): string[] {
   if (!isRecord(adapterConfig)) return [];
-  return collectWorkspaceStrategyCommandPaths(
-    adapterConfig.workspaceStrategy,
-    `${prefix}.workspaceStrategy`,
-  );
+  return [
+    ...collectWorkspaceStrategyCommandPaths(
+      adapterConfig.workspaceStrategy,
+      `${prefix}.workspaceStrategy`,
+    ),
+    ...collectWorkspaceRuntimeCommandPaths(
+      adapterConfig.workspaceRuntime,
+      `${prefix}.workspaceRuntime`,
+    ),
+  ];
 }
 
 export function collectProjectExecutionWorkspaceCommandPaths(policy: unknown): string[] {
