@@ -36,6 +36,14 @@ export function routineRoutes(
     }
   }
 
+  function redactRoutineEnvForAgent<T extends { env?: unknown }>(req: Request, routine: T): T {
+    if (req.actor.type !== "agent") return routine;
+    return {
+      ...routine,
+      env: undefined,
+    };
+  }
+
   function assertCanManageCompanyRoutine(req: Request, companyId: string, assigneeAgentId?: string | null) {
     assertCompanyAccess(req, companyId);
     if (req.actor.type === "board") return;
@@ -90,7 +98,7 @@ export function routineRoutes(
     assertCompanyAccess(req, companyId);
     const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
     const result = await svc.list(companyId, { projectId });
-    res.json(result);
+    res.json(result.map((routine) => redactRoutineEnvForAgent(req, routine)));
   });
 
   router.post("/companies/:companyId/routines", validate(createRoutineSchema), async (req, res) => {
@@ -136,7 +144,7 @@ export function routineRoutes(
       return;
     }
     assertCompanyAccess(req, detail.companyId);
-    res.json(detail);
+    res.json(redactRoutineEnvForAgent(req, detail));
   });
 
   router.get("/routines/:id/revisions", async (req, res) => {
