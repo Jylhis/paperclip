@@ -1,5 +1,7 @@
-import { pgTable, uuid, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, uniqueIndex, pgEnum } from "drizzle-orm/pg-core";
 import { authUsers } from "./auth.js";
+
+export const boardApiKeyRequestedAccessEnum = pgEnum("board_api_key_requested_access", ["board", "instance_admin_required"]);
 
 export const boardApiKeys = pgTable(
   "board_api_keys",
@@ -11,6 +13,7 @@ export const boardApiKeys = pgTable(
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
+    requestedAccess: boardApiKeyRequestedAccessEnum("requested_access").notNull().default("board"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

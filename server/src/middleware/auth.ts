@@ -118,7 +118,8 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
           userEmail: access.user?.email ?? null,
           companyIds: access.companyIds,
           memberships: access.memberships,
-          isInstanceAdmin: access.isInstanceAdmin,
+          isInstanceAdmin:
+            access.isInstanceAdmin && boardKey.requestedAccess === "instance_admin_required",
           keyId: boardKey.id,
           runId: runIdHeader || undefined,
           source: "board_key",

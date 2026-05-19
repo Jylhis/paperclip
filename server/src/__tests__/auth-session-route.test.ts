@@ -133,4 +133,50 @@ describe("actorMiddleware authenticated session profile", () => {
       emailVerified: true,
     });
   });
+
+
+  it("downgrades board-scoped CLI tokens even when approver is an instance admin", async () => {
+    const db = {
+      select: vi
+        .fn()
+        .mockImplementationOnce(() => createSelectChain([{
+          id: "board-key-1",
+          userId: "admin-1",
+          keyHash: "hash",
+          name: "cli",
+          requestedAccess: "board",
+          revokedAt: null,
+          expiresAt: new Date(Date.now() + 60_000),
+        }]))
+        .mockImplementationOnce(() => createSelectChain([{ id: "admin-1", name: "Admin", email: "admin@example.com" }]))
+        .mockImplementationOnce(() => createSelectChain([]))
+        .mockImplementationOnce(() => createSelectChain([{ id: "role-1" }])),
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    } as any;
+
+    const app = express();
+    app.use(
+      actorMiddleware(db, {
+        deploymentMode: "authenticated",
+        resolveSession: async () => null,
+      }),
+    );
+    app.get("/actor", (req, res) => {
+      res.json(req.actor);
+    });
+
+    const res = await request(app).get("/actor").set("authorization", "Bearer board-token");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      type: "board",
+      userId: "admin-1",
+      source: "board_key",
+      isInstanceAdmin: false,
+    });
+  });
 });

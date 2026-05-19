@@ -287,6 +287,7 @@ export function boardAuthService(db: Db) {
             name: challenge.pendingKeyName,
             keyHash: challenge.pendingKeyHash,
             expiresAt: boardApiKeyExpiresAt(),
+            requestedAccess: challenge.requestedAccess,
           })
           .returning()
           .then((rows) => rows[0]);
