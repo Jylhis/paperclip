@@ -88,8 +88,24 @@ describe("Cloudflare sandbox provider plugin", () => {
       ok: false,
       errors: [
         "bridgeBaseUrl must use HTTPS unless it points at localhost.",
+        "bridgeBaseUrl host must be localhost or a Cloudflare Worker hostname (.workers.dev or .cloudflareworkers.com).",
         "reuseLease requires keepAlive for Cloudflare sandboxes.",
         "requestedCwd must be an absolute POSIX path.",
+      ],
+    });
+  });
+
+  it("rejects bridge base urls with path/query/hash components", async () => {
+    await expect(plugin.definition.onEnvironmentValidateConfig?.({
+      driverKey: "cloudflare",
+      config: {
+        bridgeBaseUrl: "https://bridge.example.workers.dev/api?x=1#y",
+        bridgeAuthToken: "secret-ref://bridge-token",
+      },
+    })).resolves.toEqual({
+      ok: false,
+      errors: [
+        "bridgeBaseUrl must not include path, query, or hash components.",
       ],
     });
   });

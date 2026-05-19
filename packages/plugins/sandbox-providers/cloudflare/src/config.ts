@@ -5,6 +5,7 @@ const DEFAULT_SLEEP_AFTER = "10m";
 const DEFAULT_TIMEOUT_MS = 300_000;
 const DEFAULT_BRIDGE_REQUEST_TIMEOUT_MS = 300_000;
 const LOCALHOST_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+const ALLOWED_REMOTE_BRIDGE_HOST_SUFFIXES = [".workers.dev", ".cloudflareworkers.com"];
 
 function readTrimmedString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
@@ -21,6 +22,10 @@ function readInteger(value: unknown, fallback: number): number {
 
 function isLocalBridgeHost(url: URL): boolean {
   return LOCALHOST_HOSTNAMES.has(url.hostname);
+}
+
+function isAllowedRemoteBridgeHost(url: URL): boolean {
+  return ALLOWED_REMOTE_BRIDGE_HOST_SUFFIXES.some((suffix) => url.hostname.endsWith(suffix));
 }
 
 export function parseCloudflareDriverConfig(raw: Record<string, unknown>): CloudflareDriverConfig {
@@ -50,6 +55,14 @@ export function validateCloudflareDriverConfig(config: CloudflareDriverConfig): 
       const url = new URL(config.bridgeBaseUrl);
       if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalBridgeHost(url))) {
         errors.push("bridgeBaseUrl must use HTTPS unless it points at localhost.");
+      }
+      if (url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
+        errors.push("bridgeBaseUrl must not include path, query, or hash components.");
+      }
+      if (!isLocalBridgeHost(url) && !isAllowedRemoteBridgeHost(url)) {
+        errors.push(
+          "bridgeBaseUrl host must be localhost or a Cloudflare Worker hostname (.workers.dev or .cloudflareworkers.com).",
+        );
       }
     } catch {
       errors.push("bridgeBaseUrl must be a valid URL.");
