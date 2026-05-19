@@ -1,5 +1,3 @@
-import fs from "node:fs/promises";
-import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdapterExecutionTarget } from "@paperclipai/adapter-utils/execution-target";
 
@@ -10,11 +8,7 @@ const {
   runAdapterExecutionTargetProcess,
   describeAdapterExecutionTarget,
   resolveAdapterExecutionTargetCwd,
-  prepareAdapterExecutionTargetRuntime,
-  prepareManagedCodexHome,
-  restoreWorkspace,
 } = vi.hoisted(() => {
-  const restoreWorkspace = vi.fn(async () => {});
   return {
     ensureAdapterExecutionTargetDirectory: vi.fn(async () => {}),
     ensureAdapterExecutionTargetCommandResolvable: vi.fn(async () => {}),
@@ -40,17 +34,6 @@ const {
       }
       return fallbackCwd;
     }),
-    prepareAdapterExecutionTargetRuntime: vi.fn(async () => ({
-      target: null,
-      workspaceRemoteDir: "/remote/workspace/.paperclip-runtime/runs/test/workspace",
-      runtimeRootDir: "/remote/workspace/.paperclip-runtime/runs/test/workspace/.paperclip-runtime/codex",
-      assetDirs: {
-        home: "/remote/workspace/.paperclip-runtime/runs/test/workspace/.paperclip-runtime/codex/home",
-      },
-      restoreWorkspace,
-    })),
-    prepareManagedCodexHome: vi.fn(async () => "/tmp/paperclip-managed-codex-home"),
-    restoreWorkspace,
   };
 });
 
@@ -66,15 +49,6 @@ vi.mock("@paperclipai/adapter-utils/execution-target", async () => {
     runAdapterExecutionTargetProcess,
     describeAdapterExecutionTarget,
     resolveAdapterExecutionTargetCwd,
-    prepareAdapterExecutionTargetRuntime,
-  };
-});
-
-vi.mock("./codex-home.js", async () => {
-  const actual = await vi.importActual<typeof import("./codex-home.js")>("./codex-home.js");
-  return {
-    ...actual,
-    prepareManagedCodexHome,
   };
 });
 
@@ -86,7 +60,7 @@ describe("codex remote environment diagnostics", () => {
     delete process.env.OPENAI_API_KEY;
   });
 
-  it("stages managed CODEX_HOME in an isolated runtime dir and keeps the probe cwd on the original remote workspace", async () => {
+  it("does not stage managed CODEX_HOME for remote hello probes without an API key", async () => {
     const remoteTarget: AdapterExecutionTarget = {
       kind: "remote",
       transport: "ssh",
@@ -114,26 +88,6 @@ describe("codex remote environment diagnostics", () => {
     });
 
     expect(result.status).toBe("pass");
-    expect(result.checks.some((check) => check.code === "codex_hello_probe_passed")).toBe(true);
-    expect(prepareManagedCodexHome).toHaveBeenCalledTimes(1);
-    expect(prepareAdapterExecutionTargetRuntime).toHaveBeenCalledTimes(1);
-    const runtimeCalls = prepareAdapterExecutionTargetRuntime.mock.calls as unknown as Array<[
-      {
-        workspaceLocalDir: string;
-        target?: { remoteCwd?: string };
-        workspaceRemoteDir?: string;
-      },
-    ]>;
-    const runtimeInput = runtimeCalls[0]?.[0];
-    expect(runtimeInput?.workspaceLocalDir).toContain(`${os.tmpdir()}/paperclip-codex-envtest-`);
-    expect(runtimeInput?.workspaceLocalDir).not.toBe("/remote/workspace");
-    expect(await fs.stat(runtimeInput!.workspaceLocalDir).catch(() => null)).toBeNull();
-    expect(runtimeInput?.target?.remoteCwd).toBe("/remote/workspace");
-    // `workspaceRemoteDir` is the base path passed to the runtime; the
-    // helper's per-run subdirectory is appended internally inside
-    // `prepareRemoteManagedRuntime`. Pre-building a per-run prefix here
-    // would double-nest the run id in the final path.
-    expect(runtimeInput?.workspaceRemoteDir).toBe("/remote/workspace");
     expect(runAdapterExecutionTargetProcess).toHaveBeenCalledTimes(1);
     const probeCall = runAdapterExecutionTargetProcess.mock.calls[0] as unknown as
       | [string, { kind: string; remoteCwd: string }, string, string[], { cwd: string; env: Record<string, string> }]
@@ -144,11 +98,10 @@ describe("codex remote environment diagnostics", () => {
     });
     expect(probeCall?.[4]).toMatchObject({
       cwd: "/remote/workspace",
-      env: expect.objectContaining({
-        CODEX_HOME: "/remote/workspace/.paperclip-runtime/runs/test/workspace/.paperclip-runtime/codex/home",
+      env: expect.not.objectContaining({
+        CODEX_HOME: expect.any(String),
       }),
     });
-    expect(restoreWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it("avoids /tmp CODEX_HOME for remote API-key hello probes", async () => {

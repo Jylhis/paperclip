@@ -17,14 +17,11 @@ import {
   resolveAdapterExecutionTargetCwd,
   prepareAdapterExecutionTargetRuntime,
 } from "@paperclipai/adapter-utils/execution-target";
-import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
 import { parseCodexJsonl } from "./parse.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
 import { buildCodexExecArgs } from "./codex-args.js";
-import { prepareManagedCodexHome } from "./codex-home.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -88,39 +85,10 @@ async function prepareCodexHelloProbe(input: {
   };
 
   if (input.targetIsRemote && !input.probeApiKey) {
-    const managedHome = await prepareManagedCodexHome(process.env, async () => {}, input.companyId, {
-      apiKey: null,
-    });
-    preparedRuntimeWorkspaceLocalDir = await fs.mkdtemp(
-      path.join(os.tmpdir(), `paperclip-codex-envtest-${input.runId}-`),
-    );
-    preparedRuntime = await prepareAdapterExecutionTargetRuntime({
-      runId: input.runId,
-      target: input.target,
-      adapterKey: "codex",
-      workspaceLocalDir: preparedRuntimeWorkspaceLocalDir,
-      // Pass `input.cwd` as the base (not a pre-built per-run subdir).
-      // `prepareRemoteManagedRuntime` itself appends
-      // `.paperclip-runtime/runs/<runId>/workspace` to whatever it gets, so
-      // pre-building a per-run path here would double-nest the run ID.
-      workspaceRemoteDir: input.cwd,
-      installCommand: SANDBOX_INSTALL_COMMAND,
-      detectCommand: input.command,
-      assets: [
-        {
-          key: "home",
-          localDir: managedHome,
-          followSymlinks: true,
-        },
-      ],
-    });
-
     return {
       command: input.command,
       args: input.args,
-      env: preparedRuntime.assetDirs.home
-        ? { ...input.env, CODEX_HOME: preparedRuntime.assetDirs.home }
-        : { ...input.env },
+      env: { ...input.env },
       cleanup,
     };
   }
