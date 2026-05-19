@@ -369,7 +369,7 @@ export function environmentRoutes(
     }
     const secretId = readSshEnvironmentPrivateKeySecretId(existing);
     if (secretId) {
-      await secrets.remove(secretId);
+      await secrets.removeInCompany(existing.companyId, secretId);
     }
     const actor = getActorInfo(req);
     await logActivity(db, {

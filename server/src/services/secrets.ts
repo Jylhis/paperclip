@@ -2136,6 +2136,13 @@ export function secretService(db: Db) {
       return secret;
     },
 
+    removeInCompany: async (companyId: string, secretId: string) => {
+      await assertSecretInCompany(companyId, secretId);
+      return await secretService(db).remove(secretId);
+    },
+
+    assertSecretInCompany,
+
     normalizeAdapterConfigForPersistence: async (
       companyId: string,
       adapterConfig: Record<string, unknown>,

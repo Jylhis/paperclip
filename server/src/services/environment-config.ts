@@ -402,6 +402,9 @@ export async function normalizeEnvironmentConfigForPersistence(input: {
     const secrets = secretService(input.db);
     const { privateKey, ...stored } = parsed.data;
     let nextPrivateKeySecretRef = stored.privateKeySecretRef;
+    if (nextPrivateKeySecretRef) {
+      await secrets.assertSecretInCompany(input.companyId, nextPrivateKeySecretRef.secretId);
+    }
     if (privateKey) {
       nextPrivateKeySecretRef = await createEnvironmentSecret({
         db: input.db,
@@ -417,7 +420,7 @@ export async function normalizeEnvironmentConfigForPersistence(input: {
         stored.privateKeySecretRef &&
         stored.privateKeySecretRef.secretId !== nextPrivateKeySecretRef.secretId
       ) {
-        await secrets.remove(stored.privateKeySecretRef.secretId);
+        await secrets.removeInCompany(input.companyId, stored.privateKeySecretRef.secretId);
       }
     }
     return {
