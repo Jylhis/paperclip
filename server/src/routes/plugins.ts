@@ -2388,6 +2388,7 @@ export function pluginRoutes(
 
   router.get("/plugins/:pluginId/companies/:companyId/local-folders", async (req, res) => {
     assertBoardOrgAccess(req);
+    assertInstanceAdmin(req);
     const { pluginId, companyId } = req.params;
     assertCompanyAccess(req, companyId);
 
@@ -2419,6 +2420,7 @@ export function pluginRoutes(
 
   router.get("/plugins/:pluginId/companies/:companyId/local-folders/:folderKey/status", async (req, res) => {
     assertBoardOrgAccess(req);
+    assertInstanceAdmin(req);
     const { pluginId, companyId, folderKey } = req.params;
     assertCompanyAccess(req, companyId);
 
@@ -2442,6 +2444,7 @@ export function pluginRoutes(
 
   router.post("/plugins/:pluginId/companies/:companyId/local-folders/:folderKey/validate", async (req, res) => {
     assertBoardOrgAccess(req);
+    assertInstanceAdmin(req);
     const { pluginId, companyId, folderKey } = req.params;
     assertCompanyAccess(req, companyId);
 
@@ -2475,6 +2478,7 @@ export function pluginRoutes(
 
   router.put("/plugins/:pluginId/companies/:companyId/local-folders/:folderKey", async (req, res) => {
     assertBoardOrgAccess(req);
+    assertInstanceAdmin(req);
     const { pluginId, companyId, folderKey } = req.params;
     assertCompanyAccess(req, companyId);
 
