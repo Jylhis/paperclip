@@ -238,6 +238,11 @@ function normalizePortablePath(input: string) {
   return parts.join("/");
 }
 
+function isResolvedPathWithin(baseDir: string, candidatePath: string) {
+  const relative = path.relative(baseDir, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function normalizePackageFileMap(files: Record<string, string>) {
   const out: Record<string, string> = {};
   for (const [rawPath, content] of Object.entries(files)) {
@@ -2134,6 +2139,7 @@ export function companySkillService(db: Db) {
       const content = normalizedFiles[sourcePath];
       if (typeof content !== "string") continue;
       const targetPath = path.resolve(skillDir, entry.path);
+      if (!isResolvedPathWithin(skillDir, targetPath)) continue;
       await fs.mkdir(path.dirname(targetPath), { recursive: true });
       await fs.writeFile(targetPath, content, "utf8");
     }
