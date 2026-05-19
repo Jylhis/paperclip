@@ -106,6 +106,7 @@ import {
   parseIssueExecutionState,
   redactIssueMonitorExternalRef,
   setIssueExecutionPolicyMonitorScheduledBy,
+  stripMonitorFromExecutionPolicy,
 } from "../services/issue-execution-policy.js";
 import { parseIssueExecutionWorkspaceSettings } from "../services/execution-workspace-policy.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -545,6 +546,13 @@ function summarizeIssueReferenceActivityDetails(input:
 
 function monitorPoliciesEqual(left: NormalizedExecutionPolicy | null, right: NormalizedExecutionPolicy | null) {
   return JSON.stringify(left?.monitor ?? null) === JSON.stringify(right?.monitor ?? null);
+}
+
+function executionStagePoliciesEqual(left: NormalizedExecutionPolicy | null, right: NormalizedExecutionPolicy | null) {
+  return (
+    JSON.stringify(stripMonitorFromExecutionPolicy(left)) ===
+    JSON.stringify(stripMonitorFromExecutionPolicy(right))
+  );
 }
 
 function applyActorMonitorScheduledBy(
@@ -3446,6 +3454,10 @@ export function issueRoutes(
       updateFields.assigneeUserId === undefined ? existing.assigneeUserId : (updateFields.assigneeUserId as string | null);
     const assigneeWillChange =
       nextAssigneeAgentId !== existing.assigneeAgentId || nextAssigneeUserId !== existing.assigneeUserId;
+    const activeExecutionStagesChanged =
+      existing.status === "in_review" &&
+      req.body.executionPolicy !== undefined &&
+      !executionStagePoliciesEqual(previousExecutionPolicy, nextExecutionPolicy);
     const isAgentReturningIssueToCreator =
       req.actor.type === "agent" &&
       !!req.actor.agentId &&
@@ -3455,7 +3467,7 @@ export function issueRoutes(
       !!existing.createdByUserId &&
       nextAssigneeUserId === existing.createdByUserId;
 
-    if (assigneeWillChange && !transition.workflowControlledAssignment) {
+    if (assigneeWillChange && (!transition.workflowControlledAssignment || activeExecutionStagesChanged)) {
       if (!isAgentReturningIssueToCreator) {
         await assertCanAssignTasks(req, existing.companyId);
       }
