@@ -49,6 +49,13 @@ diagnostics/
 # Doc maintenance cursor
 .doc-review-cursor
 
+# Nix / devenv build artefacts
+result
+result-*
+.devenv
+.devenv.flake.nix
+.direnv
+
 # Playwright
 tests/e2e/test-results/
 tests/e2e/playwright-report/
