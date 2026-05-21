@@ -88,16 +88,18 @@ stdenv.mkDerivation (finalAttrs: {
     printf 'shamefully-hoist=true\n' >> .npmrc
   '';
 
-  # Bootstrap procedure for `hash` below:
-  #   1. Set `hash = lib.fakeHash;` and run `nix build .#paperclip`.
-  #   2. The build fails with `hash mismatch ... got: sha256-...`.
-  #   3. Replace `lib.fakeHash` with the printed value. Re-bump
-  #      whenever `pnpm-lock.yaml` changes.
+  # Re-pin whenever `pnpm-lock.yaml` changes:
+  #   1. Replace `hash` below with `lib.fakeHash`.
+  #   2. Run `nix build .#paperclip.pnpmDeps --system x86_64-linux`
+  #      on a builder with a generous fixupPhase timeout
+  #      (nixbuild.net's default 60 s kills the fixup on this tree —
+  #      run on the lab or extend the plan).
+  #   3. Copy the printed `got:` hash back into `hash` below.
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version src;
     pnpm = pnpm_9;
     fetcherVersion = 3;
-    hash = lib.fakeHash;
+    hash = "sha256-ms9FOsaHG5tXxPhQpaE7a5koxHqn/6neWklVgmPdBYM=";
   };
 
   COREPACK_ENABLE_STRICT = "0";
