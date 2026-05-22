@@ -75,11 +75,11 @@
       checks = forSystems linuxSystems (pkgs: {
         module-default = pkgs.callPackage ./nix/tests/module-default.nix {
           paperclipModule = self.nixosModules.paperclip;
-          paperclipOverlay = self.overlays.default;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
         module-postgres = pkgs.callPackage ./nix/tests/module-postgres.nix {
           paperclipModule = self.nixosModules.paperclip;
-          paperclipOverlay = self.overlays.default;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
       });
 

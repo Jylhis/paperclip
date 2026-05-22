@@ -1,7 +1,7 @@
 {
   pkgs,
   paperclipModule,
-  paperclipOverlay,
+  paperclipPackage,
 }:
 # Boots a NixOS VM with the paperclip module enabled in its lightest valid
 # configuration (embedded DB, no agent CLIs, no memory caps). Also flips on
@@ -14,10 +14,10 @@ pkgs.testers.runNixOSTest {
     { ... }:
     {
       imports = [ paperclipModule ];
-      nixpkgs.overlays = [ paperclipOverlay ];
 
       services.paperclip = {
         enable = true;
+        package = paperclipPackage;
         deploymentMode = "local_trusted";
         database.mode = "embedded";
         bind = "default";

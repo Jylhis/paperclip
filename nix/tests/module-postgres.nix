@@ -1,7 +1,7 @@
 {
   pkgs,
   paperclipModule,
-  paperclipOverlay,
+  paperclipPackage,
 }:
 # Exercises the postgresql database mode end-to-end: NixOS-managed Postgres,
 # the `paperclip-postgres-password` oneshot that applies the password via
@@ -13,7 +13,6 @@ pkgs.testers.runNixOSTest {
     { ... }:
     {
       imports = [ paperclipModule ];
-      nixpkgs.overlays = [ paperclipOverlay ];
 
       # Test-only credential: the module needs a passwordFile readable by
       # both the paperclip user and the postgres user. Real deployments
@@ -27,6 +26,7 @@ pkgs.testers.runNixOSTest {
 
       services.paperclip = {
         enable = true;
+        package = paperclipPackage;
         deploymentMode = "local_trusted";
         database = {
           mode = "postgresql";
