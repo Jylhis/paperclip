@@ -8,9 +8,10 @@
   outputs =
     { self, nixpkgs }:
     let
-      # Package + agent-CLI bundles are Linux-only (matches the
-      # production deployment shape). The dev shell additionally
-      # supports darwin so contributors on macOS can `nix develop`.
+      # The server + agent-CLI bundles are Linux-only (matches the production
+      # deployment shape). The dev shell and the lighter outputs
+      # (paperclip-mcp-server, paperclipai, paperclip-ui) additionally support
+      # darwin so contributors and MCP users on macOS get first-class support.
       linuxSystems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -42,20 +43,45 @@
             }
           )
         );
-    in
-    {
-      packages = forSystems linuxSystems (pkgs: rec {
+
+      crossPlatformPackages = forSystems shellSystems (pkgs: {
+        paperclip-mcp-server = pkgs.callPackage ./nix/mcp-server.nix { };
+        paperclipai = pkgs.callPackage ./nix/paperclipai.nix { };
+        paperclip-ui = pkgs.callPackage ./nix/ui.nix { };
+      });
+
+      linuxOnlyPackages = forSystems linuxSystems (pkgs: rec {
         paperclip = pkgs.callPackage ./nix/package.nix { };
         paperclip-agent-clis = pkgs.callPackage ./nix/agent-clis.nix {
           inherit (pkgs.stdenv.hostPlatform) system;
         };
         default = paperclip;
       });
+    in
+    {
+      # `recursiveUpdate` lets darwin systems expose only the cross-platform
+      # outputs while linux systems get those plus `paperclip` /
+      # `paperclip-agent-clis` / `default`.
+      packages = nixpkgs.lib.recursiveUpdate crossPlatformPackages linuxOnlyPackages;
 
       overlays.default = import ./nix/overlay.nix;
 
       nixosModules.paperclip = import ./nix/modules/nixos/paperclip.nix;
       nixosModules.default = self.nixosModules.paperclip;
+
+      # `nixosTest` only runs on linux. Each test boots a VM, brings the unit
+      # up, and exercises `/health` to catch regressions in the module wiring
+      # (bind presets, postgres password rotation, env-file ordering).
+      checks = forSystems linuxSystems (pkgs: {
+        module-default = pkgs.callPackage ./nix/tests/module-default.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipOverlay = self.overlays.default;
+        };
+        module-postgres = pkgs.callPackage ./nix/tests/module-postgres.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipOverlay = self.overlays.default;
+        };
+      });
 
       devShells = forSystems shellSystems (pkgs: {
         default = pkgs.callPackage ./nix/shell.nix { };

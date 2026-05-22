@@ -31,35 +31,11 @@ let
   pnpm = pnpm_9;
   nodejs = nodejs_22;
 
-  # Build from the working tree. cleanSource drops .git but not
-  # node_modules / dist / data / result; filter those explicitly so
-  # the source hash isn't poisoned by build artefacts or local state.
-  src = lib.cleanSourceWith {
-    name = "paperclip-source";
-    src = lib.cleanSource ../.;
-    filter =
-      path: type:
-      let
-        base = baseNameOf (toString path);
-      in
-      !(builtins.elem base [
-        "node_modules"
-        ".devenv"
-        ".direnv"
-        "data"
-        "dist"
-        "result"
-        "result-linux"
-        ".git"
-      ])
-      && !(lib.hasPrefix "result-" base);
-  };
+  workspace = import ./lib.nix { inherit lib fetchPnpmDeps pnpm_9; };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "paperclip";
-  version = "0-unstable-2026-05-21";
-
-  inherit src;
+  inherit (workspace) version src pnpmDeps;
 
   nativeBuildInputs = [
     nodejs
@@ -88,19 +64,10 @@ stdenv.mkDerivation (finalAttrs: {
     printf 'shamefully-hoist=true\n' >> .npmrc
   '';
 
-  # Re-pin whenever `pnpm-lock.yaml` changes:
-  #   1. Replace `hash` below with `lib.fakeHash`.
-  #   2. Run `nix build .#paperclip.pnpmDeps --system x86_64-linux`
-  #      on a builder with a generous fixupPhase timeout
-  #      (nixbuild.net's default 60 s kills the fixup on this tree —
-  #      run on the lab or extend the plan).
-  #   3. Copy the printed `got:` hash back into `hash` below.
-  pnpmDeps = fetchPnpmDeps {
-    inherit (finalAttrs) pname version src;
-    pnpm = pnpm_9;
-    fetcherVersion = 3;
-    hash = "sha256-ms9FOsaHG5tXxPhQpaE7a5koxHqn/6neWklVgmPdBYM=";
-  };
+  # `pnpmDeps` is consumed by `pnpmConfigHook` above; the hash + src filter
+  # live in `nix/lib.nix` so every workspace derivation (paperclip,
+  # paperclip-mcp-server, paperclipai, paperclip-ui) re-pins from a single
+  # location. See `nix/README.md` for the re-pin procedure.
 
   COREPACK_ENABLE_STRICT = "0";
 

@@ -30,6 +30,20 @@ let
   # caller supplies a complete URL.
   evalTimeDatabaseUrl = if cfg.database.mode == "external" then cfg.database.url else null;
 
+  # Extract the hostname from `publicUrl` for the synthesised proxy vhost.
+  # Returns null when `publicUrl` is unset (the assertions block proxy.* in
+  # that case) or when the URL is malformed (assertion message points at it).
+  proxyHost =
+    if cfg.publicUrl == null then
+      null
+    else
+      let
+        match = builtins.match "https?://([^/:]+)(:[0-9]+)?(/.*)?" cfg.publicUrl;
+      in
+      if match == null then null else builtins.elemAt match 0;
+
+  proxyEnabled = cfg.proxy.nginx || cfg.proxy.caddy;
+
   runtimeEnvDir = "/run/paperclip";
   runtimeDbEnvFile = "${runtimeEnvDir}/db-env";
 
@@ -402,6 +416,42 @@ in
       };
     };
 
+    proxy = {
+      nginx = mkEnableOption ''
+        a synthesised nginx virtualHost in front of paperclip. The vhost
+        proxies to `host:port`, enables websocket upgrades, and derives
+        its server-name from the hostname of `publicUrl`. Requires
+        `publicUrl` to be set'';
+
+      caddy = mkEnableOption ''
+        a synthesised Caddy virtualHost in front of paperclip. The vhost
+        reverse_proxies to `host:port` and derives its server-name from
+        the hostname of `publicUrl`. Requires `publicUrl` to be set'';
+
+      enableACME = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Request a TLS certificate via `security.acme` for the hostname
+          extracted from `publicUrl`. Only meaningful when `proxy.nginx`
+          is enabled (Caddy negotiates ACME on its own when the vhost
+          name resolves publicly). Make sure ports 80 and 443 are
+          reachable from the ACME challenger when you flip this on.
+        '';
+      };
+
+      extraConfig = mkOption {
+        type = types.lines;
+        default = "";
+        description = ''
+          Extra configuration lines appended into the generated vhost
+          block. For nginx this is appended inside `locations."/"`
+          (`extraConfig` semantics). For Caddy this is appended after
+          the `reverse_proxy` line inside the site block.
+        '';
+      };
+    };
+
     database = {
       mode = mkOption {
         type = types.enum [
@@ -554,6 +604,39 @@ in
         {
           assertion = cfg.bind != "custom" || cfg.bindHost != null;
           message = "services.paperclip: bind = \"custom\" requires `bindHost`.";
+        }
+        {
+          assertion = !(cfg.proxy.nginx && cfg.proxy.caddy);
+          message = ''
+            services.paperclip.proxy: enable either `nginx` or `caddy`, not
+            both — they would both try to claim ports 80/443.
+          '';
+        }
+        {
+          assertion = !proxyEnabled || cfg.publicUrl != null;
+          message = ''
+            services.paperclip.proxy.{nginx,caddy} requires
+            `services.paperclip.publicUrl` so the vhost has a server-name
+            to bind. Set publicUrl to the canonical URL users will hit
+            (e.g. "https://desk.example.com").
+          '';
+        }
+        {
+          assertion = !proxyEnabled || proxyHost != null;
+          message = ''
+            services.paperclip.proxy: could not extract a hostname from
+            `publicUrl = "${toString cfg.publicUrl}"`. Use a URL of the
+            form `https?://<host>[:<port>][/path]`.
+          '';
+        }
+        {
+          assertion = !cfg.proxy.enableACME || cfg.proxy.nginx;
+          message = ''
+            services.paperclip.proxy.enableACME is only wired up for the
+            nginx vhost. Caddy negotiates ACME itself when the vhost
+            name resolves publicly — drop `enableACME` and rely on
+            Caddy's default behaviour.
+          '';
         }
       ];
 
@@ -769,6 +852,34 @@ in
         # rekey via its own restartTriggers above.
         restartTriggers = [ (toString cfg.database.passwordFile) ];
       };
+    })
+
+    # Reverse-proxy synthesised in front of paperclip. Both branches assume
+    # paperclip itself binds on `cfg.host:cfg.port` (the default 127.0.0.1)
+    # — the proxy then re-exposes the service on 80/443 with the public
+    # hostname extracted from `publicUrl`.
+    (mkIf cfg.proxy.nginx {
+      services.nginx = {
+        enable = true;
+        recommendedProxySettings = true;
+      };
+      services.nginx.virtualHosts.${proxyHost} = {
+        forceSSL = cfg.proxy.enableACME;
+        enableACME = cfg.proxy.enableACME;
+        locations."/" = {
+          proxyPass = "http://${cfg.host}:${toString cfg.port}";
+          proxyWebsockets = true;
+          extraConfig = cfg.proxy.extraConfig;
+        };
+      };
+    })
+
+    (mkIf cfg.proxy.caddy {
+      services.caddy.enable = true;
+      services.caddy.virtualHosts.${proxyHost}.extraConfig = ''
+        reverse_proxy ${cfg.host}:${toString cfg.port}
+        ${cfg.proxy.extraConfig}
+      '';
     })
   ]);
 }
