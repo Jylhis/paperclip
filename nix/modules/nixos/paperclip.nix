@@ -630,6 +630,15 @@ in
           '';
         }
         {
+          assertion = !proxyEnabled || cfg.deploymentMode == "authenticated";
+          message = ''
+            services.paperclip.proxy.{nginx,caddy} requires
+            `services.paperclip.deploymentMode = "authenticated"` to avoid
+            exposing implicit local-trusted admin access through a public
+            reverse proxy.
+          '';
+        }
+        {
           assertion = !cfg.proxy.enableACME || cfg.proxy.nginx;
           message = ''
             services.paperclip.proxy.enableACME is only wired up for the

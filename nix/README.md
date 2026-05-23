@@ -54,6 +54,7 @@ bundles with no native build steps, so they cover darwin too.
           nixpkgs.overlays = [ paperclip.overlays.default ];
           services.paperclip = {
             enable = true;
+            deploymentMode = "authenticated";
             database = {
               mode = "postgresql";
               passwordFile = "/run/secrets/paperclip_db_password";
@@ -87,6 +88,7 @@ name from `publicUrl`, and wires up websocket upgrades automatically.
 ```nix
 services.paperclip = {
   enable = true;
+  deploymentMode = "authenticated";
   publicUrl = "https://desk.example.com";
   proxy.nginx = true;        # OR proxy.caddy = true (not both)
   proxy.enableACME = true;   # security.acme cert for the nginx vhost
