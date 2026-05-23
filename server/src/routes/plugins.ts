@@ -1214,7 +1214,7 @@ export function pluginRoutes(
    * @see PLUGIN_SPEC.md §19.7 — Error Propagation Through The Bridge
    */
   router.post("/plugins/:pluginId/bridge/action", async (req, res) => {
-    assertAuthenticated(req);
+    assertBoardOrgAccess(req);
 
     if (!bridgeDeps) {
       res.status(501).json({ error: "Plugin bridge is not enabled" });
@@ -1398,7 +1398,7 @@ export function pluginRoutes(
    * @see PLUGIN_SPEC.md §19.7 — Error Propagation Through The Bridge
    */
   router.post("/plugins/:pluginId/actions/:key", async (req, res) => {
-    assertAuthenticated(req);
+    assertBoardOrgAccess(req);
 
     if (!bridgeDeps) {
       res.status(501).json({ error: "Plugin bridge is not enabled" });

@@ -738,7 +738,7 @@ describe.sequential("plugin tool and bridge authz", () => {
     }));
   });
 
-  it("allows agent-scoped plugin actions with authenticated actor context", async () => {
+  it("rejects agent-scoped plugin actions", async () => {
     readyPlugin();
     const call = vi.fn().mockResolvedValue({ ok: true });
     const { app } = await createApp(agentActor(), {}, {
@@ -757,22 +757,8 @@ describe.sequential("plugin tool and bridge authz", () => {
         },
       });
 
-    expect(res.status).toBe(200);
-    expect(call).toHaveBeenCalledWith(pluginId, "performAction", {
-      key: "sync",
-      params: {
-        companyId: companyA,
-        reviewerAgentId: "spoofed-agent",
-      },
-      actorContext: {
-        type: "agent",
-        userId: null,
-        agentId: agentA,
-        runId: runA,
-        companyId: companyA,
-      },
-      renderEnvironment: null,
-    });
+    expect(res.status).toBe(403);
+    expect(call).not.toHaveBeenCalled();
 
     call.mockClear();
     const legacyRes = await request(app)
@@ -786,22 +772,8 @@ describe.sequential("plugin tool and bridge authz", () => {
         },
       });
 
-    expect(legacyRes.status).toBe(200);
-    expect(call).toHaveBeenCalledWith(pluginId, "performAction", {
-      key: "sync",
-      params: {
-        companyId: companyA,
-        reviewerAgentId: "spoofed-agent",
-      },
-      actorContext: {
-        type: "agent",
-        userId: null,
-        agentId: agentA,
-        runId: runA,
-        companyId: companyA,
-      },
-      renderEnvironment: null,
-    });
+    expect(legacyRes.status).toBe(403);
+    expect(call).not.toHaveBeenCalled();
   });
 
   it("rejects agent plugin actions outside the authenticated company scope", async () => {
