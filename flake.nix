@@ -90,6 +90,10 @@
           paperclipModule = self.nixosModules.paperclip;
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
+        module-tailnet = pkgs.callPackage ./nix/tests/module-tailnet.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
       });
 
       devShells = forSystems shellSystems (pkgs: {

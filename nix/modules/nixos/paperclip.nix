@@ -7,15 +7,12 @@
 let
   cfg = config.services.paperclip;
 
-  defaultPackage =
-    pkgs.paperclip
-      or (throw "services.paperclip: no `paperclip` package found in pkgs; set `services.paperclip.package` or overlay one in.");
-
   inherit (lib)
     mkEnableOption
     mkOption
     mkIf
     mkMerge
+    mkRenamedOptionModule
     types
     literalExpression
     optionalAttrs
@@ -33,7 +30,7 @@ let
   # Extract the hostname from `publicUrl` for the synthesised proxy vhost.
   # Returns null when `publicUrl` is unset (the assertions block proxy.* in
   # that case) or when the URL is malformed (assertion message points at it).
-  proxyHost =
+  derivedProxyHost =
     if cfg.publicUrl == null then
       null
     else
@@ -41,6 +38,8 @@ let
         match = builtins.match "https?://([^/:]+)(:[0-9]+)?(/.*)?" cfg.publicUrl;
       in
       if match == null then null else builtins.elemAt match 0;
+
+  proxyHost = if cfg.proxy.virtualHost != null then cfg.proxy.virtualHost else derivedProxyHost;
 
   proxyEnabled = cfg.proxy.nginx || cfg.proxy.caddy;
 
@@ -76,7 +75,7 @@ let
 
   baseEnv = {
     NODE_ENV = "production";
-    PORT = toString cfg.port;
+    PORT = toString cfg.listen.port;
     SERVE_UI = if cfg.serveUi then "true" else "false";
     HOME = cfg.stateDir;
     PAPERCLIP_HOME = cfg.stateDir;
@@ -102,11 +101,11 @@ let
   # bind preset called "default" (which means: don't set
   # PAPERCLIP_BIND at all and let the server fall back to HOST or its
   # built-in 127.0.0.1).
-  // optionalAttrs (cfg.bind == "default") { HOST = cfg.host; }
-  // optionalAttrs (cfg.bind != "default") { PAPERCLIP_BIND = cfg.bind; }
-  // optionalAttrs (cfg.bind == "custom") { PAPERCLIP_BIND_HOST = cfg.bindHost; }
-  // optionalAttrs (cfg.tailnetBindHost != null) {
-    PAPERCLIP_TAILNET_BIND_HOST = cfg.tailnetBindHost;
+  // optionalAttrs (cfg.listen.mode == "default") { HOST = cfg.listen.host; }
+  // optionalAttrs (cfg.listen.mode != "default") { PAPERCLIP_BIND = cfg.listen.mode; }
+  // optionalAttrs (cfg.listen.mode == "custom") { PAPERCLIP_BIND_HOST = cfg.listen.bindHost; }
+  // optionalAttrs (cfg.listen.tailnetBindHost != null) {
+    PAPERCLIP_TAILNET_BIND_HOST = cfg.listen.tailnetBindHost;
   }
   // optionalAttrs (cfg.publicUrl != null) { PAPERCLIP_PUBLIC_URL = cfg.publicUrl; }
   // optionalAttrs (cfg.apiUrl != null) { PAPERCLIP_API_URL = cfg.apiUrl; }
@@ -140,14 +139,40 @@ let
   // cfg.extraEnvironment;
 in
 {
+  # Old top-level options collapsed into `services.paperclip.listen.*`.
+  # `mkRenamedOptionModule` keeps existing consumers working with a
+  # one-line eval-time deprecation warning until they migrate.
+  imports = [
+    (mkRenamedOptionModule [ "services" "paperclip" "host" ] [ "services" "paperclip" "listen" "host" ])
+    (mkRenamedOptionModule [ "services" "paperclip" "port" ] [ "services" "paperclip" "listen" "port" ])
+    (mkRenamedOptionModule [ "services" "paperclip" "bind" ] [ "services" "paperclip" "listen" "mode" ])
+    (mkRenamedOptionModule
+      [ "services" "paperclip" "bindHost" ]
+      [ "services" "paperclip" "listen" "bindHost" ]
+    )
+    (mkRenamedOptionModule
+      [ "services" "paperclip" "tailnetBindHost" ]
+      [ "services" "paperclip" "listen" "tailnetBindHost" ]
+    )
+  ];
+
   options.services.paperclip = {
     enable = mkEnableOption "Paperclip orchestration server";
 
+    # `pkgs.paperclip` is Linux-only. The `or null` keeps option
+    # evaluation lazy on darwin so an importer with `enable = false`
+    # doesn't trip the missing-attribute error at module-load time.
+    # When enabled without a package, the assertion below fires with a
+    # human-readable error.
     package = mkOption {
-      type = types.package;
-      default = defaultPackage;
+      type = types.nullOr types.package;
+      default = pkgs.paperclip or null;
       defaultText = literalExpression "pkgs.paperclip";
-      description = "The paperclip package to run.";
+      description = ''
+        The paperclip package to run. Defaults to `pkgs.paperclip` when
+        the overlay is applied. Must be set explicitly on platforms
+        without the package (e.g. darwin) or when not using the overlay.
+      '';
     };
 
     user = mkOption {
@@ -178,46 +203,68 @@ in
       description = "Paperclip instance id (subdirectory under stateDir).";
     };
 
-    host = mkOption {
-      type = types.str;
-      default = "127.0.0.1";
-      description = ''
-        Address to bind on. For private Tailscale access set this to
-        the tailnet IP, or use `bind = "tailnet"` and let Paperclip
-        infer it via `tailscale ip -4`.
-      '';
-    };
+    # All listen-side knobs live in one submodule so callers don't have
+    # to thread four mutually-constrained top-level options. The old
+    # flat options (`host`, `port`, `bind`, `bindHost`,
+    # `tailnetBindHost`) still work via `mkRenamedOptionModule` in the
+    # `imports` block above.
+    listen = {
+      host = mkOption {
+        type = types.str;
+        default = "127.0.0.1";
+        description = ''
+          Address to bind on when `listen.mode = "default"`. For private
+          Tailscale access set this to the tailnet IP, or use
+          `listen.mode = "tailnet"` and let Paperclip infer it via
+          `tailscale ip -4`.
+        '';
+      };
 
-    port = mkOption {
-      type = types.port;
-      default = 3100;
-      description = "TCP port to listen on.";
-    };
+      port = mkOption {
+        type = types.port;
+        default = 3100;
+        description = "TCP port to listen on.";
+      };
 
-    bind = mkOption {
-      type = types.enum [
-        "default"
-        "lan"
-        "tailnet"
-        "custom"
-      ];
-      default = "default";
-      description = ''
-        Bind preset (forwarded as PAPERCLIP_BIND). `default` leaves the
-        variable unset so the CLI falls back to its `127.0.0.1` default.
-        `tailnet` requires `tailscale` on PATH (the package wrapper
-        provides it). `custom` requires `bindHost` and emits it as
-        PAPERCLIP_BIND_HOST.
-      '';
-    };
+      mode = mkOption {
+        type = types.enum [
+          "default"
+          "lan"
+          "tailnet"
+          "custom"
+        ];
+        default = "default";
+        description = ''
+          Bind preset (forwarded as PAPERCLIP_BIND). `default` leaves the
+          variable unset so the CLI falls back to its `127.0.0.1`
+          default. `tailnet` requires `tailscale` on PATH (the package
+          wrapper provides it). `custom` requires `listen.bindHost` and
+          emits it as PAPERCLIP_BIND_HOST.
+        '';
+      };
 
-    bindHost = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "10.0.0.5";
-      description = ''
-        Address forwarded as PAPERCLIP_BIND_HOST when `bind = "custom"`.
-      '';
+      bindHost = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "10.0.0.5";
+        description = ''
+          Address forwarded as PAPERCLIP_BIND_HOST when
+          `listen.mode = "custom"`.
+        '';
+      };
+
+      tailnetBindHost = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "100.101.163.64";
+        description = ''
+          Hard-pin the tailnet bind host (PAPERCLIP_TAILNET_BIND_HOST)
+          when `listen.mode = "tailnet"`. By default paperclip runs
+          `tailscale ip -4` at startup to discover its tailnet address;
+          setting this skips the lookup. Useful when tailscaled is
+          unavailable at boot or you want a deterministic bind.
+        '';
+      };
     };
 
     deploymentMode = mkOption {
@@ -270,19 +317,6 @@ in
         different from the bind, set this so the server doesn't derive
         a self-URL from its loopback listener. Also injected into
         agent processes as PAPERCLIP_API_URL.
-      '';
-    };
-
-    tailnetBindHost = mkOption {
-      type = types.nullOr types.str;
-      default = null;
-      example = "100.101.163.64";
-      description = ''
-        Hard-pin the tailnet bind host (PAPERCLIP_TAILNET_BIND_HOST)
-        when `bind = "tailnet"`. By default paperclip runs
-        `tailscale ip -4` at startup to discover its tailnet address;
-        setting this skips the lookup. Useful when tailscaled is
-        unavailable at boot or you want a deterministic bind.
       '';
     };
 
@@ -450,6 +484,22 @@ in
           the `reverse_proxy` line inside the site block.
         '';
       };
+
+      virtualHost = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "paperclip-internal.corp";
+        description = ''
+          Override the synthesised vhost server-name. Defaults to the
+          hostname extracted from `publicUrl`. Set this when paperclip
+          sits behind an internal load balancer whose hostname differs
+          from the user-visible `publicUrl` (e.g. user-visible
+          `desk.example.com` but the LB hits paperclip via
+          `paperclip-internal.corp`). When set, the URL-parse assertion
+          on `publicUrl` is skipped — the override defines the vhost
+          name directly.
+        '';
+      };
     };
 
     database = {
@@ -498,13 +548,22 @@ in
         example = "/run/secrets/paperclip_db_password";
         description = ''
           Path to a file holding the password for the `name` Postgres
-          role. Required when `mode = "postgresql"`. The password is
-          applied at boot via `ALTER USER` and assembled into
-          DATABASE_URL at runtime by an ExecStartPre — never baked
-          into the Nix store. Must be readable by the paperclip
-          service user, and (when `createLocally = true`) by the
-          postgres user too — typically `mode = "0440"`,
+          role. Required when `mode = "postgresql"`. Must be readable by
+          the paperclip service user, and (when `createLocally = true`)
+          by the postgres user too — typically `mode = "0440"`,
           `owner = "paperclip"`, `group = "postgres"`.
+
+          Runtime behaviour worth knowing about:
+
+          - The password is re-applied to the Postgres role on every
+            restart via `ALTER USER` (see
+            `paperclip-postgres-password.service`). Rotating the file
+            and restarting the unit is enough to update the live role —
+            no manual `psql` step.
+          - The full DATABASE_URL is assembled from this file into
+            `/run/paperclip/db-env` by an ExecStartPre and loaded via
+            `EnvironmentFile=`. The password is never baked into the
+            Nix store.
         '';
       };
     };
@@ -517,6 +576,12 @@ in
         Path to an env file passed to systemd via `EnvironmentFile=`.
         Use this for secrets like `BETTER_AUTH_SECRET`, `OPENAI_API_KEY`,
         `ANTHROPIC_API_KEY`. Must be readable by the service user.
+
+        `deploymentMode = "authenticated"` requires at minimum a
+        `BETTER_AUTH_SECRET` entry here (Better Auth refuses to sign
+        cookies otherwise). The assertions block does not enforce this
+        because the file is loaded by systemd at runtime — eval time
+        cannot see what's inside.
       '';
     };
 
@@ -553,9 +618,13 @@ in
       default = "5G";
       example = "2G";
       description = ''
-        Soft cgroup memory limit (`MemoryHigh=` in systemd). Above this
-        the kernel aggressively reclaims; the service stays running.
-        Set to `null` to leave unset (useful on small hosts).
+        Treat the default as a tripwire, not a recommendation. Soft
+        cgroup memory limit (`MemoryHigh=` in systemd) — above this the
+        kernel aggressively reclaims; the service stays running. The
+        bundled V8 heap (NODE_OPTIONS `--max-old-space-size=4096`) plus
+        agent subprocesses can blow past 5 GiB on real workloads; raise
+        this (or set `null` to leave unset) on hosts where you'd rather
+        let the kernel decide.
       '';
     };
 
@@ -564,9 +633,12 @@ in
       default = "6G";
       example = "3G";
       description = ''
-        Hard cgroup memory limit (`MemoryMax=` in systemd). Hitting
-        this triggers an in-cgroup OOM kill, after which systemd
-        applies `Restart=on-failure`. Set to `null` to leave unset.
+        Treat the default as a tripwire, not a recommendation. Hard
+        cgroup memory limit (`MemoryMax=` in systemd) — hitting this
+        triggers an in-cgroup OOM kill, after which systemd applies
+        `Restart=on-failure`. On hosts with significant headroom raise
+        this well above `memoryHigh` (or set `null` to leave unset) so
+        a transient spike doesn't restart the unit silently.
       '';
     };
   };
@@ -574,6 +646,14 @@ in
   config = mkIf cfg.enable (mkMerge [
     {
       assertions = [
+        {
+          assertion = cfg.package != null;
+          message = ''
+            services.paperclip.package is null — set it explicitly, or
+            apply `paperclip.overlays.default` so `pkgs.paperclip`
+            resolves. `pkgs.paperclip` is only available on Linux.
+          '';
+        }
         {
           assertion = cfg.database.mode != "external" || cfg.database.url != null;
           message = "services.paperclip.database.mode = \"external\" requires database.url.";
@@ -590,20 +670,23 @@ in
         {
           assertion =
             cfg.deploymentMode != "authenticated"
-            || cfg.bind == "default"
+            || cfg.listen.mode == "default"
             || cfg.publicUrl != null
             || (cfg.authPublicBaseUrl != null && cfg.allowedHostnames != [ ]);
           message = ''
             services.paperclip: deploymentMode = "authenticated" with a
-            non-default `bind` requires either `publicUrl` (recommended;
-            upstream derives auth URL + allowlist from it) or both
-            `authPublicBaseUrl` and `allowedHostnames` set explicitly.
-            See docs.paperclip.ing §Installation Step 5.
+            non-default `listen.mode` requires either `publicUrl`
+            (recommended; upstream derives auth URL + allowlist from it)
+            or both `authPublicBaseUrl` and `allowedHostnames` set
+            explicitly. See docs.paperclip.ing §Installation Step 5.
           '';
         }
         {
-          assertion = cfg.bind != "custom" || cfg.bindHost != null;
-          message = "services.paperclip: bind = \"custom\" requires `bindHost`.";
+          assertion = cfg.listen.mode != "custom" || cfg.listen.bindHost != null;
+          message = ''
+            services.paperclip: listen.mode = "custom" requires
+            `listen.bindHost`.
+          '';
         }
         {
           assertion = !(cfg.proxy.nginx && cfg.proxy.caddy);
@@ -613,20 +696,25 @@ in
           '';
         }
         {
-          assertion = !proxyEnabled || cfg.publicUrl != null;
+          assertion = !proxyEnabled || cfg.publicUrl != null || cfg.proxy.virtualHost != null;
           message = ''
-            services.paperclip.proxy.{nginx,caddy} requires
-            `services.paperclip.publicUrl` so the vhost has a server-name
-            to bind. Set publicUrl to the canonical URL users will hit
-            (e.g. "https://desk.example.com").
+            services.paperclip.proxy.{nginx,caddy} needs a server-name to
+            bind. Set `publicUrl` (recommended — also drives the auth
+            URL and allowlist) or `proxy.virtualHost` (when the public
+            URL's authority is not the vhost name, e.g. behind an
+            internal LB).
           '';
         }
         {
-          assertion = !proxyEnabled || proxyHost != null;
+          # When `virtualHost` is set explicitly we skip the URL parse —
+          # the override defines the vhost name. Otherwise the derived
+          # hostname must come back non-null.
+          assertion = !proxyEnabled || cfg.proxy.virtualHost != null || derivedProxyHost != null;
           message = ''
             services.paperclip.proxy: could not extract a hostname from
             `publicUrl = "${toString cfg.publicUrl}"`. Use a URL of the
-            form `https?://<host>[:<port>][/path]`.
+            form `https?://<host>[:<port>][/path]`, or set
+            `proxy.virtualHost` explicitly.
           '';
         }
         {
@@ -665,7 +753,7 @@ in
       ];
 
       networking.firewall = mkIf cfg.openFirewall {
-        allowedTCPPorts = [ cfg.port ];
+        allowedTCPPorts = [ cfg.listen.port ];
       };
 
       systemd.services.paperclip = {
@@ -675,15 +763,15 @@ in
           "network-online.target"
         ]
         ++ optional (cfg.database.mode == "postgresql" && cfg.database.createLocally) "postgresql.service"
-        # `bind = "tailnet"` makes Paperclip shell out to `tailscale ip -4`
-        # at startup; without this ordering it can race the tailscaled
-        # login and listen on nothing.
-        ++ optional (cfg.bind == "tailnet") "tailscaled-autoconnect.service";
+        # `listen.mode = "tailnet"` makes Paperclip shell out to
+        # `tailscale ip -4` at startup; without this ordering it can
+        # race the tailscaled login and listen on nothing.
+        ++ optional (cfg.listen.mode == "tailnet") "tailscaled-autoconnect.service";
         wants = [
           "network-online.target"
         ]
         ++ optional (cfg.database.mode == "postgresql" && cfg.database.createLocally) "postgresql.service"
-        ++ optional (cfg.bind == "tailnet") "tailscaled-autoconnect.service";
+        ++ optional (cfg.listen.mode == "tailnet") "tailscaled-autoconnect.service";
 
         environment = baseEnv;
 
@@ -855,9 +943,10 @@ in
     })
 
     # Reverse-proxy synthesised in front of paperclip. Both branches assume
-    # paperclip itself binds on `cfg.host:cfg.port` (the default 127.0.0.1)
-    # — the proxy then re-exposes the service on 80/443 with the public
-    # hostname extracted from `publicUrl`.
+    # paperclip itself binds on `listen.host:listen.port` (the default
+    # 127.0.0.1) — the proxy then re-exposes the service on 80/443 with
+    # the vhost name resolved from `proxy.virtualHost` (when set) or
+    # `publicUrl`'s authority.
     (mkIf cfg.proxy.nginx {
       services.nginx = {
         enable = true;
@@ -867,7 +956,7 @@ in
         forceSSL = cfg.proxy.enableACME;
         enableACME = cfg.proxy.enableACME;
         locations."/" = {
-          proxyPass = "http://${cfg.host}:${toString cfg.port}";
+          proxyPass = "http://${cfg.listen.host}:${toString cfg.listen.port}";
           proxyWebsockets = true;
           extraConfig = cfg.proxy.extraConfig;
         };
@@ -877,7 +966,7 @@ in
     (mkIf cfg.proxy.caddy {
       services.caddy.enable = true;
       services.caddy.virtualHosts.${proxyHost}.extraConfig = ''
-        reverse_proxy ${cfg.host}:${toString cfg.port}
+        reverse_proxy ${cfg.listen.host}:${toString cfg.listen.port}
         ${cfg.proxy.extraConfig}
       '';
     })

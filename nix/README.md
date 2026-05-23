@@ -3,6 +3,21 @@
 This directory ships paperclip as a Nix package, an overlay, and a
 NixOS service module, plus a `nix develop` shell.
 
+## On macOS? Install just the CLI
+
+`paperclipai` is the standalone CLI without the server bundle — works
+on darwin, useful for laptops that just need to talk to a remote
+Paperclip instance:
+
+```sh
+nix profile install github:Jylhis/paperclip#paperclipai
+paperclipai env doctor
+```
+
+The full `paperclip` package (server + native modules) is Linux-only.
+See [Standalone CLI](#standalone-cli-darwin--no-server-hosts) below
+for the caveats around the darwin build.
+
 ## Outputs
 
 `flake.nix` (repo root) exposes:
@@ -23,18 +38,23 @@ NixOS service module, plus a `nix develop` shell.
 | `devShells.<sys>.default`               | `nix develop` toolchain                                 |
 | `apps.<sys>.install-deps`               | Materialise local `node_modules` from the Nix PNPM store |
 
-Platform support:
+Platform support. The `nixosModules.paperclip` row only makes sense
+on Linux because `pkgs.paperclip` (which the module defaults to) is
+Linux-only — importing the module on darwin is harmless as long as
+`enable = false`, but enabling it on darwin requires
+`services.paperclip.package` to be set to something that exists there.
 
-| Output                  | x86_64-linux | aarch64-linux | aarch64-darwin | x86_64-darwin |
-| ----------------------- | :----------: | :-----------: | :------------: | :-----------: |
-| `paperclip`             | ✅           | ✅            | ❌             | ❌            |
-| `paperclip-agent-clis`  | ✅           | ✅            | ❌             | ❌            |
-| `paperclip-mcp-server`  | ✅           | ✅            | ✅             | ✅            |
-| `paperclipai`           | ✅           | ✅            | ✅             | ✅            |
-| `paperclip-ui`          | ✅           | ✅            | ✅             | ✅            |
-| `paperclip-pnpm-deps`   | ✅           | ✅            | ✅             | ✅            |
-| `devShells.default`     | ✅           | ✅            | ✅             | ✅            |
-| `checks.*`              | ✅           | ✅            | ❌             | ❌            |
+| Output                       | x86_64-linux | aarch64-linux | aarch64-darwin | x86_64-darwin |
+| ---------------------------- | :----------: | :-----------: | :------------: | :-----------: |
+| `paperclip`                  | ✅           | ✅            | ❌             | ❌            |
+| `paperclip-agent-clis`       | ✅           | ✅            | ❌             | ❌            |
+| `paperclip-mcp-server`       | ✅           | ✅            | ✅             | ✅            |
+| `paperclipai`                | ✅           | ✅            | ✅             | ✅            |
+| `paperclip-ui`               | ✅           | ✅            | ✅             | ✅            |
+| `paperclip-pnpm-deps`        | ✅           | ✅            | ✅             | ✅            |
+| `devShells.default`          | ✅           | ✅            | ✅             | ✅            |
+| `checks.*`                   | ✅           | ✅            | ❌             | ❌            |
+| `nixosModules.paperclip`     | ✅           | ✅            | ❌             | ❌            |
 
 `paperclip-agent-clis` is Linux-only because the upstream npm packages
 ship per-arch tarballs only for `linux-x64` / `linux-arm64`. `checks.*`
@@ -57,11 +77,16 @@ bundles with no native build steps, so they cover darwin too.
           nixpkgs.overlays = [ paperclip.overlays.default ];
           services.paperclip = {
             enable = true;
+            deploymentMode = "authenticated";
             database = {
               mode = "postgresql";
               passwordFile = "/run/secrets/paperclip_db_password";
             };
             publicUrl = "https://paperclip.example.com";
+            # Must contain at minimum BETTER_AUTH_SECRET when
+            # deploymentMode = "authenticated" — Better Auth refuses to
+            # sign cookies without it. Add OPENAI_API_KEY / ANTHROPIC_API_KEY
+            # here too if you use those providers.
             environmentFile = "/run/secrets/paperclip.env";
             # Synthesised nginx vhost in front, ACME-managed cert.
             proxy.nginx = true;
