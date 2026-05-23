@@ -26,10 +26,6 @@ let
   # `?host=` is ignored, and `postgres://user@/db` fails `new URL()`. So
   # for the NixOS-managed local Postgres we go TCP + password and build
   # the full URL at runtime from `passwordFile` (kept out of the store).
-  # Eval-time DATABASE_URL is only set for `external` mode where the
-  # caller supplies a complete URL.
-  evalTimeDatabaseUrl = if cfg.database.mode == "external" then cfg.database.url else null;
-
   runtimeEnvDir = "/run/paperclip";
   runtimeDbEnvFile = "${runtimeEnvDir}/db-env";
 
@@ -122,7 +118,6 @@ let
       PAPERCLIP_STORAGE_S3_ENDPOINT = cfg.storage.s3.endpoint;
     }
   )
-  // optionalAttrs (evalTimeDatabaseUrl != null) { DATABASE_URL = evalTimeDatabaseUrl; }
   // cfg.extraEnvironment;
 in
 {
@@ -415,7 +410,8 @@ in
             Unix socket. Recommended for server deployments.
           - `embedded`: server runs its own bundled Postgres. Good for
             single-user / development.
-          - `external`: provide DATABASE_URL via `database.url`.
+          - `external`: provide DATABASE_URL via `database.urlFile`
+            (or `environmentFile[s]`).
         '';
       };
 
@@ -435,11 +431,15 @@ in
         '';
       };
 
-      url = mkOption {
-        type = types.nullOr types.str;
+      urlFile = mkOption {
+        type = types.nullOr types.path;
         default = null;
-        example = "postgres://paperclip:secret@db.internal:5432/paperclip";
-        description = "Connection string used when `mode = \"external\"`.";
+        example = "/run/secrets/paperclip_database_url";
+        description = ''
+          Path to a file containing the full DATABASE_URL used when
+          `mode = "external"`. Prefer this (or `environmentFile[s]`)
+          so credentials stay out of the Nix store.
+        '';
       };
 
       passwordFile = mkOption {
@@ -525,8 +525,16 @@ in
     {
       assertions = [
         {
-          assertion = cfg.database.mode != "external" || cfg.database.url != null;
-          message = "services.paperclip.database.mode = \"external\" requires database.url.";
+          assertion =
+            cfg.database.mode != "external"
+            || cfg.database.urlFile != null
+            || cfg.environmentFile != null
+            || cfg.environmentFiles != [ ];
+          message = ''
+            services.paperclip.database.mode = "external" requires
+            `database.urlFile` or an `environmentFile`/`environmentFiles`
+            entry that defines DATABASE_URL.
+          '';
         }
         {
           assertion = cfg.database.mode != "postgresql" || cfg.database.passwordFile != null;
@@ -699,12 +707,22 @@ in
           # RuntimeDirectory without elevated privileges.
           ExecStartPre = [ buildDbEnvScript ];
         }
+        // optionalAttrs (cfg.database.mode == "external" && cfg.database.urlFile != null) {
+          ExecStartPre = [
+            (pkgs.writeShellScript "paperclip-build-external-db-env" ''
+              set -euo pipefail
+              url=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.urlFile}")
+              umask 077
+              ${pkgs.coreutils}/bin/printf 'DATABASE_URL=%s\n' "$url" > "${runtimeDbEnvFile}"
+            '')
+          ];
+        }
         // (
           let
             envFiles =
               optional (cfg.environmentFile != null) cfg.environmentFile
               ++ map toString cfg.environmentFiles
-              ++ optional (cfg.database.mode == "postgresql") "-${runtimeDbEnvFile}";
+              ++ optional (cfg.database.mode == "postgresql" || (cfg.database.mode == "external" && cfg.database.urlFile != null)) "-${runtimeDbEnvFile}";
           in
           optionalAttrs (envFiles != [ ]) { EnvironmentFile = envFiles; }
         );
