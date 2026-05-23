@@ -1,6 +1,7 @@
 {
   lib,
   fetchPnpmDeps,
+  nodejs_22,
   pnpm_9,
 }:
 # Shared workspace helpers consumed by every Paperclip derivation in this
@@ -9,6 +10,7 @@
 # live in nix/README.md.
 let
   version = "0-unstable-2026-05-21";
+  pnpm = pnpm_9.override { nodejs = nodejs_22; };
 
   # Build from the working tree. cleanSource drops .git but not
   # node_modules / dist / data / result; filter those explicitly so the
@@ -36,7 +38,7 @@ let
 
   # Re-pin whenever `pnpm-lock.yaml` changes:
   #   1. Replace `pnpmDepsHash` below with `lib.fakeHash`.
-  #   2. Run `nix build .#paperclip.pnpmDeps --system x86_64-linux`
+  #   2. Run `nix build .#paperclip-pnpm-deps --system x86_64-linux`
   #      on a builder with a generous fixupPhase timeout
   #      (nixbuild.net's default 60 s kills the fixup on this tree —
   #      run on the lab or extend the plan).
@@ -46,7 +48,7 @@ let
   pnpmDeps = fetchPnpmDeps {
     pname = "paperclip-pnpm-deps";
     inherit version src;
-    pnpm = pnpm_9;
+    inherit pnpm;
     fetcherVersion = 3;
     hash = pnpmDepsHash;
   };

@@ -14,12 +14,14 @@ NixOS service module, plus a `nix develop` shell.
 | `packages.<sys>.paperclip-mcp-server`   | `@paperclipai/mcp-server` standalone with `bin/paperclip-mcp-server` |
 | `packages.<sys>.paperclipai`            | Standalone `paperclipai` CLI (no server bundle)         |
 | `packages.<sys>.paperclip-ui`           | Prebuilt board UI static assets under `share/paperclip-ui/` |
+| `packages.<sys>.paperclip-pnpm-deps`    | Fixed-output PNPM store fetched from `pnpm-lock.yaml`   |
 | `packages.<sys>.default`                | Alias for `paperclip` (Linux only)                      |
 | `overlays.default`                      | Adds all of the above to `pkgs`                         |
 | `nixosModules.paperclip`                | `services.paperclip.enable = true`                      |
 | `checks.<sys>.module-default`           | NixOS VM test: embedded DB + nginx proxy                |
 | `checks.<sys>.module-postgres`          | NixOS VM test: NixOS-managed Postgres                   |
 | `devShells.<sys>.default`               | `nix develop` toolchain                                 |
+| `apps.<sys>.install-deps`               | Materialise local `node_modules` from the Nix PNPM store |
 
 Platform support:
 
@@ -30,6 +32,7 @@ Platform support:
 | `paperclip-mcp-server`  | ✅           | ✅            | ✅             | ✅            |
 | `paperclipai`           | ✅           | ✅            | ✅             | ✅            |
 | `paperclip-ui`          | ✅           | ✅            | ✅             | ✅            |
+| `paperclip-pnpm-deps`   | ✅           | ✅            | ✅             | ✅            |
 | `devShells.default`     | ✅           | ✅            | ✅             | ✅            |
 | `checks.*`              | ✅           | ✅            | ❌             | ❌            |
 
@@ -165,6 +168,8 @@ nix build .#paperclip-agent-clis      # Linux only
 nix build .#paperclip-mcp-server      # any system
 nix build .#paperclipai               # any system
 nix build .#paperclip-ui              # any system
+nix build .#paperclip-pnpm-deps       # prefetched PNPM store
+nix run .#install-deps                # local node_modules, offline via Nix store
 nix flake check                       # runs nixosTests on Linux
 nix develop                           # toolchain shell
 ```
@@ -173,20 +178,26 @@ The first build after a `pnpm-lock.yaml` change will fail with a
 `pnpmDeps` hash mismatch. Re-pin in **one** place — `nix/lib.nix`:
 
 1. Replace `pnpmDepsHash` in `nix/lib.nix` with `lib.fakeHash`.
-2. Run `nix build .#paperclip.pnpmDeps --system x86_64-linux` on a
+2. Run `nix build .#paperclip-pnpm-deps --system x86_64-linux` on a
    builder with a generous fixupPhase timeout (nixbuild.net's default
    60 s kills the fixup on this tree).
 3. Copy the printed `got:` hash back into `pnpmDepsHash`.
 
-All five derivations (`paperclip`, `paperclip-mcp-server`, `paperclipai`,
-`paperclip-ui`, and any future workspace derivation) share the same
-hash via `nix/lib.nix`, so one re-pin covers everything.
+All workspace derivations (`paperclip`, `paperclip-mcp-server`,
+`paperclipai`, `paperclip-ui`, `paperclip-pnpm-deps`, and any future
+workspace derivation) share the same hash via `nix/lib.nix`, so one
+re-pin covers everything.
+
+Paperclip intentionally uses Nixpkgs `fetchPnpmDeps` and `pnpmConfigHook`
+instead of `pnpm2nix`: this workspace has a v9 `pnpm-lock.yaml`, while
+`pnpm2nix` is unmaintained and only supports lockfile v5 or below.
 
 ## Layout
 
 ```
 nix/
   lib.nix                  # shared src filter + pnpmDeps hash
+  dev-toolchain.nix        # shared nix develop / devenv Node+pnpm toolchain
   package.nix              # paperclip derivation (server + CLI)
   paperclipai.nix          # standalone CLI
   mcp-server.nix           # @paperclipai/mcp-server
@@ -201,7 +212,7 @@ nix/
     module-postgres.nix    # nixosTest: NixOS-managed Postgres
 ```
 
-`devenv.nix` at the repo root is independent — a faster iteration
-shell for contributors who already use devenv.sh. Both trees pin
-Node 22 + pnpm 9 and share the same workarounds
-(`shamefully-hoist=true`, distutils shim, `NODE_OPTIONS`).
+`devenv.nix` at the repo root is a faster iteration shell for
+contributors who already use devenv.sh. It consumes the same
+`nix/dev-toolchain.nix` helper as `nix develop`, so Node 22, pnpm 9,
+the native build inputs, and `NODE_OPTIONS` stay aligned.

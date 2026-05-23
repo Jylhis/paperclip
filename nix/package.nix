@@ -28,19 +28,29 @@
 }:
 
 let
-  pnpm = pnpm_9;
   nodejs = nodejs_22;
+  pnpm = pnpm_9.override { inherit nodejs; };
 
-  workspace = import ./lib.nix { inherit lib fetchPnpmDeps pnpm_9; };
+  workspace = import ./lib.nix {
+    inherit
+      lib
+      fetchPnpmDeps
+      nodejs_22
+      pnpm_9
+      ;
+  };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "paperclip";
   inherit (workspace) version src pnpmDeps;
+  passthru = {
+    inherit (workspace) pnpmDeps pnpmDepsHash;
+  };
 
   nativeBuildInputs = [
     nodejs
     pnpm
-    (pnpmConfigHook.override { pnpm = pnpm_9; })
+    (pnpmConfigHook.override { inherit pnpm; })
     makeWrapper
     cacert
     (python3.withPackages (ps: [ ps.setuptools ]))

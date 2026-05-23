@@ -33,10 +33,11 @@ Before making changes, read in this order:
 
 ## 4. Dev Setup (Auto DB)
 
-Use embedded PGlite in dev by leaving `DATABASE_URL` unset.
+Use embedded PostgreSQL in dev by leaving `DATABASE_URL` unset.
 
 ```sh
-pnpm install
+nix develop
+nix run .#install-deps
 pnpm dev
 ```
 
@@ -55,7 +56,7 @@ curl http://localhost:3100/api/companies
 Reset local dev DB:
 
 ```sh
-rm -rf data/pglite
+rm -rf ~/.paperclip/instances/default/db
 pnpm dev
 ```
 

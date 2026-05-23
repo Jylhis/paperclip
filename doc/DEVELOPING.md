@@ -12,8 +12,8 @@ Current implementation status:
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 9+
+- Nix with flakes enabled
+- Optional: devenv, if you prefer `devenv shell` over `nix develop`
 
 ## Dependency Lockfile Policy
 
@@ -28,7 +28,8 @@ GitHub Actions owns `pnpm-lock.yaml`.
 From repo root:
 
 ```sh
-pnpm install
+nix develop
+nix run .#install-deps
 pnpm dev
 ```
 
@@ -42,6 +43,8 @@ This starts:
 `pnpm dev:once` auto-applies pending local migrations by default before starting the dev server.
 
 `pnpm dev` and `pnpm dev:once` are now idempotent for the current repo and instance: if the matching Paperclip dev runner is already alive, Paperclip reports the existing process instead of starting a duplicate.
+
+Local dependency materialisation is Nix-owned. `nix run .#install-deps` first builds the fixed-output PNPM store from `pnpm-lock.yaml` via `fetchPnpmDeps`, then runs `pnpm install --offline --frozen-lockfile` inside the Nix dev shell. Do not run a raw host `pnpm install` for normal development.
 
 Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when a task needs a reusable service.
 

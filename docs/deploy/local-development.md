@@ -7,13 +7,14 @@ Run Paperclip locally with zero external dependencies.
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 9+
+- Nix with flakes enabled
+- Optional: devenv, if you prefer `devenv shell` over `nix develop`
 
 ## Start Dev Server
 
 ```sh
-pnpm install
+nix develop
+nix run .#install-deps
 pnpm dev
 ```
 
@@ -23,6 +24,8 @@ This starts:
 - **UI** served by the API server in dev middleware mode (same origin)
 
 No Docker or external database required. Paperclip uses embedded PostgreSQL automatically.
+
+`nix run .#install-deps` materialises `node_modules` from the flake's prefetched PNPM store and runs PNPM offline. Avoid raw host `pnpm install` for normal development.
 
 ## One-Command Bootstrap
 

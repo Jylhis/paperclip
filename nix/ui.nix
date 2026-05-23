@@ -12,19 +12,29 @@
 # CDN bucket, for operators who want to serve the UI separately from the
 # API server (point `services.paperclip.apiUrl` at the API host).
 let
-  pnpm = pnpm_9;
   nodejs = nodejs_22;
+  pnpm = pnpm_9.override { inherit nodejs; };
 
-  workspace = import ./lib.nix { inherit lib fetchPnpmDeps pnpm_9; };
+  workspace = import ./lib.nix {
+    inherit
+      lib
+      fetchPnpmDeps
+      nodejs_22
+      pnpm_9
+      ;
+  };
 in
 stdenv.mkDerivation {
   pname = "paperclip-ui";
   inherit (workspace) version src pnpmDeps;
+  passthru = {
+    inherit (workspace) pnpmDeps pnpmDepsHash;
+  };
 
   nativeBuildInputs = [
     nodejs
     pnpm
-    (pnpmConfigHook.override { pnpm = pnpm_9; })
+    (pnpmConfigHook.override { inherit pnpm; })
     cacert
   ];
 

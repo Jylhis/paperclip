@@ -48,6 +48,15 @@
         paperclip-mcp-server = pkgs.callPackage ./nix/mcp-server.nix { };
         paperclipai = pkgs.callPackage ./nix/paperclipai.nix { };
         paperclip-ui = pkgs.callPackage ./nix/ui.nix { };
+        paperclip-pnpm-deps =
+          (import ./nix/lib.nix {
+            inherit (pkgs)
+              lib
+              fetchPnpmDeps
+              nodejs_22
+              pnpm_9
+              ;
+          }).pnpmDeps;
       });
 
       linuxOnlyPackages = forSystems linuxSystems (pkgs: rec {
@@ -86,6 +95,52 @@
       devShells = forSystems shellSystems (pkgs: {
         default = pkgs.callPackage ./nix/shell.nix { };
       });
+
+      apps = forSystems shellSystems (
+        pkgs:
+        let
+          toolchain = import ./nix/dev-toolchain.nix {
+            inherit (pkgs)
+              nodejs_22
+              pnpm_9
+              python3
+              vips
+              pkg-config
+              git
+              gh
+              ripgrep
+              openssh
+              jq
+              curl
+              wget
+              gnutar
+              zstd
+              ;
+          };
+        in
+        {
+          install-deps = {
+            type = "app";
+            program = "${
+              pkgs.writeShellApplication {
+                name = "paperclip-install-deps";
+                runtimeInputs = [
+                  pkgs.bash
+                  pkgs.git
+                  pkgs.gnutar
+                  pkgs.nix
+                  pkgs.zstd
+                ];
+                text = ''
+                  export PAPERCLIP_NIX_PATH_PREFIX="${toolchain.nodejs}/bin:${toolchain.pnpm}/bin"
+                  exec ${pkgs.bash}/bin/bash ${./scripts/nix-pnpm-install.sh} "$@"
+                '';
+              }
+            }/bin/paperclip-install-deps";
+            meta.description = "Materialise Paperclip node_modules from the Nix-prefetched PNPM store";
+          };
+        }
+      );
 
       formatter = forSystems shellSystems (pkgs: pkgs.nixfmt);
     };
