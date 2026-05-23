@@ -10,6 +10,7 @@ import {
 import type { PermissionKey, PrincipalType } from "@paperclipai/shared";
 import { conflict } from "../errors.js";
 import { authorizationService, type AuthorizationActor, type AuthorizationResource } from "./authorization.js";
+import { grantsForHumanRole, normalizeHumanRole } from "./company-member-roles.js";
 import { ensureHumanRoleDefaultGrants } from "./principal-access-compatibility.js";
 
 type MembershipRow = typeof companyMemberships.$inferSelect;
@@ -780,7 +781,7 @@ export function accessService(db: Db) {
         }
       }
 
-      return tx
+      const updatedMembership = await tx
         .update(companyMemberships)
         .set({
           membershipRole: nextMembershipRole,
@@ -790,6 +791,37 @@ export function accessService(db: Db) {
         .where(eq(companyMemberships.id, existing.id))
         .returning()
         .then((rows) => rows[0] ?? existing);
+
+      if (existing.principalType === "user") {
+        const normalizedRole = normalizeHumanRole(nextMembershipRole, "operator");
+        const nextGrants = nextStatus === "active" ? grantsForHumanRole(normalizedRole) : [];
+        await tx
+          .delete(principalPermissionGrants)
+          .where(
+            and(
+              eq(principalPermissionGrants.companyId, companyId),
+              eq(principalPermissionGrants.principalType, "user"),
+              eq(principalPermissionGrants.principalId, existing.principalId),
+            ),
+          );
+
+        if (nextGrants.length > 0) {
+          await tx.insert(principalPermissionGrants).values(
+            nextGrants.map((grant) => ({
+              companyId,
+              principalType: "user",
+              principalId: existing.principalId,
+              permissionKey: grant.permissionKey,
+              scope: grant.scope ?? null,
+              grantedByUserId: null,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            })),
+          );
+        }
+      }
+
+      return updatedMembership;
     });
   }
 

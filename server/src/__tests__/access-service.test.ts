@@ -89,6 +89,45 @@ describeEmbeddedPostgres("access service", () => {
     expect(unchanged.membershipRole).toBe("owner");
   });
 
+
+  it("replaces user grants when role-only membership updates demote an active owner", async () => {
+    const { company, owner } = await createCompanyWithOwner(db);
+    const secondOwner = await db
+      .insert(companyMemberships)
+      .values({
+        companyId: company.id,
+        principalType: "user",
+        principalId: `owner-${randomUUID()}`,
+        status: "active",
+        membershipRole: "owner",
+      })
+      .returning()
+      .then((rows) => rows[0]!);
+
+    const access = accessService(db);
+    await access.ensureRoleDefaultGrants(
+      company.id,
+      owner.principalId,
+      owner.membershipRole,
+      secondOwner.principalId,
+    );
+
+    await access.updateMember(company.id, owner.id, { membershipRole: "operator" });
+
+    const grants = await db
+      .select({ permissionKey: principalPermissionGrants.permissionKey })
+      .from(principalPermissionGrants)
+      .where(
+        and(
+          eq(principalPermissionGrants.companyId, company.id),
+          eq(principalPermissionGrants.principalType, "user"),
+          eq(principalPermissionGrants.principalId, owner.principalId),
+        ),
+      );
+
+    expect(grants).toEqual([{ permissionKey: "tasks:assign" }]);
+  });
+
   it("rejects role-only updates that would suspend the last active owner", async () => {
     const { company, owner } = await createCompanyWithOwner(db);
     const access = accessService(db);
