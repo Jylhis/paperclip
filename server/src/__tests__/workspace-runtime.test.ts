@@ -66,6 +66,20 @@ async function runPnpm(cwd: string, args: string[]) {
   await execFileAsync("pnpm", args, { cwd });
 }
 
+async function resolveToolPath(toolName: string) {
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, toolName);
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Continue searching PATH.
+    }
+  }
+  throw new Error(`Could not resolve ${toolName} on PATH`);
+}
+
 async function createTempRepo(defaultBranch = "main") {
   const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-repo-"));
   await runGit(repoRoot, ["init"]);
@@ -828,6 +842,7 @@ describe("realizeExecutionWorkspace", () => {
     // Keep this server-side fixture on provision-worktree.sh's config writer path;
     // CLI/database seeding is covered by the CLI worktree tests.
     await fs.symlink(process.execPath, path.join(isolatedBin, "node"));
+    await fs.symlink(await resolveToolPath("git"), path.join(isolatedBin, "git"));
     process.env.PATH = `${isolatedBin}${path.delimiter}/usr/bin${path.delimiter}/bin`;
 
     await fs.mkdir(sharedConfigDir, { recursive: true });
