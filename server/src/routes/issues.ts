@@ -49,8 +49,6 @@ import {
   type IssueRelationIssueSummary,
   type SuccessfulRunHandoffState,
 } from "@paperclipai/shared";
-import { trackAgentTaskCompleted } from "@paperclipai/shared/telemetry";
-import { getTelemetryClient } from "../telemetry.js";
 import type { StorageService } from "../storage/types.js";
 import { validate } from "../middleware/validate.js";
 import * as serviceIndex from "../services/index.js";
@@ -4042,22 +4040,6 @@ export function issueRoutes(
           notes: previousMonitor.notes,
         },
       });
-    }
-
-    if (issue.status === "done" && existing.status !== "done") {
-      const tc = getTelemetryClient();
-      if (tc && actor.agentId) {
-        const actorAgent = await agentsSvc.getById(actor.agentId);
-        if (actorAgent) {
-          const model = typeof actorAgent.adapterConfig?.model === "string" ? actorAgent.adapterConfig.model : undefined;
-          trackAgentTaskCompleted(tc, {
-            agentRole: actorAgent.role,
-            agentId: actorAgent.id,
-            adapterType: actorAgent.adapterType,
-            model,
-          });
-        }
-      }
     }
 
     let comment = null;
