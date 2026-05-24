@@ -30,7 +30,6 @@ import {
   readPaperclipSkillSyncPreference,
   writePaperclipSkillSyncPreference,
 } from "@paperclipai/adapter-utils/server-utils";
-import { trackAgentCreated } from "@paperclipai/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import {
   agentService,
@@ -96,7 +95,6 @@ import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
 } from "../services/default-agent-instructions.js";
-import { getTelemetryClient } from "../telemetry.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
 import { recoveryService } from "../services/recovery/service.js";
 
@@ -2087,10 +2085,6 @@ export function agentRoutes(
         desiredSkills: desiredSkillAssignment.desiredSkills,
       },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackAgentCreated(telemetryClient, { agentRole: agent.role, agentId: agent.id });
-    }
 
     await applyDefaultAgentTaskAssignGrant(
       companyId,
@@ -2208,10 +2202,6 @@ export function agentRoutes(
         desiredSkills: desiredSkillAssignment.desiredSkills,
       },
     });
-    const telemetryClient = getTelemetryClient();
-    if (telemetryClient) {
-      trackAgentCreated(telemetryClient, { agentRole: agent.role, agentId: agent.id });
-    }
 
     await applyDefaultAgentTaskAssignGrant(
       companyId,

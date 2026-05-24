@@ -813,7 +813,6 @@ The host enforces capabilities in the SDK layer and refuses calls outside the gr
 - `issues.wakeup`
 - `activity.log.write`
 - `metrics.write`
-- `telemetry.track`
 - `assets.read`
 - `assets.write`
 - `database.namespace.migrate`
