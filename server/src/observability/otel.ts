@@ -4,7 +4,6 @@ import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { HostMetrics } from "@opentelemetry/host-metrics";
-import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { Resource } from "@opentelemetry/resources";
 import {
   BatchLogRecordProcessor,
@@ -90,15 +89,10 @@ export function startOpenTelemetry(input: {
       exporter: metricExporter,
       exportIntervalMillis: 30_000,
     }) as never,
-    instrumentations: [
-      getNodeAutoInstrumentations({
-        // pino instrumentation injects trace context into log records; logs
-        // themselves are shipped via the BatchLogRecordProcessor below.
-        "@opentelemetry/instrumentation-pino": { enabled: true },
-        // fs auto-instrumentation produces too many low-value spans.
-        "@opentelemetry/instrumentation-fs": { enabled: false },
-      }),
-    ],
+    // Auto-instrumentations are pre-registered in `observability/preload.ts`
+    // so the loader hooks attach before any instrumented modules are
+    // imported. They bind to the global tracer/meter providers, which this
+    // NodeSDK registers below.
   });
 
   sdk.start();

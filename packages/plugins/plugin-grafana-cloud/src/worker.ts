@@ -138,9 +138,11 @@ export default definePlugin({
     });
   },
 
-  async onConfigChanged() {
-    // Stack caches are scoped by companyId+stackSlug. They expire on TTL, and
-    // are invalidated on override-save. A config change at the instance level
-    // is rare enough that we let the TTL handle it.
-  },
+  // onConfigChanged is intentionally omitted. `instanceConfig` is captured by
+  // closure inside `setup()` and would need to be reloaded here to take
+  // effect. Declaring this hook as a no-op would tell the host that hot
+  // config reloads are handled in-process — but saved changes to tokens,
+  // stack slug, region, or timeouts would silently keep using the old
+  // values until the next worker restart. Until in-place reload is wired,
+  // the host's worker-restart fallback is the correct behavior.
 });

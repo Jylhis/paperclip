@@ -37,21 +37,34 @@ export async function fetchGrafanaCloudStackInfo(input: {
   stackSlug: string;
   cloudAccessToken: string;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 }): Promise<GrafanaCloudStackInfo> {
   const fetchImpl = input.fetchImpl ?? fetch;
   const url = `https://grafana.com/api/instances/${encodeURIComponent(input.stackSlug)}`;
-  const res = await fetchImpl(url, {
-    headers: {
-      Authorization: `Bearer ${input.cloudAccessToken}`,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `grafana.com stack lookup failed for slug=${input.stackSlug}: ${res.status} ${res.statusText}`,
-    );
+  // Bound this lookup so a slow/unreachable grafana.com cannot block server
+  // startup indefinitely. The timer covers both headers and body to handle
+  // upstreams that send headers then stall.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs ?? 10_000);
+  let res: Response;
+  let raw: RawStackInfo;
+  try {
+    res = await fetchImpl(url, {
+      headers: {
+        Authorization: `Bearer ${input.cloudAccessToken}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `grafana.com stack lookup failed for slug=${input.stackSlug}: ${res.status} ${res.statusText}`,
+      );
+    }
+    raw = (await res.json()) as RawStackInfo;
+  } finally {
+    clearTimeout(timer);
   }
-  const raw = (await res.json()) as RawStackInfo;
   const otlpEndpoint = raw.otlpUrl ?? deriveOtlpEndpoint(raw.regionSlug ?? raw.region ?? "");
   if (!otlpEndpoint) {
     throw new Error(

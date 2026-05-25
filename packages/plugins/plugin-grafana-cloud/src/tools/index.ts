@@ -58,6 +58,13 @@ function paramNum(params: Record<string, unknown>, key: string): number | undefi
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
+function paramArray(params: Record<string, unknown>, key: string): string[] | undefined {
+  const v = params[key];
+  if (!Array.isArray(v) || v.length === 0) return undefined;
+  const strs = v.filter((x): x is string => typeof x === "string");
+  return strs.length > 0 ? strs : undefined;
+}
+
 async function getJson<T>(
   tctx: ToolContext,
   baseUrl: string,
@@ -80,7 +87,7 @@ async function getJson<T>(
     path,
     token: opts.token ?? tctx.stackToken,
     basicUser: opts.basicUser,
-    query: opts.query as Record<string, string | number | boolean | undefined>,
+    query: opts.query as Record<string, string | number | boolean | string[] | undefined>,
     body: opts.body,
   });
   return res.body;
@@ -235,7 +242,9 @@ reg("grafana_list_annotations", async (p, t) => {
       from: paramNum(p, "from"),
       to: paramNum(p, "to"),
       dashboardUID: paramStr(p, "dashboardUid"),
-      tags: paramStr(p, "tags"),
+      // Grafana's /api/annotations accepts repeated ?tags=foo&tags=bar — pass
+      // the array through so the upstream client encodes one param per tag.
+      tags: paramArray(p, "tags"),
     },
   }));
 });

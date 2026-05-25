@@ -28,8 +28,13 @@ const sharedOpts = {
   singleLine: true,
 };
 
-const otelLogsEnabled =
-  (process.env.GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED ?? "").toLowerCase() === "true";
+const otelLogsRaw = (process.env.GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED ?? "")
+  .trim()
+  .toLowerCase();
+// Match `loadObservabilityConfig()` — accept both "true" and "1" so traces,
+// metrics, and log mirroring stay in sync. Mismatched parsing here would
+// leave traces flowing while log export silently stayed off.
+const otelLogsEnabled = otelLogsRaw === "true" || otelLogsRaw === "1";
 
 // When Grafana Cloud self-telemetry is on, mirror every pino call into the
 // OTel logs API in the main thread (where the OTel SDK lives). Pino's

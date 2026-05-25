@@ -410,6 +410,19 @@ export function createPluginToolDispatcher(
 
       const metrics = paperclipMetrics();
       const startNs = process.hrtime.bigint();
+      // Plugin id is derived from the namespaced tool name as a fallback when
+      // the dispatcher throws before resolving it from the registry — keeps the
+      // metric label set identical between success and failure paths so Mimir
+      // can aggregate without "no series" gaps.
+      const fallbackPluginId = (() => {
+        const parts = namespacedName.split(".");
+        return parts.length > 1 ? parts.slice(0, -1).join(".") : "unknown";
+      })();
+      const baseAttrs = {
+        "tool.name": namespacedName,
+        "plugin.id": fallbackPluginId,
+        "company.id": runContext.companyId ?? "unknown",
+      };
       try {
         const result = await registry.executeTool(
           namespacedName,
@@ -419,9 +432,8 @@ export function createPluginToolDispatcher(
 
         const durationMs = Number((process.hrtime.bigint() - startNs) / 1_000_000n);
         const attrs = {
-          "tool.name": namespacedName,
-          "plugin.id": result.pluginId,
-          "company.id": runContext.companyId ?? "",
+          ...baseAttrs,
+          "plugin.id": result.pluginId || baseAttrs["plugin.id"],
           error: result.result.error ? "true" : "false",
         };
         metrics.pluginToolCallsTotal.add(1, attrs);
@@ -441,15 +453,9 @@ export function createPluginToolDispatcher(
         return result;
       } catch (err) {
         const durationMs = Number((process.hrtime.bigint() - startNs) / 1_000_000n);
-        metrics.pluginToolCallsTotal.add(1, {
-          "tool.name": namespacedName,
-          "company.id": runContext.companyId ?? "",
-          error: "true",
-        });
-        metrics.pluginRpcDurationMs.record(durationMs, {
-          "tool.name": namespacedName,
-          error: "true",
-        });
+        const attrs = { ...baseAttrs, error: "true" };
+        metrics.pluginToolCallsTotal.add(1, attrs);
+        metrics.pluginRpcDurationMs.record(durationMs, attrs);
         throw err;
       }
     },

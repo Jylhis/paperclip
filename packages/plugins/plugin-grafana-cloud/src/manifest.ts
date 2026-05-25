@@ -7,11 +7,14 @@ export const PLUGIN_ID = "paperclipai.plugin-grafana-cloud";
 // override) inside the worker before fanning out to the right HTTP client.
 const COMPANY_ID = { type: "string", description: "Paperclip company id" } as const;
 
-function toolParams(extra: Record<string, unknown> = {}): Record<string, unknown> {
+function toolParams(
+  extra: Record<string, unknown> = {},
+  requiredFields: string[] = [],
+): Record<string, unknown> {
   return {
     type: "object",
     properties: { companyId: COMPANY_ID, ...extra },
-    required: ["companyId"],
+    required: ["companyId", ...requiredFields],
   };
 }
 
@@ -265,7 +268,7 @@ const lokiTools: ToolDecl[] = [
       query: { type: "string" },
       time: { type: "string", description: "ISO timestamp" },
       limit: { type: "number" },
-    }),
+    }, ["query"]),
   },
   {
     name: "loki_query_range",
@@ -278,7 +281,7 @@ const lokiTools: ToolDecl[] = [
       step: { type: "string" },
       limit: { type: "number" },
       direction: { type: "string", enum: ["forward", "backward"] },
-    }),
+    }, ["query"]),
   },
   {
     name: "loki_labels",
@@ -342,7 +345,7 @@ const tempoTools: ToolDecl[] = [
     name: "tempo_get_trace",
     displayName: "Tempo Get Trace",
     description: "Fetch a full trace by trace id.",
-    parametersSchema: toolParams({ traceId: { type: "string" } }),
+    parametersSchema: toolParams({ traceId: { type: "string" } }, ["traceId"]),
   },
   {
     name: "tempo_search_tag_names",
@@ -374,7 +377,7 @@ const mimirTools: ToolDecl[] = [
     name: "mimir_query",
     displayName: "Mimir Instant Query",
     description: "Run a PromQL instant query against the stack's Mimir / Prometheus endpoint.",
-    parametersSchema: toolParams({ query: { type: "string" }, time: { type: "string" } }),
+    parametersSchema: toolParams({ query: { type: "string" }, time: { type: "string" } }, ["query"]),
   },
   {
     name: "mimir_query_range",
@@ -385,7 +388,7 @@ const mimirTools: ToolDecl[] = [
       start: { type: "string" },
       end: { type: "string" },
       step: { type: "string" },
-    }),
+    }, ["query"]),
   },
   {
     name: "mimir_labels",
@@ -445,7 +448,7 @@ const mimirTools: ToolDecl[] = [
     name: "prom_query",
     displayName: "Prometheus Instant Query",
     description: "Alias of mimir_query.",
-    parametersSchema: toolParams({ query: { type: "string" }, time: { type: "string" } }),
+    parametersSchema: toolParams({ query: { type: "string" }, time: { type: "string" } }, ["query"]),
   },
   {
     name: "prom_query_range",
@@ -456,7 +459,7 @@ const mimirTools: ToolDecl[] = [
       start: { type: "string" },
       end: { type: "string" },
       step: { type: "string" },
-    }),
+    }, ["query"]),
   },
   {
     name: "prom_labels",
@@ -839,48 +842,12 @@ const manifest: PaperclipPluginManifestV1 = {
     },
     required: ["defaults"],
   },
-  apiRoutes: [
-    {
-      routeKey: "overview",
-      method: "GET",
-      path: "/overview",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "query", key: "companyId" },
-    },
-    {
-      routeKey: "stacks",
-      method: "GET",
-      path: "/stacks",
-      auth: "board",
-      capability: "api.routes.register",
-      companyResolution: { from: "query", key: "companyId" },
-    },
-    {
-      routeKey: "alerts",
-      method: "GET",
-      path: "/alerts",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "query", key: "companyId" },
-    },
-    {
-      routeKey: "incidents",
-      method: "GET",
-      path: "/incidents",
-      auth: "board-or-agent",
-      capability: "api.routes.register",
-      companyResolution: { from: "query", key: "companyId" },
-    },
-    {
-      routeKey: "save-company-override",
-      method: "POST",
-      path: "/company-override",
-      auth: "board",
-      capability: "api.routes.register",
-      companyResolution: { from: "body", key: "companyId" },
-    },
-  ],
+  // Scoped JSON API routes are intentionally not declared. The UI consumes
+  // overview data via `ctx.data.register("overview", ...)` and writes the
+  // per-company override via the registered `save-company-override` action,
+  // so there are no clients of `/api/plugins/:pluginId/api/*` endpoints.
+  // Declaring routes without implementing `onApiRequest` would surface as
+  // HTTP 501 — leave the manifest free of routes the worker can't serve.
   tools: allTools,
   ui: {
     slots: [

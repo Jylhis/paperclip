@@ -7,14 +7,16 @@ import { paperclipMetrics } from "../observability/index.js";
  * lifecycle — install once at the top of the middleware chain.
  *
  * Route templates (e.g. `/api/issues/:id`) are used when available so the
- * cardinality stays bounded; falls back to `req.path` if the route hasn't
- * been resolved yet (404s and middleware-rejected requests).
+ * cardinality stays bounded. Unmatched requests (404s, middleware-rejected,
+ * scanner traffic) are bucketed under the literal `"unknown"` label to keep
+ * the cardinality bounded — using `req.path` here would let arbitrary
+ * untrusted URLs blow up the metric series count.
  */
 export const httpMetrics: RequestHandler = (req, res, next) => {
   const startNs = process.hrtime.bigint();
   res.on("finish", () => {
     const durationMs = Number((process.hrtime.bigint() - startNs) / 1_000_000n);
-    const route = (req as { route?: { path?: string } }).route?.path ?? req.path;
+    const route = (req as { route?: { path?: string } }).route?.path ?? "unknown";
     const attrs = {
       method: req.method,
       route,

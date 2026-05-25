@@ -55,13 +55,26 @@ export function installCrashHandler(opts: CrashHandlerOptions): void {
     );
 
     if (opts.onCrash) {
-      const timeout = new Promise<void>((resolve) => {
-        setTimeout(resolve, flushDeadline).unref?.();
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const timeout = new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), flushDeadline);
+        timer.unref?.();
       });
       try {
-        await Promise.race([opts.onCrash({ error, source }), timeout]);
+        const outcome = await Promise.race<"ok" | "timeout">([
+          opts.onCrash({ error, source }).then(() => "ok"),
+          timeout,
+        ]);
+        if (outcome === "timeout") {
+          opts.logger.error(
+            { flushDeadlineMs: flushDeadline, source },
+            "crash telemetry flush timed out; some crash spans may be missing",
+          );
+        }
       } catch (flushErr) {
         opts.logger.error({ err: flushErr }, "crash telemetry flush failed");
+      } finally {
+        if (timer) clearTimeout(timer);
       }
     }
 

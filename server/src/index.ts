@@ -1,4 +1,8 @@
 /// <reference path="./types/express.d.ts" />
+// MUST be the very first import. Registers OTel auto-instrumentation loader
+// hooks before any modules that need patching (node:http, express, pg,
+// drizzle) are first loaded by the imports below.
+import "./observability/preload.js";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";

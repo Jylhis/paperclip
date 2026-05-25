@@ -89,15 +89,19 @@ export async function upstream<T = unknown>(input: UpstreamRequest): Promise<Ups
         body,
         signal: controller.signal,
       });
-      clearTimeout(timer);
 
       if (res.status >= 500 && attempt < maxAttempts) {
-        // Retry server errors with exponential backoff.
+        // Retry server errors with exponential backoff. Clear the timer first
+        // so the abort signal doesn't fire while we sleep.
+        clearTimeout(timer);
         await sleep(150 * attempt * attempt);
         continue;
       }
 
+      // Keep the timer armed across `res.text()` — an upstream that sends
+      // headers but stalls the body would otherwise hang forever.
       const rawText = await res.text();
+      clearTimeout(timer);
       const parsed: unknown = expectJson && rawText ? safeJsonParse(rawText) : rawText;
       if (!res.ok) {
         throw new UpstreamError({

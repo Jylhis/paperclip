@@ -53,18 +53,15 @@ export async function resolveStackEndpoints(input: {
   }
 
   const url = `https://grafana.com/api/instances/${encodeURIComponent(input.config.stackSlug)}`;
-  const res = await input.ctx.http.fetch(url, {
-    headers: {
-      Authorization: `Bearer ${input.cloudAccessToken}`,
-      Accept: "application/json",
-    },
-  });
-  if (!res.ok) {
-    throw new Error(
-      `Grafana Cloud stack lookup failed for "${input.config.stackSlug}": ${res.status} ${res.statusText}`,
-    );
-  }
-  const raw = (await res.json()) as {
+  // Bound the stack lookup so a slow grafana.com never hangs a tool call.
+  // Timer covers both headers and body — if the upstream sends headers but
+  // stalls the JSON body the abort still fires.
+  const controller = new AbortController();
+  const timer = setTimeout(
+    () => controller.abort(),
+    input.config.timeoutMs ?? 30_000,
+  );
+  let raw: {
     id: number;
     slug: string;
     regionSlug?: string;
@@ -80,6 +77,38 @@ export async function resolveStackEndpoints(input: {
     hpInstanceUrl?: string;
     amInstanceUrl?: string;
   };
+  try {
+    const res = await input.ctx.http.fetch(url, {
+      headers: {
+        Authorization: `Bearer ${input.cloudAccessToken}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `Grafana Cloud stack lookup failed for "${input.config.stackSlug}": ${res.status} ${res.statusText}`,
+      );
+    }
+    raw = (await res.json()) as {
+      id: number;
+      slug: string;
+      regionSlug?: string;
+      region?: string;
+      url: string;
+      hlInstanceId?: number;
+      hlInstanceUrl?: string;
+      hmInstanceId?: number;
+      hmInstancePromUrl?: string;
+      htInstanceId?: number;
+      htInstanceUrl?: string;
+      hpInstanceId?: number;
+      hpInstanceUrl?: string;
+      amInstanceUrl?: string;
+    };
+  } finally {
+    clearTimeout(timer);
+  }
   const region = raw.regionSlug ?? raw.region ?? input.config.region;
   const resolved: ResolvedStack = {
     id: raw.id,
