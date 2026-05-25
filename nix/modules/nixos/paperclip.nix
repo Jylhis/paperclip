@@ -706,6 +706,15 @@ in
           '';
         }
         {
+          assertion = !proxyEnabled || cfg.publicUrl != null || cfg.deploymentMode != "local_trusted";
+          message = ''
+            services.paperclip.proxy with deploymentMode = "local_trusted"
+            requires `publicUrl`. Virtual-host-only proxy configuration is
+            unsafe in local-trusted mode because loopback hostnames can be
+            treated as trusted board traffic.
+          '';
+        }
+        {
           # When `virtualHost` is set explicitly we skip the URL parse —
           # the override defines the vhost name. Otherwise the derived
           # hostname must come back non-null.
