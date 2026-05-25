@@ -119,15 +119,28 @@ stdenv.mkDerivation (finalAttrs: {
     rebuild_node_module sqlite3
     rebuild_node_module better-sqlite3 || true
 
+    # Build the server and CLI together with their transitive workspace
+    # dependencies. The `...` suffix tells pnpm to include each filter's
+    # workspace deps in topological order so that `@paperclipai/shared`,
+    # `@paperclipai/db`, `@paperclipai/adapter-utils`, every adapter
+    # package, etc. produce their own `dist/` before the server's `tsc`
+    # tries to resolve them.
     pnpm --filter @paperclipai/ui build
-    pnpm --filter @paperclipai/plugin-sdk build
-    pnpm --filter @paperclipai/server build
-    pnpm --filter paperclipai build
+    pnpm --filter "@paperclipai/server..." build
+    pnpm --filter "paperclipai..." build
 
     test -f server/dist/index.js \
       || (echo "ERROR: server build output missing" >&2; exit 1)
     test -f cli/dist/index.js \
       || (echo "ERROR: cli (paperclipai) build output missing" >&2; exit 1)
+
+    # Apply each workspace package's publishConfig.{exports,main,types}
+    # in place so consumers resolve `@paperclipai/*` imports to
+    # `dist/*.js` instead of `src/*.ts`. Without this, the server's
+    # built `dist/index.js` would only be loadable via a TS-aware
+    # runtime loader (e.g. tsx via `--import`), which is non-idiomatic
+    # for nixpkgs and interacts badly with Node 20+ loader machinery.
+    node scripts/flip-workspace-publishconfig.mjs
 
     runHook postBuild
   '';
@@ -156,8 +169,6 @@ stdenv.mkDerivation (finalAttrs: {
     }
 
     makeWrapper ${nodejs}/bin/node $out/bin/paperclip \
-      --add-flags "--import" \
-      --add-flags "$out/lib/paperclip/server/node_modules/tsx/dist/loader.mjs" \
       --add-flags "$out/lib/paperclip/server/dist/index.js" \
       --prefix PATH : "$runtimePath" \
       --set NODE_ENV production
