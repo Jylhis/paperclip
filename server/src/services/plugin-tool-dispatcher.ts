@@ -39,6 +39,7 @@ import {
 } from "./plugin-tool-registry.js";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { logger } from "../middleware/logger.js";
+import { paperclipMetrics } from "../observability/index.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -407,23 +408,50 @@ export function createPluginToolDispatcher(
         "dispatching tool execution",
       );
 
-      const result = await registry.executeTool(
-        namespacedName,
-        parameters,
-        runContext,
-      );
+      const metrics = paperclipMetrics();
+      const startNs = process.hrtime.bigint();
+      try {
+        const result = await registry.executeTool(
+          namespacedName,
+          parameters,
+          runContext,
+        );
 
-      log.debug(
-        {
-          tool: namespacedName,
-          pluginId: result.pluginId,
-          hasContent: !!result.result.content,
-          hasError: !!result.result.error,
-        },
-        "tool execution completed",
-      );
+        const durationMs = Number((process.hrtime.bigint() - startNs) / 1_000_000n);
+        const attrs = {
+          "tool.name": namespacedName,
+          "plugin.id": result.pluginId,
+          "company.id": runContext.companyId ?? "",
+          error: result.result.error ? "true" : "false",
+        };
+        metrics.pluginToolCallsTotal.add(1, attrs);
+        metrics.pluginRpcDurationMs.record(durationMs, attrs);
 
-      return result;
+        log.debug(
+          {
+            tool: namespacedName,
+            pluginId: result.pluginId,
+            hasContent: !!result.result.content,
+            hasError: !!result.result.error,
+            durationMs,
+          },
+          "tool execution completed",
+        );
+
+        return result;
+      } catch (err) {
+        const durationMs = Number((process.hrtime.bigint() - startNs) / 1_000_000n);
+        metrics.pluginToolCallsTotal.add(1, {
+          "tool.name": namespacedName,
+          "company.id": runContext.companyId ?? "",
+          error: "true",
+        });
+        metrics.pluginRpcDurationMs.record(durationMs, {
+          "tool.name": namespacedName,
+          error: "true",
+        });
+        throw err;
+      }
     },
 
     registerPluginTools(

@@ -28,6 +28,8 @@ import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
+import { initObservability } from "./observability/index.js";
+import { serverVersion } from "./version.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
   feedbackService,
@@ -89,6 +91,12 @@ export interface StartedServer {
 }
 
 export async function startServer(): Promise<StartedServer> {
+  // Bootstrap observability before anything else so auto-instrumentation can
+  // hook into http/express/pg modules as they're first required. Safe to call
+  // unconditionally — the crash handler always installs, OTLP exporters only
+  // come up when GRAFANA_CLOUD_* env vars are present.
+  const observability = await initObservability({ logger, serverVersion });
+
   let config = loadConfig();
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
@@ -927,6 +935,12 @@ export async function startServer(): Promise<StartedServer> {
         } catch (err) {
           logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
         }
+      }
+
+      try {
+        await observability.shutdown();
+      } catch (err) {
+        logger.error({ err }, "Failed to flush observability exporters cleanly");
       }
 
       process.exit(0);

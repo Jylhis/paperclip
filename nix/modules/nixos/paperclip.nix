@@ -136,6 +136,26 @@ let
     }
   )
   // optionalAttrs (evalTimeDatabaseUrl != null) { DATABASE_URL = evalTimeDatabaseUrl; }
+  // optionalAttrs cfg.grafanaCloud.enable (
+    {
+      # Token files are loaded by the server at runtime — only paths are baked
+      # into the unit environment, never the secret material itself. The
+      # server's observability bootstrap and the Grafana Cloud plugin both
+      # read these env vars.
+      GRAFANA_CLOUD_STACK_SLUG = cfg.grafanaCloud.stackSlug;
+      GRAFANA_CLOUD_REGION = cfg.grafanaCloud.region;
+      GRAFANA_CLOUD_CLOUD_TOKEN_FILE = toString cfg.grafanaCloud.cloudAccessTokenFile;
+      GRAFANA_CLOUD_STACK_TOKEN_FILE = toString cfg.grafanaCloud.stackTokenFile;
+    }
+    // optionalAttrs cfg.grafanaCloud.selfTelemetry.enable {
+      GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED = "true";
+      OTEL_SERVICE_NAME = cfg.grafanaCloud.selfTelemetry.serviceName;
+      OTEL_RESOURCE_ATTRIBUTES =
+        "service.namespace=paperclip,deployment.environment=${cfg.grafanaCloud.selfTelemetry.deploymentEnv}";
+      OTEL_TRACES_SAMPLER = "parentbased_traceidratio";
+      OTEL_TRACES_SAMPLER_ARG = toString cfg.grafanaCloud.selfTelemetry.samplingRatio;
+    }
+  )
   // cfg.extraEnvironment;
 in
 {
@@ -604,6 +624,109 @@ in
       description = "Additional environment variables for the unit.";
     };
 
+    grafanaCloud = {
+      enable = mkEnableOption ''
+        Grafana Cloud integration. When enabled, sets instance defaults for
+        the Grafana Cloud plugin (so board users don't have to retype the
+        stack and tokens in the UI) and — unless explicitly disabled below —
+        ships Paperclip's own metrics, logs, and crash traces to the
+        configured stack. Per-company overrides in the plugin UI win over
+        these defaults.
+      '';
+
+      stackSlug = mkOption {
+        type = types.str;
+        example = "acmeprod";
+        description = ''
+          Grafana Cloud stack slug (the subdomain in `<slug>.grafana.net`).
+          Used to resolve per-service endpoint URLs via
+          `https://grafana.com/api/instances/<slug>`.
+        '';
+      };
+
+      region = mkOption {
+        type = types.str;
+        example = "prod-us-east-0";
+        description = ''
+          Grafana Cloud region the stack lives in. Mostly informational —
+          endpoint URLs are looked up at runtime from the stack metadata —
+          but exposed as a default for the plugin's per-company override UI.
+        '';
+      };
+
+      cloudAccessTokenFile = mkOption {
+        type = types.path;
+        example = "/run/secrets/paperclip-grafana-cloud-access-token";
+        description = ''
+          Path to a file holding a grafana.com Cloud Access Policy token.
+          Used for stack lookup (`grafana.com/api/instances/<slug>`) and for
+          plugin Cloud Admin tools. Must be readable by the paperclip
+          service user. The file path is exposed via the
+          `GRAFANA_CLOUD_CLOUD_TOKEN_FILE` env var; the token contents are
+          read at runtime and never baked into the systemd unit definition.
+        '';
+      };
+
+      stackTokenFile = mkOption {
+        type = types.path;
+        example = "/run/secrets/paperclip-grafana-cloud-stack-token";
+        description = ''
+          Path to a file holding a stack-scoped service-account token. Used
+          to push OTLP traces/metrics/logs to the stack's OTLP gateway and
+          for plugin tools that read stack-scoped resources (dashboards,
+          Loki, Tempo, Mimir, OnCall, IRM, etc.). Must be readable by the
+          paperclip service user. The file path is exposed via
+          `GRAFANA_CLOUD_STACK_TOKEN_FILE`; contents stay out of the env.
+        '';
+      };
+
+      selfTelemetry = {
+        enable = mkOption {
+          type = types.bool;
+          default = true;
+          description = ''
+            Ship Paperclip's own OpenTelemetry traces, metrics, and logs to
+            the configured Grafana Cloud stack. Always-on once
+            `grafanaCloud.enable = true`. Set to `false` to use Grafana
+            Cloud only for the plugin's agent-facing tools, with no
+            outbound telemetry from the server itself.
+          '';
+        };
+
+        serviceName = mkOption {
+          type = types.str;
+          default = "paperclip-server";
+          description = ''
+            `service.name` resource attribute on emitted spans, metrics,
+            and logs. Override to disambiguate multiple Paperclip
+            deployments sharing one stack.
+          '';
+        };
+
+        deploymentEnv = mkOption {
+          type = types.str;
+          example = "prod";
+          default = "prod";
+          description = ''
+            `deployment.environment` resource attribute (e.g. `prod`,
+            `staging`, `dev`). Used in Grafana to filter views per
+            environment.
+          '';
+        };
+
+        samplingRatio = mkOption {
+          type = types.float;
+          default = 0.1;
+          description = ''
+            Head-based trace sampling ratio for non-error spans (0..1).
+            Errors are always sampled regardless of this value. Lower this
+            on high-traffic instances to control cost; raise it for richer
+            traces on lightly-loaded deployments.
+          '';
+        };
+      };
+    };
+
     openFirewall = mkOption {
       type = types.bool;
       default = false;
@@ -733,6 +856,34 @@ in
             nginx vhost. Caddy negotiates ACME itself when the vhost
             name resolves publicly — drop `enableACME` and rely on
             Caddy's default behaviour.
+          '';
+        }
+        {
+          assertion =
+            !cfg.grafanaCloud.enable
+            || (
+              cfg.grafanaCloud.stackSlug != ""
+              && cfg.grafanaCloud.region != ""
+              && cfg.grafanaCloud.cloudAccessTokenFile != null
+              && cfg.grafanaCloud.stackTokenFile != null
+            );
+          message = ''
+            services.paperclip.grafanaCloud.enable requires `stackSlug`,
+            `region`, `cloudAccessTokenFile`, and `stackTokenFile` to be
+            set. The token files are read at runtime by the server and
+            must be readable by the paperclip service user.
+          '';
+        }
+        {
+          assertion =
+            !cfg.grafanaCloud.enable
+            || (
+              cfg.grafanaCloud.selfTelemetry.samplingRatio >= 0.0
+              && cfg.grafanaCloud.selfTelemetry.samplingRatio <= 1.0
+            );
+          message = ''
+            services.paperclip.grafanaCloud.selfTelemetry.samplingRatio
+            must be between 0.0 and 1.0 (inclusive).
           '';
         }
       ];

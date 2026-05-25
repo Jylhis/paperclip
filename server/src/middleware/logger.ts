@@ -4,6 +4,7 @@ import pino from "pino";
 import { pinoHttp } from "pino-http";
 import { readConfigFile } from "../config-file.js";
 import { resolveDefaultLogsDir, resolveHomeAwarePath } from "../home-paths.js";
+import { createOtelLogMirror } from "../observability/pino-otel-mirror.js";
 import { shouldSilenceHttpSuccessLog } from "./http-log-policy.js";
 
 function resolveServerLogDir(): string {
@@ -27,9 +28,25 @@ const sharedOpts = {
   singleLine: true,
 };
 
+const otelLogsEnabled =
+  (process.env.GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED ?? "").toLowerCase() === "true";
+
+// When Grafana Cloud self-telemetry is on, mirror every pino call into the
+// OTel logs API in the main thread (where the OTel SDK lives). Pino's
+// existing worker-thread transports for stdout-pretty + file keep running
+// unchanged; this only adds a second sink.
+const hooks = otelLogsEnabled
+  ? {
+      logMethod: createOtelLogMirror({
+        loggerName: process.env.OTEL_SERVICE_NAME ?? "paperclip-server",
+      }),
+    }
+  : undefined;
+
 export const logger = pino({
   level: "debug",
   redact: ["req.headers.authorization"],
+  ...(hooks ? { hooks } : {}),
 }, pino.transport({
   targets: [
     {
