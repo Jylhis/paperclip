@@ -4342,7 +4342,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           continue;
         }
 
-        const createdStatus = "idle";
+        const createdStatus = targetCompany.requireBoardApprovalForNewAgents ? "pending_approval" : "idle";
         let created = await agents.create(targetCompany.id, {
           ...patch,
           status: createdStatus,
