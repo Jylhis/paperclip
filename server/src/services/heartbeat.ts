@@ -48,6 +48,7 @@ import {
 } from "@paperclipai/db";
 import { conflict, HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { paperclipMetrics } from "../observability/index.js";
 import { publishLiveEvent } from "./live-events.js";
 import { getRunLogStore, type RunLogHandle } from "./run-log-store.js";
 import { getServerAdapter, listAdapterModelProfiles, runningProcesses } from "../adapters/index.js";
@@ -3862,6 +3863,32 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     return updated;
   }
 
+  function recordRunLifecycleMetric(
+    eventType: "agent.run.started" | "agent.run.finished" | "agent.run.failed" | "agent.run.cancelled",
+    run: typeof heartbeatRuns.$inferSelect,
+  ) {
+    const m = paperclipMetrics();
+    const attrs = {
+      "agent.id": run.agentId,
+      "company.id": run.companyId,
+      "invocation.source": run.invocationSource ?? "unknown",
+    };
+    if (eventType === "agent.run.started") {
+      m.agentRunsStarted.add(1, attrs);
+      return;
+    }
+    if (eventType === "agent.run.finished") m.agentRunsFinished.add(1, attrs);
+    else if (eventType === "agent.run.failed") m.agentRunsFailed.add(1, attrs);
+    else if (eventType === "agent.run.cancelled") m.agentRunsCancelled.add(1, attrs);
+
+    if (run.startedAt && run.finishedAt) {
+      const durationMs = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+      if (Number.isFinite(durationMs) && durationMs >= 0) {
+        m.agentRunDurationMs.record(durationMs, { ...attrs, status: run.status });
+      }
+    }
+  }
+
   function publishRunLifecyclePluginEvent(run: typeof heartbeatRuns.$inferSelect) {
     const eventType =
       run.status === "running"
@@ -3874,6 +3901,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               ? "agent.run.cancelled"
               : null;
     if (!eventType) return;
+    recordRunLifecycleMetric(eventType, run);
     publishPluginDomainEvent({
       eventId: randomUUID(),
       eventType,
