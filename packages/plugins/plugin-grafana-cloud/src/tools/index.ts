@@ -42,7 +42,12 @@ function defaultSummary(data: unknown): string {
   if (Array.isArray(data)) return `${data.length} items`;
   if (data && typeof data === "object") return JSON.stringify(data).slice(0, 500);
   if (data == null) return "";
-  return typeof data === "string" ? data : String(data);
+  if (typeof data === "string") return data;
+  if (typeof data === "number" || typeof data === "boolean" || typeof data === "bigint") {
+    return data.toString();
+  }
+  // Symbol / function — uncommon shapes, but avoid default object-toString.
+  return Object.prototype.toString.call(data);
 }
 
 function param<T>(params: Record<string, unknown>, key: string): T | undefined {
