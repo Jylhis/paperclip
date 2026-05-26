@@ -92,7 +92,7 @@ function stringifyArg(arg: unknown): string {
   try {
     return JSON.stringify(arg);
   } catch {
-    return String(arg);
+    return "[unserializable]";
   }
 }
 
@@ -117,7 +117,7 @@ function flattenAttributes(obj: Record<string, unknown>): Record<string, unknown
       try {
         out[k] = JSON.stringify(v);
       } catch {
-        out[k] = String(v);
+        out[k] = "[unserializable]";
       }
     }
   }

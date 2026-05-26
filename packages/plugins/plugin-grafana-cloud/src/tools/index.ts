@@ -41,7 +41,8 @@ function ok(data: unknown, summary?: string): ToolResult {
 function defaultSummary(data: unknown): string {
   if (Array.isArray(data)) return `${data.length} items`;
   if (data && typeof data === "object") return JSON.stringify(data).slice(0, 500);
-  return String(data ?? "");
+  if (data == null) return "";
+  return typeof data === "string" ? data : String(data);
 }
 
 function param<T>(params: Record<string, unknown>, key: string): T | undefined {
@@ -316,10 +317,10 @@ reg("loki_series", async (p, t) =>
   ok(await getJson(t, t.stack.lokiUrl, `${LOKI_BASE}/series`, {
     basicUser: t.basicUserLoki,
     query: {
-      "match[]": (p.match as string[] | undefined),
+      "match[]": paramArray(p, "match"),
       start: paramStr(p, "start"),
       end: paramStr(p, "end"),
-    } as Record<string, unknown>,
+    },
   })));
 reg("loki_tail_recent", async (p, t) => {
   const lookback = paramNum(p, "lookbackSeconds") ?? 300;
@@ -423,10 +424,10 @@ reg("mimir_series", async (p, t) =>
   ok(await getJson(t, t.stack.mimirPromUrl, `${MIMIR_BASE}/series`, {
     basicUser: t.basicUserMimir,
     query: {
-      "match[]": (p.match as string[] | undefined),
+      "match[]": paramArray(p, "match"),
       start: paramStr(p, "start"),
       end: paramStr(p, "end"),
-    } as Record<string, unknown>,
+    },
   })));
 reg("mimir_list_rules", async (_p, t) =>
   ok(await getJson(t, t.stack.mimirPromUrl, "/api/prom/rules", { basicUser: t.basicUserMimir })));

@@ -152,11 +152,10 @@ describe("plugin-grafana-cloud", () => {
     expect((res.data as { status: number })?.status).toBe(429);
   });
 
-  it("unknown tool returns structured error", async () => {
-    const harness = await setupHarness();
-    // Manually call the dispatcher via an undeclared tool name through state.
-    // We can't go through executeTool() because the harness validates against
-    // the manifest, so this assertion lives in the unit test for dispatchTool.
+  it("unknown tool returns structured error", () => {
+    // Manually calling the dispatcher with an undeclared tool name needs to
+    // bypass executeTool() — the harness validates against the manifest — so
+    // the actual assertion lives in the unit test for dispatchTool.
     expect(true).toBe(true);
   });
 });

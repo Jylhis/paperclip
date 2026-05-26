@@ -79,7 +79,7 @@ export function AlertsWidget(_props: PluginWidgetProps) {
   return <MetricCard label="Grafana Cloud · Firing Alerts" value={count} />;
 }
 
-export function CompanySettingsPage(props: { companyId: string }) {
+export function CompanySettingsPage(props: Readonly<{ companyId: string }>) {
   const ctx = useHostContext();
   const companyId = props.companyId ?? ctx.companyId ?? "";
   const save = usePluginAction("save-company-override");
@@ -110,19 +110,19 @@ export function CompanySettingsPage(props: { companyId: string }) {
     <form onSubmit={onSubmit} style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12, maxWidth: 480 }}>
       <h2>Grafana Cloud · company override</h2>
       <label>
-        Stack slug
+        <span>Stack slug</span>
         <input value={stackSlug} onChange={(e) => setStackSlug(e.target.value)} placeholder="leave blank to inherit" />
       </label>
       <label>
-        Region
+        <span>Region</span>
         <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="leave blank to inherit" />
       </label>
       <label>
-        Cloud Access Policy token (secret ref)
+        <span>Cloud Access Policy token (secret ref)</span>
         <input value={cloudRef} onChange={(e) => setCloudRef(e.target.value)} placeholder="leave blank to inherit" />
       </label>
       <label>
-        Stack service-account token (secret ref)
+        <span>Stack service-account token (secret ref)</span>
         <input value={stackRef} onChange={(e) => setStackRef(e.target.value)} placeholder="leave blank to inherit" />
       </label>
       <button type="submit">Save override</button>

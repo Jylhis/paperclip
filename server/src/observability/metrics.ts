@@ -11,7 +11,7 @@ import { metrics, type Counter, type Histogram, type Meter } from "@opentelemetr
  * Grafana Cloud are wired to them.
  */
 class PaperclipMetrics {
-  private meter: Meter;
+  private readonly meter: Meter;
 
   readonly agentRunsStarted: Counter;
   readonly agentRunsFinished: Counter;
@@ -128,8 +128,6 @@ let instance: PaperclipMetrics | null = null;
  * MeterProvider is registered at first call (no-op or real exporter).
  */
 export function paperclipMetrics(): PaperclipMetrics {
-  if (!instance) {
-    instance = new PaperclipMetrics();
-  }
+  instance ??= new PaperclipMetrics();
   return instance;
 }
