@@ -46,6 +46,11 @@ let
 
   runtimeEnvDir = "/run/paperclip";
   runtimeDbEnvFile = "${runtimeEnvDir}/db-env";
+  # Assembled at boot when grafanaCloud.selfTelemetry.otlpInstanceId is
+  # set; sourced by paperclipExecStart alongside runtimeDbEnvFile so the
+  # OTLP exporter's auth header never lives in the unit's static env
+  # block (and thus never lands in the nix store).
+  runtimeOtlpEnvFile = "${runtimeEnvDir}/otlp-env";
 
   buildDbEnvScript = pkgs.writeShellScript "paperclip-build-db-env" ''
     set -euo pipefail
@@ -59,25 +64,55 @@ let
       > "${runtimeDbEnvFile}"
   '';
 
-  # ExecStart wrapper that sources runtimeDbEnvFile inline before
-  # exec'ing the paperclip binary. We do NOT rely on systemd's
-  # `EnvironmentFile=` for the runtime db env: the file is created by
-  # `ExecStartPre = buildDbEnvScript`, and there are systemd-version
-  # combinations where `EnvironmentFile` is parsed before `ExecStartPre`
-  # runs. With the file missing at parse time and the `-` prefix
-  # silencing the error, the main process would start without
-  # DATABASE_URL — at which point the server's runtime falls back to
-  # embedded PostgreSQL inside `$PAPERCLIP_HOME`, splitting data away
-  # from the NixOS-managed database. Sourcing in the wrapper makes the
-  # ordering explicit and immune to that race.
+  # Mirror of buildDbEnvScript for the OTLP Basic-auth header. Reads
+  # the stack token at boot (kept out of the store), base64-encodes
+  # `${otlpInstanceId}:${token}`, and writes a shell-sourceable line
+  # that paperclipExecStart picks up. Guarded by otlpInstanceId being
+  # non-null at the call site.
+  buildOtlpEnvScript = pkgs.writeShellScript "paperclip-build-otlp-env" ''
+    set -euo pipefail
+    token=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.grafanaCloud.stackTokenFile}")
+    auth=$(${pkgs.coreutils}/bin/printf '%s:%s' '${toString cfg.grafanaCloud.selfTelemetry.otlpInstanceId}' "$token" \
+      | ${pkgs.coreutils}/bin/base64 -w0)
+    umask 077
+    ${pkgs.coreutils}/bin/printf \
+      "OTEL_EXPORTER_OTLP_HEADERS='Authorization=Basic %s'\n" \
+      "$auth" \
+      > "${runtimeOtlpEnvFile}"
+  '';
+
+  # Flags joined into NODE_OPTIONS at unit-build time. Heap snapshot
+  # support is opt-in (heapSnapshots.enable) — when on, Node writes a
+  # `.heapsnapshot` to `diagnosticDir` on SIGUSR2, which the module
+  # also makes sure exists via tmpfiles.
+  effectiveNodeOptions =
+    cfg.nodeOptions
+    ++ lib.optionals cfg.heapSnapshots.enable [
+      "--heapsnapshot-signal=SIGUSR2"
+      "--diagnostic-dir=${cfg.heapSnapshots.dir}"
+    ];
+
+  # ExecStart wrapper that sources runtimeDbEnvFile and (when present)
+  # runtimeOtlpEnvFile inline before exec'ing the paperclip binary.
+  # We do NOT rely on systemd's `EnvironmentFile=` for these runtime
+  # files: they are created by `ExecStartPre` scripts, and there are
+  # systemd-version combinations where `EnvironmentFile` is parsed
+  # before `ExecStartPre` runs. With the file missing at parse time
+  # and the `-` prefix silencing the error, the main process would
+  # start without DATABASE_URL — at which point the server's runtime
+  # falls back to embedded PostgreSQL inside `$PAPERCLIP_HOME`,
+  # splitting data away from the NixOS-managed database. Sourcing in
+  # the wrapper makes the ordering explicit and immune to that race.
   paperclipExecStart = pkgs.writeShellScript "paperclip-exec-start" ''
     set -euo pipefail
-    if [ -r "${runtimeDbEnvFile}" ]; then
-      set -a
-      # shellcheck disable=SC1091
-      . "${runtimeDbEnvFile}"
-      set +a
-    fi
+    for f in "${runtimeDbEnvFile}" "${runtimeOtlpEnvFile}"; do
+      if [ -r "$f" ]; then
+        set -a
+        # shellcheck disable=SC1091
+        . "$f"
+        set +a
+      fi
+    done
     exec ${resolvedPackage}/bin/paperclip
   '';
 
@@ -111,9 +146,11 @@ let
     PAPERCLIP_MIGRATION_AUTO_APPLY = "true";
     PAPERCLIP_MIGRATION_PROMPT = "never";
     # V8's default old-space cap (~1.7 GB) is too tight for the agent runtime
-    # and triggers `Ineffective mark-compacts near heap limit`. Overridable
-    # via `extraEnvironment`.
-    NODE_OPTIONS = "--max-old-space-size=4096";
+    # and triggers `Ineffective mark-compacts near heap limit`. Composed from
+    # `services.paperclip.nodeOptions` (plus the heap-snapshot flags when
+    # `services.paperclip.heapSnapshots.enable = true`). `extraEnvironment`
+    # still wins, but prefer the typed option.
+    NODE_OPTIONS = lib.concatStringsSep " " effectiveNodeOptions;
     # Upstream Dockerfile sets this so the bundled opencode CLI accepts
     # any model the user configures. Harmless if opencode isn't used.
     OPENCODE_ALLOW_ALL_MODELS = "true";
@@ -173,14 +210,24 @@ let
       GRAFANA_CLOUD_CLOUD_TOKEN_FILE = toString cfg.grafanaCloud.cloudAccessTokenFile;
       GRAFANA_CLOUD_STACK_TOKEN_FILE = toString cfg.grafanaCloud.stackTokenFile;
     }
-    // optionalAttrs cfg.grafanaCloud.selfTelemetry.enable {
-      GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED = "true";
-      OTEL_SERVICE_NAME = cfg.grafanaCloud.selfTelemetry.serviceName;
-      OTEL_RESOURCE_ATTRIBUTES =
-        "service.namespace=paperclip,deployment.environment=${cfg.grafanaCloud.selfTelemetry.deploymentEnv}";
-      OTEL_TRACES_SAMPLER = "parentbased_traceidratio";
-      OTEL_TRACES_SAMPLER_ARG = toString cfg.grafanaCloud.selfTelemetry.samplingRatio;
-    }
+    // optionalAttrs cfg.grafanaCloud.selfTelemetry.enable (
+      {
+        GRAFANA_CLOUD_SELF_TELEMETRY_ENABLED = "true";
+        OTEL_SERVICE_NAME = cfg.grafanaCloud.selfTelemetry.serviceName;
+        OTEL_RESOURCE_ATTRIBUTES = "service.namespace=paperclip,deployment.environment=${cfg.grafanaCloud.selfTelemetry.deploymentEnv}";
+        OTEL_TRACES_SAMPLER = "parentbased_traceidratio";
+        OTEL_TRACES_SAMPLER_ARG = toString cfg.grafanaCloud.selfTelemetry.samplingRatio;
+      }
+      # Set OTLP endpoint explicitly so the OTel SDK does not silently
+      # fall back to `localhost:4318` (where nothing is listening on the
+      # standard `j10s/lib/grafana-cloud` host). The auth header is
+      # assembled at boot by buildOtlpEnvScript and lives in
+      # /run/paperclip/otlp-env (not the unit's static env).
+      // optionalAttrs (cfg.grafanaCloud.selfTelemetry.otlpEndpoint != null) {
+        OTEL_EXPORTER_OTLP_ENDPOINT = cfg.grafanaCloud.selfTelemetry.otlpEndpoint;
+        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf";
+      }
+    )
   )
   // cfg.extraEnvironment;
 in
@@ -190,16 +237,19 @@ in
   # surfaces a clean eval-time error pointing at the replacement instead of
   # silently dropping the value.
   imports = [
-    (mkRemovedOptionModule [ "services" "paperclip" "host" ]
-      "Use services.paperclip.listen.host.")
-    (mkRemovedOptionModule [ "services" "paperclip" "port" ]
-      "Use services.paperclip.listen.port.")
-    (mkRemovedOptionModule [ "services" "paperclip" "bind" ]
-      "Use services.paperclip.listen.mode.")
-    (mkRemovedOptionModule [ "services" "paperclip" "bindHost" ]
-      "Use services.paperclip.listen.bindHost.")
-    (mkRemovedOptionModule [ "services" "paperclip" "tailnetBindHost" ]
-      "Use services.paperclip.listen.tailnetBindHost.")
+    (mkRemovedOptionModule [ "services" "paperclip" "host" ] "Use services.paperclip.listen.host.")
+    (mkRemovedOptionModule [ "services" "paperclip" "port" ] "Use services.paperclip.listen.port.")
+    (mkRemovedOptionModule [ "services" "paperclip" "bind" ] "Use services.paperclip.listen.mode.")
+    (mkRemovedOptionModule [
+      "services"
+      "paperclip"
+      "bindHost"
+    ] "Use services.paperclip.listen.bindHost.")
+    (mkRemovedOptionModule [
+      "services"
+      "paperclip"
+      "tailnetBindHost"
+    ] "Use services.paperclip.listen.tailnetBindHost.")
     (mkRemovedOptionModule [ "services" "paperclip" "database" "mode" ] ''
       services.paperclip.database.mode has been removed. The module now
       supports two database shapes selected by services.paperclip.database.createLocally:
@@ -794,6 +844,43 @@ in
             traces on lightly-loaded deployments.
           '';
         };
+
+        otlpEndpoint = mkOption {
+          type = types.nullOr types.str;
+          default = "https://otlp-gateway-${cfg.grafanaCloud.region}.grafana.net/otlp";
+          defaultText = literalExpression ''
+            "https://otlp-gateway-''${cfg.grafanaCloud.region}.grafana.net/otlp"
+          '';
+          description = ''
+            OTLP/HTTP endpoint where Paperclip ships its self telemetry
+            (traces, metrics, logs). Defaults to the Grafana Cloud
+            per-region OTLP gateway derived from `grafanaCloud.region`.
+            Emitted to the unit as `OTEL_EXPORTER_OTLP_ENDPOINT` (with
+            `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf`). Set to `null`
+            to leave both env vars unset — the server then falls back
+            to its own bootstrap, or the OTel SDK default of
+            `localhost:4318`. Setting it explicitly closes the gap
+            where the SDK silently drops traces against a closed port.
+          '';
+        };
+
+        otlpInstanceId = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "123456";
+          description = ''
+            Grafana Cloud OTLP instance ID, used as the Basic-auth
+            username when the module assembles `OTEL_EXPORTER_OTLP_HEADERS`
+            at boot. Found in the stack's "OpenTelemetry" tile at
+            grafana.com → My Account → your stack → OpenTelemetry →
+            "Configure". When non-null, the module adds an
+            `ExecStartPre` that combines this with the contents of
+            `stackTokenFile` into a `Basic <b64>` Authorization header
+            written to `/run/paperclip/otlp-env`. When null, no header
+            is emitted — the server must bootstrap its own auth from
+            `GRAFANA_CLOUD_STACK_TOKEN_FILE`.
+          '';
+        };
       };
     };
 
@@ -833,6 +920,127 @@ in
         this well above `memoryHigh` (or set `null` to leave unset) so
         a transient spike doesn't restart the unit silently.
       '';
+    };
+
+    nodeOptions = mkOption {
+      type = types.listOf types.str;
+      default = [ "--max-old-space-size=4096" ];
+      example = [
+        "--max-old-space-size=8192"
+        "--max-semi-space-size=256"
+      ];
+      description = ''
+        Flags joined (space-separated) into `NODE_OPTIONS` for the
+        paperclip server. The default lifts V8's old-space cap above
+        its built-in ~1.7 GB ceiling — the agent runtime hits the
+        default cap on any non-trivial workload. Setting
+        `services.paperclip.heapSnapshots.enable = true` automatically
+        appends `--heapsnapshot-signal=SIGUSR2` and a matching
+        `--diagnostic-dir`. `extraEnvironment.NODE_OPTIONS` still
+        wins if set, but prefer this option so option introspection
+        sees the value.
+      '';
+    };
+
+    heapSnapshots = {
+      enable = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Wire `--heapsnapshot-signal=SIGUSR2` and a `--diagnostic-dir`
+          into `NODE_OPTIONS`, and create the target directory via
+          `systemd.tmpfiles`. With this on, a heap snapshot can be
+          captured at any time with
+          `kill -USR2 $(systemctl show -p MainPID --value paperclip.service)`
+          and lands in `heapSnapshots.dir`. Off by default — heap
+          snapshots can be several GB; flip on when chasing memory
+          leaks or OOM crashes.
+        '';
+      };
+
+      dir = mkOption {
+        type = types.path;
+        default = "${cfg.stateDir}/heapsnaps";
+        defaultText = literalExpression ''"''${cfg.stateDir}/heapsnaps"'';
+        description = ''
+          Where Node writes `.heapsnapshot` files when triggered by
+          the signal above. Inside `stateDir` by default (covered by
+          the unit's `BindPaths`); override to a dedicated volume if
+          heap dumps risk filling `/var/lib`. If you point this
+          outside `stateDir`, also extend the unit's `BindPaths` /
+          `ReadWritePaths` via `systemd.services.paperclip.serviceConfig`.
+        '';
+      };
+    };
+
+    restart = {
+      restartSec = mkOption {
+        type = types.ints.unsigned;
+        default = 120;
+        description = ''
+          Seconds systemd waits before restarting after a failure
+          (`serviceConfig.RestartSec`). The default of 120 gives the
+          kernel time to reclaim a multi-gigabyte heap between OOM
+          cycles instead of thrashing on a tight loop.
+        '';
+      };
+
+      startLimitBurst = mkOption {
+        type = types.ints.unsigned;
+        default = 5;
+        description = ''
+          Number of failures within `startLimitIntervalSec` after
+          which systemd marks the unit `failed` and stops restarting
+          it (`unitConfig.StartLimitBurst`).
+        '';
+      };
+
+      startLimitIntervalSec = mkOption {
+        type = types.ints.unsigned;
+        default = 7200;
+        description = ''
+          Window over which `startLimitBurst` is counted, in seconds
+          (`unitConfig.StartLimitIntervalSec`). Default 2 h means a
+          unit that fails 5 times within 2 h gets parked instead of
+          restarted forever. Raise this for crash cadences slower
+          than the default (e.g. a 30-min OOM cycle); lower it when
+          you want fast surfacing of fast-failing crashes.
+        '';
+      };
+    };
+
+    metrics = {
+      port = mkOption {
+        type = types.port;
+        default = cfg.listen.port;
+        defaultText = literalExpression "config.services.paperclip.listen.port";
+        description = ''
+          Port where paperclip exposes its Prometheus-compatible
+          `/metrics` endpoint. Defaults to the server's listen port
+          (paperclip serves metrics on the same listener today).
+          Surfaced as an option so external scrape configurations
+          (e.g. a separate `services.alloy` module) can reference
+          `config.services.paperclip.metrics.port` instead of
+          duplicating the port number.
+        '';
+      };
+
+      path = mkOption {
+        type = types.str;
+        default = "/metrics";
+        description = "HTTP path for the metrics endpoint.";
+      };
+
+      scrapeInterval = mkOption {
+        type = types.str;
+        default = "30s";
+        description = ''
+          Suggested Prometheus scrape interval for the metrics
+          endpoint. Informational — the actual interval is set on
+          the scraper side; cross-module consumers can read this as
+          a sensible default.
+        '';
+      };
     };
   };
 
@@ -886,8 +1094,7 @@ in
         }
         {
           assertion =
-            cfg.database.url == null
-            || builtins.match "postgres(ql)?://.*" cfg.database.url != null;
+            cfg.database.url == null || builtins.match "postgres(ql)?://.*" cfg.database.url != null;
           message = ''
             services.paperclip.database.url must start with
             `postgres://` or `postgresql://`. Got:
@@ -911,8 +1118,7 @@ in
           # headroom. Operators who pin a newer package are fine; this
           # only catches accidental downgrades.
           assertion =
-            !cfg.database.createLocally
-            || versionAtLeast config.services.postgresql.package.version "17";
+            !cfg.database.createLocally || versionAtLeast config.services.postgresql.package.version "17";
           message = ''
             services.paperclip requires PostgreSQL 17 or newer when
             database.createLocally = true. The configured
@@ -1043,7 +1249,8 @@ in
       systemd.tmpfiles.rules = [
         "d ${cfg.stateDir} 0750 ${cfg.user} ${cfg.group} -"
         "d ${cfg.stateDir}/instances 0750 ${cfg.user} ${cfg.group} -"
-      ];
+      ]
+      ++ optional cfg.heapSnapshots.enable "d ${cfg.heapSnapshots.dir} 0750 ${cfg.user} ${cfg.group} -";
 
       networking.firewall = mkIf cfg.openFirewall {
         allowedTCPPorts = [ cfg.listen.port ];
@@ -1091,8 +1298,8 @@ in
         ]);
 
         unitConfig = {
-          StartLimitBurst = 5;
-          StartLimitIntervalSec = 60;
+          StartLimitBurst = cfg.restart.startLimitBurst;
+          StartLimitIntervalSec = cfg.restart.startLimitIntervalSec;
         };
 
         serviceConfig = {
@@ -1105,7 +1312,7 @@ in
           # systemd race rationale.
           ExecStart = "${paperclipExecStart}";
           Restart = "on-failure";
-          RestartSec = 5;
+          RestartSec = cfg.restart.restartSec;
           # /run/paperclip — used to hold the runtime-built db-env file.
           RuntimeDirectory = "paperclip";
           RuntimeDirectoryMode = "0750";
@@ -1159,20 +1366,29 @@ in
         # restart from systemd instead of a silent kernel OOM-kill.
         // optionalAttrs (cfg.memoryHigh != null) { MemoryHigh = cfg.memoryHigh; }
         // optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; }
-        // optionalAttrs cfg.database.createLocally {
-          # Build DATABASE_URL from `passwordFile` into a runtime env
-          # file at /run/paperclip/db-env; `paperclipExecStart` sources
-          # it inline so we are not subject to systemd's
-          # EnvironmentFile/ExecStartPre ordering. The script runs as
-          # the unit's User so it can write into the RuntimeDirectory
-          # without elevated privileges.
-          ExecStartPre = [ buildDbEnvScript ];
-        }
+        // (
+          # Build any runtime env files (DATABASE_URL and/or OTLP auth
+          # header) before exec'ing the wrapper. The wrapper sources
+          # each file inline, sidestepping systemd's
+          # EnvironmentFile/ExecStartPre ordering. Each script runs as
+          # the unit's User and writes into RuntimeDirectory with
+          # umask 077, so the secrets never sit in the static unit
+          # env or the nix store.
+          let
+            execStartPre =
+              optional cfg.database.createLocally buildDbEnvScript
+              ++ optional (
+                cfg.grafanaCloud.enable
+                && cfg.grafanaCloud.selfTelemetry.enable
+                && cfg.grafanaCloud.selfTelemetry.otlpInstanceId != null
+              ) buildOtlpEnvScript;
+          in
+          optionalAttrs (execStartPre != [ ]) { ExecStartPre = execStartPre; }
+        )
         // (
           let
             envFiles =
-              optional (cfg.environmentFile != null) cfg.environmentFile
-              ++ map toString cfg.environmentFiles;
+              optional (cfg.environmentFile != null) cfg.environmentFile ++ map toString cfg.environmentFiles;
           in
           optionalAttrs (envFiles != [ ]) { EnvironmentFile = envFiles; }
         );
