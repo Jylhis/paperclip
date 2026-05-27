@@ -18,10 +18,7 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "local_trusted";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen.mode = "default";
     agentClis.enable = false;
     proxy.caddy = true;

@@ -40,10 +40,17 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
+      };
+    };
+
+    # `database.createLocally = true` is the default — proves the
+    # minimum-viable config (no passwordFile, peer auth) evaluates
+    # clean without callers having to set the database block at all.
+    minimal = evalScenario {
+      services.paperclip = {
+        enable = true;
+        package = paperclipPackage;
       };
     };
 
@@ -63,10 +70,7 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
         proxy.nginx = true;
         publicUrl = "https://paperclip.example.com";
         allowedHostnames = [ "paperclip.example.com" ];
@@ -77,10 +81,7 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
         proxy.caddy = true;
         publicUrl = "https://paperclip.example.com";
         allowedHostnames = [ "paperclip.example.com" ];
@@ -91,10 +92,7 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
         listen.mode = "custom";
         listen.bindHost = "10.0.0.5";
       };
@@ -104,10 +102,7 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
         listen.mode = "tailnet";
       };
     };
@@ -116,10 +111,7 @@ let
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
+        database.createLocally = true;
         grafanaCloud = {
           enable = true;
           stackSlug = "acmeprod";
@@ -148,10 +140,56 @@ let
       builtins.deepSeq cfg.systemd.services.paperclip (builtins.deepSeq cfg.assertions name);
 
   results = lib.mapAttrs forceScenario scenarios;
+
+  # Removed-option scenarios: each must FAIL to evaluate, because the
+  # option is declared via `mkRemovedOptionModule`. `tryEval` swallows
+  # the eval error so we can assert on its absence/presence here
+  # rather than aborting the build at the wrong layer.
+  removedOptionScenarios = {
+    passwordFile = {
+      services.paperclip = {
+        enable = true;
+        package = paperclipPackage;
+        database = {
+          createLocally = true;
+          passwordFile = "/etc/paperclip-db-pass";
+        };
+      };
+    };
+  };
+
+  forceRemovedScenario =
+    name: extraConfig:
+    let
+      attempt = builtins.tryEval (
+        builtins.deepSeq (evalScenario extraConfig).systemd.services.paperclip name
+      );
+    in
+    if attempt.success then
+      throw ''
+        paperclip module-eval removed-option scenario '${name}' evaluated
+        successfully — expected mkRemovedOptionModule to throw. The
+        removed-option entry for ${name} may have been dropped from
+        nix/modules/nixos/paperclip.nix.
+      ''
+    else
+      name;
+
+  removedResults = lib.mapAttrs forceRemovedScenario removedOptionScenarios;
 in
-pkgs.runCommand "paperclip-module-eval" { passthru.scenarios = builtins.attrNames results; } ''
-  cat > $out <<'EOF'
-  paperclip module-eval scenarios that passed:
-  ${lib.concatStringsSep "\n" (map (n: "  - ${n}") (builtins.attrNames results))}
-  EOF
-''
+pkgs.runCommand "paperclip-module-eval"
+  {
+    passthru = {
+      scenarios = builtins.attrNames results;
+      removedScenarios = builtins.attrNames removedResults;
+    };
+  }
+  ''
+    cat > $out <<'EOF'
+    paperclip module-eval scenarios that passed:
+    ${lib.concatStringsSep "\n" (map (n: "  - ${n}") (builtins.attrNames results))}
+
+    paperclip module-eval removed-option scenarios that correctly failed:
+    ${lib.concatStringsSep "\n" (map (n: "  - ${n}") (builtins.attrNames removedResults))}
+    EOF
+  ''

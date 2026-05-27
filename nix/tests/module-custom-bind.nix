@@ -32,32 +32,27 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "local_trusted";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen.mode = "custom";
     listen.bindHost = customBindAddr;
     agentClis.enable = false;
   };
 
-  extraNodeModule =
-    _:
-    {
-      # Without this alias the service crashes at startup with EADDRNOTAVAIL.
-      # An ExecStartPre oneshot is cleaner than a NetworkManager rule and
-      # works regardless of the VM's network stack.
-      systemd.services.paperclip-custom-bind-alias = {
-        description = "Add ${customBindAddr}/32 loopback alias for the custom-bind test";
-        wantedBy = [ "multi-user.target" ];
-        before = [ "paperclip.service" ];
-        serviceConfig = {
-          Type = "oneshot";
-          RemainAfterExit = true;
-          ExecStart = "${pkgs.iproute2}/bin/ip addr add ${customBindAddr}/32 dev lo";
-        };
+  extraNodeModule = _: {
+    # Without this alias the service crashes at startup with EADDRNOTAVAIL.
+    # An ExecStartPre oneshot is cleaner than a NetworkManager rule and
+    # works regardless of the VM's network stack.
+    systemd.services.paperclip-custom-bind-alias = {
+      description = "Add ${customBindAddr}/32 loopback alias for the custom-bind test";
+      wantedBy = [ "multi-user.target" ];
+      before = [ "paperclip.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${pkgs.iproute2}/bin/ip addr add ${customBindAddr}/32 dev lo";
       };
     };
+  };
 
   testScript = ''
     machine.wait_for_unit("paperclip-custom-bind-alias.service")

@@ -40,10 +40,7 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "local_trusted";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen = {
       mode = "tailnet";
       tailnetBindHost = shimmedTailnetIp;
@@ -51,13 +48,11 @@ testLib.mkPaperclipTest {
     agentClis.enable = false;
   };
 
-  extraNodeModule =
-    _:
-    {
-      # Prepend the shim ahead of any real tailscale on the unit's PATH.
-      # `systemd.services.<name>.path` is searched left-to-right.
-      systemd.services.paperclip.path = pkgs.lib.mkBefore [ tailscaleShim ];
-    };
+  extraNodeModule = _: {
+    # Prepend the shim ahead of any real tailscale on the unit's PATH.
+    # `systemd.services.<name>.path` is searched left-to-right.
+    systemd.services.paperclip.path = pkgs.lib.mkBefore [ tailscaleShim ];
+  };
 
   testScript = ''
     machine.wait_for_unit("paperclip.service")

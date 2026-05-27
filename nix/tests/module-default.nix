@@ -17,10 +17,7 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "local_trusted";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen.mode = "default";
     agentClis.enable = false;
     proxy.nginx = true;
@@ -44,6 +41,17 @@ testLib.mkPaperclipTest {
         f"expected paperclip.public to contain migration-created tables, "
         f"got count={table_count!r} — server likely fell back to embedded PG"
     )
+
+    # Peer auth must work end-to-end: as the paperclip OS user we
+    # should be able to connect through the Unix socket without any
+    # password material.
+    machine.succeed(
+        "sudo -u paperclip psql -h /run/postgresql paperclip -tAc 'select 1' | grep -q '^1$'"
+    )
+
+    # The legacy password-applier oneshot must not exist any more —
+    # peer auth replaced the password path entirely.
+    machine.fail("systemctl status paperclip-postgres-password.service")
 
     # Pin the new default-tuned restart policy so a future refactor that
     # silently lowers `startLimitIntervalSec` reintroduces the 60 s window

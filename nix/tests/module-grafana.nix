@@ -32,10 +32,7 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "local_trusted";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen.mode = "default";
     agentClis.enable = false;
 
@@ -58,24 +55,22 @@ testLib.mkPaperclipTest {
     };
   };
 
-  extraNodeModule =
-    _:
-    {
-      # Stand-in token files the OTLP env builder reads at boot. Real
-      # deployments mount these from sops-nix / agenix.
-      environment.etc."paperclip-gc-stack-token" = {
-        text = "test-stack-token";
-        mode = "0440";
-        user = "paperclip";
-        group = "paperclip";
-      };
-      environment.etc."paperclip-gc-cloud-token" = {
-        text = "test-cloud-token";
-        mode = "0440";
-        user = "paperclip";
-        group = "paperclip";
-      };
+  extraNodeModule = _: {
+    # Stand-in token files the OTLP env builder reads at boot. Real
+    # deployments mount these from sops-nix / agenix.
+    environment.etc."paperclip-gc-stack-token" = {
+      text = "test-stack-token";
+      mode = "0440";
+      user = "paperclip";
+      group = "paperclip";
     };
+    environment.etc."paperclip-gc-cloud-token" = {
+      text = "test-cloud-token";
+      mode = "0440";
+      user = "paperclip";
+      group = "paperclip";
+    };
+  };
 
   testScript = ''
     # ExecStartPre runs before the main process; the runtime env files

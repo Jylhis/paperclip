@@ -26,10 +26,7 @@ testLib.mkPaperclipTest {
 
   paperclipConfig = {
     deploymentMode = "authenticated";
-    database = {
-      createLocally = true;
-      passwordFile = "/etc/paperclip-db-pass";
-    };
+    database.createLocally = true;
     listen.mode = "default";
     agentClis.enable = false;
     publicUrl = "https://paperclip.example.com";
