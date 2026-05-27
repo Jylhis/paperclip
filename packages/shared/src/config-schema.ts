@@ -27,18 +27,36 @@ export const databaseBackupConfigSchema = z.object({
   dir: z.string().default("~/.paperclip/instances/default/data/backups"),
 });
 
-export const databaseConfigSchema = z.object({
-  mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
-  connectionString: z.string().optional(),
-  embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
-  embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
-  backup: databaseBackupConfigSchema.default({
-    enabled: true,
-    intervalMinutes: 60,
-    retentionDays: 7,
-    dir: "~/.paperclip/instances/default/data/backups",
-  }),
+export const databaseSocketConfigSchema = z.object({
+  socketDir: z.string().min(1),
+  name: z.string().min(1),
+  user: z.string().min(1),
+  port: z.number().int().min(1).max(65535).optional(),
 });
+
+export const databaseConfigSchema = z
+  .object({
+    mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
+    connectionString: z.string().optional(),
+    socket: databaseSocketConfigSchema.optional(),
+    embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
+    embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
+    backup: databaseBackupConfigSchema.default({
+      enabled: true,
+      intervalMinutes: 60,
+      retentionDays: 7,
+      dir: "~/.paperclip/instances/default/data/backups",
+    }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.connectionString && value.socket) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "database.connectionString and database.socket cannot both be set",
+        path: ["socket"],
+      });
+    }
+  });
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
@@ -181,6 +199,7 @@ export const paperclipConfigSchema = z
 export type PaperclipConfig = z.infer<typeof paperclipConfigSchema>;
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
+export type DatabaseSocketConfig = z.infer<typeof databaseSocketConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type StorageConfig = z.infer<typeof storageConfigSchema>;
