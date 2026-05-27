@@ -3,8 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
-import { createBufferedTextFileWriter, runDatabaseBackup, runDatabaseRestore } from "./backup-lib.js";
+import { createBufferedTextFileWriter, pgToolArgs, runDatabaseBackup, runDatabaseRestore } from "./backup-lib.js";
 import { ensurePostgresDatabase } from "./client.js";
+import { targetFromUrl } from "./target.js";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -31,7 +32,7 @@ async function createTempDatabase(): Promise<string> {
 async function createSiblingDatabase(connectionString: string, databaseName: string): Promise<string> {
   const adminUrl = new URL(connectionString);
   adminUrl.pathname = "/postgres";
-  await ensurePostgresDatabase(adminUrl.toString(), databaseName);
+  await ensurePostgresDatabase(targetFromUrl(adminUrl.toString()), databaseName);
   const targetUrl = new URL(connectionString);
   targetUrl.pathname = `/${databaseName}`;
   return targetUrl.toString();
@@ -49,6 +50,49 @@ if (!embeddedPostgresSupport.supported) {
     `Skipping embedded Postgres backup tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
   );
 }
+
+describe("pgToolArgs", () => {
+  it("renders a URL target as a single --dbname= flag", () => {
+    expect(
+      pgToolArgs({
+        kind: "url",
+        connectionString: "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip",
+      }),
+    ).toEqual(["--dbname=postgres://paperclip:paperclip@127.0.0.1:5432/paperclip"]);
+  });
+
+  it("renders a socket target as --host, --username, --dbname in that order", () => {
+    expect(
+      pgToolArgs({
+        kind: "socket",
+        socketDir: "/run/postgresql",
+        database: "paperclip",
+        user: "paperclip",
+      }),
+    ).toEqual([
+      "--host=/run/postgresql",
+      "--username=paperclip",
+      "--dbname=paperclip",
+    ]);
+  });
+
+  it("appends --port last when the socket target has an explicit port", () => {
+    expect(
+      pgToolArgs({
+        kind: "socket",
+        socketDir: "/run/postgresql",
+        database: "paperclip",
+        user: "paperclip",
+        port: 5433,
+      }),
+    ).toEqual([
+      "--host=/run/postgresql",
+      "--username=paperclip",
+      "--dbname=paperclip",
+      "--port=5433",
+    ]);
+  });
+});
 
 describe("createBufferedTextFileWriter", () => {
   it("preserves line boundaries across buffered flushes", async () => {
@@ -123,7 +167,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         }
 
         const result = await runDatabaseBackup({
-          connectionString: sourceConnectionString,
+          target: targetFromUrl(sourceConnectionString),
           backupDir,
           retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
           filenamePrefix: "paperclip-test",
@@ -135,7 +179,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         expect(fs.existsSync(result.backupFile)).toBe(true);
 
         await runDatabaseRestore({
-          connectionString: restoreConnectionString,
+          target: targetFromUrl(restoreConnectionString),
           backupFile: result.backupFile,
         });
 
@@ -247,7 +291,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         `);
 
         const result = await runDatabaseBackup({
-          connectionString: sourceConnectionString,
+          target: targetFromUrl(sourceConnectionString),
           backupDir,
           retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
           filenamePrefix: "paperclip-full-logical-test",
@@ -259,7 +303,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         });
 
         await runDatabaseRestore({
-          connectionString: restoreConnectionString,
+          target: targetFromUrl(restoreConnectionString),
           backupFile: result.backupFile,
         });
 
@@ -358,7 +402,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         `);
 
         const result = await runDatabaseBackup({
-          connectionString: sourceConnectionString,
+          target: targetFromUrl(sourceConnectionString),
           backupDir,
           retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
           filenamePrefix: "paperclip-composite-fk-test",
@@ -366,7 +410,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         });
 
         await runDatabaseRestore({
-          connectionString: restoreConnectionString,
+          target: targetFromUrl(restoreConnectionString),
           backupFile: result.backupFile,
         });
 
@@ -439,7 +483,7 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
         );
 
         await runDatabaseRestore({
-          connectionString: restoreConnectionString,
+          target: targetFromUrl(restoreConnectionString),
           backupFile,
         });
 

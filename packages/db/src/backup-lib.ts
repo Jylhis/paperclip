@@ -6,6 +6,7 @@ import { open as openFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import postgres from "postgres";
+import { type DatabaseTarget, postgresOptions } from "./target.js";
 
 export type BackupRetentionPolicy = {
   dailyDays: number;
@@ -14,7 +15,7 @@ export type BackupRetentionPolicy = {
 };
 
 export type RunDatabaseBackupOptions = {
-  connectionString: string;
+  target: DatabaseTarget;
   backupDir: string;
   retention: BackupRetentionPolicy;
   filenamePrefix?: string;
@@ -37,10 +38,43 @@ export type RunDatabaseBackupResult = {
 };
 
 export type RunDatabaseRestoreOptions = {
-  connectionString: string;
+  target: DatabaseTarget;
   backupFile: string;
   connectTimeoutSeconds?: number;
 };
+
+/**
+ * Translate a {@link DatabaseTarget} into the libpq-style CLI arguments
+ * understood by `pg_dump` and `psql`. URL targets become a single
+ * `--dbname=postgres://...` flag (libpq URI form); socket targets become
+ * `--host=...`, `--username=...`, `--dbname=...`, and an optional
+ * `--port=...` in that exact order.
+ */
+export function pgToolArgs(target: DatabaseTarget): string[] {
+  if (target.kind === "url") {
+    return [`--dbname=${target.connectionString}`];
+  }
+  const args = [
+    `--host=${target.socketDir}`,
+    `--username=${target.user}`,
+    `--dbname=${target.database}`,
+  ];
+  if (target.port !== undefined) {
+    args.push(`--port=${target.port}`);
+  }
+  return args;
+}
+
+function openPostgres(
+  target: DatabaseTarget,
+  options: { max?: number; connect_timeout?: number; onnotice?: (notice: unknown) => void },
+): ReturnType<typeof postgres> {
+  const [arg] = postgresOptions(target);
+  if (typeof arg === "string") {
+    return postgres(arg, options);
+  }
+  return postgres({ ...arg, ...options });
+}
 
 type SequenceDefinition = {
   sequence_schema: string;
@@ -312,7 +346,7 @@ async function waitForChildExit(child: ReturnType<typeof spawn>, label: string):
 }
 
 async function runPgDumpBackup(opts: {
-  connectionString: string;
+  target: DatabaseTarget;
   backupFile: string;
   connectTimeout: number;
 }): Promise<void> {
@@ -320,7 +354,7 @@ async function runPgDumpBackup(opts: {
   const child = spawn(
     pgDumpBin,
     [
-      `--dbname=${opts.connectionString}`,
+      ...pgToolArgs(opts.target),
       "--format=plain",
       "--clean",
       "--if-exists",
@@ -351,7 +385,7 @@ async function restoreWithPsql(opts: RunDatabaseRestoreOptions, connectTimeout: 
   const child = spawn(
     psqlBin,
     [
-      `--dbname=${opts.connectionString}`,
+      ...pgToolArgs(opts.target),
       "--set=ON_ERROR_STOP=1",
       "--quiet",
       "--no-psqlrc",
@@ -526,7 +560,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
   const canUsePgDump = !hasBackupTransforms(opts);
   const excludedTableNames = normalizeTableNameSet(opts.excludeTables);
   const nullifiedColumnsByTable = normalizeNullifyColumnMap(opts.nullifyColumns);
-  let sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+  let sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
   let sqlClosed = false;
   const closeSql = async () => {
     if (sqlClosed) return;
@@ -544,7 +578,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       try {
         await closeSql();
         await runPgDumpBackup({
-          connectionString: opts.connectionString,
+          target: opts.target,
           backupFile,
           connectTimeout,
         });
@@ -563,7 +597,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         if (backupEngine === "pg_dump") {
           throw error;
         }
-        sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+        sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
         sqlClosed = false;
       }
     }
@@ -899,7 +933,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       if (backupEngine !== "javascript" && nullifiedColumns.size === 0) {
         emit(`COPY ${qualifiedTableName} (${colNames}) FROM stdin;`);
         await writer.writeRaw("\n");
-        const copySql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+        const copySql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
         try {
           const copyStream = await copySql
             .unsafe(`COPY ${qualifiedTableName} (${colNames}) TO STDOUT`)
@@ -996,7 +1030,7 @@ export async function runDatabaseRestore(opts: RunDatabaseRestoreOptions): Promi
     }
   }
 
-  const sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+  const sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
 
   try {
     await sql`SELECT 1`;

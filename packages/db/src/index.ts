@@ -27,6 +27,7 @@ export {
   runDatabaseBackup,
   runDatabaseRestore,
   formatDatabaseBackupResult,
+  pgToolArgs,
   type BackupRetentionPolicy,
   type RunDatabaseBackupOptions,
   type RunDatabaseBackupResult,

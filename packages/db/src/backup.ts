@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { formatDatabaseBackupResult, runDatabaseBackup } from "./backup-lib.js";
+import { targetFromUrl } from "./target.js";
 import {
   expandHomePrefix,
   resolveDefaultBackupDir,
@@ -77,7 +78,7 @@ async function main() {
 
   try {
     const result = await runDatabaseBackup({
-      connectionString,
+      target: targetFromUrl(connectionString),
       backupDir,
       retention: { dailyDays: retentionDays, weeklyWeeks: 4, monthlyMonths: 1 },
       filenamePrefix: "paperclip",
