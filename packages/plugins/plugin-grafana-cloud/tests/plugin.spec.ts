@@ -158,4 +158,18 @@ describe("plugin-grafana-cloud", () => {
     // the actual assertion lives in the unit test for dispatchTool.
     expect(true).toBe(true);
   });
+
+  it("rejects params that violate the declared parametersSchema", async () => {
+    const harness = await setupHarness();
+    // `cloud_get_stack` declares `stackSlug: { type: "string" }`. Passing a
+    // number should be caught by Zod before any HTTP call is made.
+    const res = await harness.executeTool("cloud_get_stack", {
+      companyId: "company-1",
+      stackSlug: 42,
+    });
+    expect(res.error).toMatch(/invalid params for cloud_get_stack/);
+    // No fetch call should have been issued — validation happens before
+    // dispatchTool resolves the stack or the upstream client runs.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });

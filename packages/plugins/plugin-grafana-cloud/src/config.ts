@@ -1,3 +1,15 @@
+// Grafana Cloud region slugs are of the form `prod-us-east-0`, `prod-eu-west-1`,
+// etc. The slug is interpolated into per-service hostnames like
+// `https://faro-api-${region}.grafana.net` in stack-resolver.ts, so a malformed
+// value (containing `/`, `.`, ":") would let an operator typo land somewhere
+// other than `*.grafana.net`. Restrict to lowercase letters, digits, and `-`,
+// starting with an alphanumeric.
+const REGION_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+export function isValidRegionSlug(region: string): boolean {
+  return REGION_SLUG_PATTERN.test(region);
+}
+
 /**
  * Per-call configuration resolved from instance defaults + per-company
  * override (stored in `ctx.state`). Tokens here are *references* — the worker
@@ -50,6 +62,11 @@ export function parseInstanceConfig(raw: unknown): InstanceConfigShape {
   if (!stackSlug || !region || !cloudAccessTokenRef || !stackTokenRef) {
     throw new Error(
       "plugin-grafana-cloud: instance config missing required fields (stackSlug, region, cloudAccessTokenRef, stackTokenRef)",
+    );
+  }
+  if (!isValidRegionSlug(region)) {
+    throw new Error(
+      `plugin-grafana-cloud: region "${region}" is not a valid Grafana Cloud region slug (expected lowercase alphanumerics and hyphens, e.g. "prod-us-east-0")`,
     );
   }
   return {

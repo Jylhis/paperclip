@@ -1,27 +1,54 @@
-import type { PluginContext, ToolRunContext } from "@paperclipai/plugin-sdk";
+import { z, type PluginContext, type ToolRunContext } from "@paperclipai/plugin-sdk";
 import type { GrafanaCloudPluginConfig } from "./config.js";
 
-export interface ResolvedStack {
-  id: number;
-  slug: string;
-  region: string;
-  grafanaUrl: string;
-  lokiUrl: string;
-  lokiInstanceId: number;
-  tempoUrl: string;
-  tempoInstanceId: number;
-  mimirPromUrl: string;
-  mimirInstanceId: number;
-  pyroscopeUrl: string;
-  pyroscopeInstanceId: number;
-  faroUrl: string;
-  smUrl: string;
-  oncallUrl: string;
-  irmUrl: string;
-  k6Url: string;
-  alertmanagerUrl: string;
-  fetchedAt: number;
-}
+// Shape returned by https://grafana.com/api/instances/<slug>. All sub-instance
+// fields are optional because grafana.com omits them for stacks where the
+// corresponding service isn't provisioned (e.g. a Loki-only stack lacks the
+// `ht*` Tempo fields). Unknown keys are stripped so future API additions don't
+// crash the parser.
+const StackLookupResponseSchema = z.object({
+  id: z.number(),
+  slug: z.string(),
+  regionSlug: z.string().optional(),
+  region: z.string().optional(),
+  url: z.string(),
+  hlInstanceId: z.number().optional(),
+  hlInstanceUrl: z.string().optional(),
+  hmInstanceId: z.number().optional(),
+  hmInstancePromUrl: z.string().optional(),
+  htInstanceId: z.number().optional(),
+  htInstanceUrl: z.string().optional(),
+  hpInstanceId: z.number().optional(),
+  hpInstanceUrl: z.string().optional(),
+  amInstanceUrl: z.string().optional(),
+});
+
+// Cached output of resolveStackEndpoints. Reused by worker.ts to re-validate
+// values pulled out of plugin state — old cache entries written before a schema
+// change get rejected and force a refetch.
+export const ResolvedStackSchema = z.object({
+  id: z.number(),
+  slug: z.string(),
+  region: z.string(),
+  grafanaUrl: z.string(),
+  lokiUrl: z.string(),
+  lokiInstanceId: z.number(),
+  tempoUrl: z.string(),
+  tempoInstanceId: z.number(),
+  mimirPromUrl: z.string(),
+  mimirInstanceId: z.number(),
+  pyroscopeUrl: z.string(),
+  pyroscopeInstanceId: z.number(),
+  faroUrl: z.string(),
+  smUrl: z.string(),
+  oncallUrl: z.string(),
+  irmUrl: z.string(),
+  k6Url: z.string(),
+  alertmanagerUrl: z.string(),
+  fetchedAt: z.number(),
+});
+
+export type ResolvedStack = z.infer<typeof ResolvedStackSchema>;
 
 const STACK_CACHE_TTL_MS = 60 * 60 * 1000;
 
@@ -47,9 +74,15 @@ export async function resolveStackEndpoints(input: {
     namespace: "stack-cache",
     stateKey: input.config.stackSlug,
   };
-  const cached = (await input.ctx.state.get(cacheKey)) as ResolvedStack | null;
-  if (cached && Date.now() - cached.fetchedAt < STACK_CACHE_TTL_MS) {
-    return cached;
+  const cachedRaw = await input.ctx.state.get(cacheKey);
+  if (cachedRaw !== null && cachedRaw !== undefined) {
+    const cached = ResolvedStackSchema.safeParse(cachedRaw);
+    if (cached.success && Date.now() - cached.data.fetchedAt < STACK_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    // Schema drift or expired entry: drop it and fall through to a refetch so
+    // the new shape lands in the cache.
+    await input.ctx.state.delete(cacheKey);
   }
 
   const url = `https://grafana.com/api/instances/${encodeURIComponent(input.config.stackSlug)}`;
@@ -61,22 +94,7 @@ export async function resolveStackEndpoints(input: {
     () => controller.abort(),
     input.config.timeoutMs ?? 30_000,
   );
-  let raw: {
-    id: number;
-    slug: string;
-    regionSlug?: string;
-    region?: string;
-    url: string;
-    hlInstanceId?: number;
-    hlInstanceUrl?: string;
-    hmInstanceId?: number;
-    hmInstancePromUrl?: string;
-    htInstanceId?: number;
-    htInstanceUrl?: string;
-    hpInstanceId?: number;
-    hpInstanceUrl?: string;
-    amInstanceUrl?: string;
-  };
+  let raw: z.infer<typeof StackLookupResponseSchema>;
   try {
     const res = await input.ctx.http.fetch(url, {
       headers: {
@@ -90,22 +108,16 @@ export async function resolveStackEndpoints(input: {
         `Grafana Cloud stack lookup failed for "${input.config.stackSlug}": ${res.status} ${res.statusText}`,
       );
     }
-    raw = (await res.json()) as {
-      id: number;
-      slug: string;
-      regionSlug?: string;
-      region?: string;
-      url: string;
-      hlInstanceId?: number;
-      hlInstanceUrl?: string;
-      hmInstanceId?: number;
-      hmInstancePromUrl?: string;
-      htInstanceId?: number;
-      htInstanceUrl?: string;
-      hpInstanceId?: number;
-      hpInstanceUrl?: string;
-      amInstanceUrl?: string;
-    };
+    const parsed = StackLookupResponseSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      throw new Error(
+        `Grafana Cloud stack lookup for "${input.config.stackSlug}" returned an ` +
+          `unexpected shape: ${parsed.error.issues
+            .map((issue: z.ZodIssue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`)
+            .join("; ")}`,
+      );
+    }
+    raw = parsed.data;
   } finally {
     clearTimeout(timer);
   }

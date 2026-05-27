@@ -2,6 +2,7 @@ import type { PluginContext, ToolResult, ToolRunContext } from "@paperclipai/plu
 import { mergeConfig, type CompanyOverride, type InstanceConfigShape } from "../config.js";
 import { resolveStackEndpoints, type ResolvedStack } from "../stack-resolver.js";
 import { upstream, UpstreamError } from "../http/client.js";
+import { validateToolParams } from "../tool-params.js";
 
 export interface ToolContext {
   ctx: PluginContext;
@@ -48,10 +49,6 @@ function defaultSummary(data: unknown): string {
   }
   // Symbol / function — uncommon shapes, but avoid default object-toString.
   return Object.prototype.toString.call(data);
-}
-
-function param<T>(params: Record<string, unknown>, key: string): T | undefined {
-  return params[key] as T | undefined;
 }
 
 function paramStr(params: Record<string, unknown>, key: string): string | undefined {
@@ -712,10 +709,26 @@ export async function dispatchTool(input: {
   if (!handler) {
     return { error: `unknown tool: ${input.name}` };
   }
-  const params = (input.params && typeof input.params === "object" ? input.params : {}) as Record<string, unknown>;
-  const companyId = typeof params.companyId === "string" && params.companyId
-    ? params.companyId
-    : input.runCtx.companyId;
+  // Carry runCtx.companyId into params before validation so the host-bridge
+  // pattern (caller sends `{}`, host injects companyId from the authenticated
+  // actor scope) still satisfies the manifest's required-companyId contract.
+  const rawParams =
+    input.params && typeof input.params === "object" ? (input.params as Record<string, unknown>) : {};
+  const paramsForValidation =
+    typeof rawParams.companyId === "string" && rawParams.companyId
+      ? rawParams
+      : { ...rawParams, companyId: input.runCtx.companyId };
+  // Enforce the parametersSchema declared in manifest.ts. The dispatcher
+  // previously trusted callers to pass well-shaped params, so a missing
+  // required field (or e.g. a number where a string was declared) silently
+  // became `undefined` in the handler and surfaced as a confusing 5xx
+  // downstream.
+  const validation = validateToolParams(input.name, paramsForValidation);
+  if (!validation.ok) {
+    return { error: validation.error ?? `invalid params for ${input.name}` };
+  }
+  const params = validation.data ?? {};
+  const companyId = typeof params.companyId === "string" ? params.companyId : "";
   if (!companyId) {
     return { error: "companyId is required" };
   }

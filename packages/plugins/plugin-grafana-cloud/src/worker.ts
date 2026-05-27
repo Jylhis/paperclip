@@ -1,6 +1,11 @@
 import { definePlugin, type PluginContext } from "@paperclipai/plugin-sdk";
 import manifest, { TOOL_NAMES } from "./manifest.js";
-import { parseInstanceConfig, type InstanceConfigShape, type CompanyOverride } from "./config.js";
+import {
+  isValidRegionSlug,
+  parseInstanceConfig,
+  type InstanceConfigShape,
+  type CompanyOverride,
+} from "./config.js";
 import { dispatchTool } from "./tools/index.js";
 
 const COMPANY_OVERRIDE_NS = "config";
@@ -67,9 +72,15 @@ export default definePlugin({
       const params = (raw ?? {}) as Record<string, unknown>;
       const companyId = typeof params.companyId === "string" ? params.companyId : "";
       if (!companyId) throw new Error("companyId required");
+      const region = typeof params.region === "string" ? params.region : undefined;
+      if (region !== undefined && !isValidRegionSlug(region)) {
+        throw new Error(
+          `region "${region}" is not a valid Grafana Cloud region slug (expected lowercase alphanumerics and hyphens, e.g. "prod-us-east-0")`,
+        );
+      }
       const override: CompanyOverride = {
         stackSlug: typeof params.stackSlug === "string" ? params.stackSlug : undefined,
-        region: typeof params.region === "string" ? params.region : undefined,
+        region,
         cloudAccessTokenRef:
           typeof params.cloudAccessTokenRef === "string" ? params.cloudAccessTokenRef : undefined,
         stackTokenRef: typeof params.stackTokenRef === "string" ? params.stackTokenRef : undefined,
