@@ -60,7 +60,7 @@ let
     umask 077
     ${pkgs.coreutils}/bin/printf \
       'DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' \
-      '${cfg.user}' "$encoded" '${cfg.database.name}' \
+      ${lib.escapeShellArg cfg.user} "$encoded" ${lib.escapeShellArg cfg.database.name} \
       > "${runtimeDbEnvFile}"
   '';
 
@@ -72,7 +72,7 @@ let
   buildOtlpEnvScript = pkgs.writeShellScript "paperclip-build-otlp-env" ''
     set -euo pipefail
     token=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.grafanaCloud.stackTokenFile}")
-    auth=$(${pkgs.coreutils}/bin/printf '%s:%s' '${toString cfg.grafanaCloud.selfTelemetry.otlpInstanceId}' "$token" \
+    auth=$(${pkgs.coreutils}/bin/printf '%s:%s' ${lib.escapeShellArg (toString cfg.grafanaCloud.selfTelemetry.otlpInstanceId)} "$token" \
       | ${pkgs.coreutils}/bin/base64 -w0)
     umask 077
     ${pkgs.coreutils}/bin/printf \
