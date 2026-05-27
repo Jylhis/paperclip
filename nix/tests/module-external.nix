@@ -21,15 +21,29 @@ let
   # both point at the same sidecar — the test only verifies the
   # plumbing, not pooler semantics.
   migrationUrl = databaseUrl;
+
+  testLib = pkgs.callPackage ./lib.nix {
+    inherit paperclipModule paperclipPackage;
+  };
 in
-pkgs.testers.runNixOSTest {
+testLib.mkPaperclipTest {
   name = "paperclip-module-external";
+  mode = "external";
 
-  nodes.machine =
-    { ... }:
+  paperclipConfig = {
+    deploymentMode = "local_trusted";
+    database = {
+      createLocally = false;
+      url = databaseUrl;
+      inherit migrationUrl;
+    };
+    listen.mode = "default";
+    agentClis.enable = false;
+  };
+
+  extraNodeModule =
+    _:
     {
-      imports = [ paperclipModule ];
-
       # Sidecar PostgreSQL the paperclip module knows nothing about.
       services.postgresql = {
         enable = true;
@@ -51,31 +65,9 @@ pkgs.testers.runNixOSTest {
           ALTER USER "${pgUser}" WITH PASSWORD '${pgPassword}';
         '';
       };
-
-      services.paperclip = {
-        enable = true;
-        package = paperclipPackage;
-        deploymentMode = "local_trusted";
-        database = {
-          createLocally = false;
-          url = databaseUrl;
-          migrationUrl = migrationUrl;
-        };
-        listen.mode = "default";
-        agentClis.enable = false;
-        memoryHigh = null;
-        memoryMax = null;
-      };
-
-      networking.firewall.enable = false;
     };
 
   testScript = ''
-    machine.wait_for_unit("postgresql.service")
-    machine.wait_for_unit("paperclip.service")
-    machine.wait_for_open_port(3100)
-    machine.succeed("curl -fsS http://127.0.0.1:3100/health")
-
     # Confirm the unit picked up BOTH connection URLs.
     env = machine.succeed("systemctl show paperclip.service -p Environment --value")
     assert "DATABASE_URL=" in env, f"DATABASE_URL missing from unit env: {env!r}"

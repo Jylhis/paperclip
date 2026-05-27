@@ -78,6 +78,16 @@
       nixosModules.paperclip = import ./nix/modules/nixos/paperclip.nix;
       nixosModules.default = self.nixosModules.paperclip;
 
+      # Pure-eval module smoke check. Cheap (no VM boot), catches option-type
+      # errors, assertion bugs, and missing systemd attrs on every
+      # `nix flake check`. The heavy VM tests live in `vmTests` below.
+      checks = forSystems linuxSystems (pkgs: {
+        module-eval = pkgs.callPackage ./nix/tests/module-eval.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+      });
+
       # NixOS VM tests are heavy (each boots a full VM). Keep them OUT of
       # `flake.checks` so `nix flake check` stays fast — operators run
       # them via `just test-vm` or `nix build .#vmTests.<system>.<name>`
@@ -96,6 +106,22 @@
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
         module-external = pkgs.callPackage ./nix/tests/module-external.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+        module-grafana = pkgs.callPackage ./nix/tests/module-grafana.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+        module-caddy = pkgs.callPackage ./nix/tests/module-caddy.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+        module-custom-bind = pkgs.callPackage ./nix/tests/module-custom-bind.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+        module-authenticated = pkgs.callPackage ./nix/tests/module-authenticated.nix {
           paperclipModule = self.nixosModules.paperclip;
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };

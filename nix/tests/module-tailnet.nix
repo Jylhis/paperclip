@@ -9,6 +9,10 @@
 # (and the matching `--json` flavour Paperclip sometimes queries) so the unit
 # can resolve its bind address. Also pin `listen.tailnetBindHost` to the same
 # IP so the wrapper's output and Paperclip's chosen bind agree.
+#
+# Uses `mode = "preStartupOnly"` because the default-health-check curl in the
+# shared preamble would hit 127.0.0.1, but paperclip here only binds the
+# tailnet IP.
 let
   shimmedTailnetIp = "100.64.0.5";
   tailscaleShim = pkgs.writeShellScriptBin "tailscale" ''
@@ -25,45 +29,34 @@ let
         ;;
     esac
   '';
+
+  testLib = pkgs.callPackage ./lib.nix {
+    inherit paperclipModule paperclipPackage;
+  };
 in
-pkgs.testers.runNixOSTest {
+testLib.mkPaperclipTest {
   name = "paperclip-module-tailnet";
+  mode = "preStartupOnly";
 
-  nodes.machine =
-    { ... }:
+  paperclipConfig = {
+    deploymentMode = "local_trusted";
+    database = {
+      createLocally = true;
+      passwordFile = "/etc/paperclip-db-pass";
+    };
+    listen = {
+      mode = "tailnet";
+      tailnetBindHost = shimmedTailnetIp;
+    };
+    agentClis.enable = false;
+  };
+
+  extraNodeModule =
+    _:
     {
-      imports = [ paperclipModule ];
-
-      # Test-only credential, same shape as module-postgres.nix.
-      environment.etc."paperclip-db-pass" = {
-        text = "test-password";
-        mode = "0440";
-        user = "paperclip";
-        group = "postgres";
-      };
-
-      services.paperclip = {
-        enable = true;
-        package = paperclipPackage;
-        deploymentMode = "local_trusted";
-        database = {
-          createLocally = true;
-          passwordFile = "/etc/paperclip-db-pass";
-        };
-        listen = {
-          mode = "tailnet";
-          tailnetBindHost = shimmedTailnetIp;
-        };
-        agentClis.enable = false;
-        memoryHigh = null;
-        memoryMax = null;
-      };
-
       # Prepend the shim ahead of any real tailscale on the unit's PATH.
       # `systemd.services.<name>.path` is searched left-to-right.
       systemd.services.paperclip.path = pkgs.lib.mkBefore [ tailscaleShim ];
-
-      networking.firewall.enable = false;
     };
 
   testScript = ''
