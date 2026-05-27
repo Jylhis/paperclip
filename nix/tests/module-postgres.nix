@@ -59,5 +59,18 @@ pkgs.testers.runNixOSTest {
     machine.succeed(
         "sudo -u postgres psql -d paperclip -tAc 'SHOW server_version' | grep -E '^\\s*17\\.'"
     )
+
+    # Verify migrations actually landed in the NixOS-managed database —
+    # this is the canonical guard against silent fallback to embedded
+    # PostgreSQL when DATABASE_URL is missing or unparseable at boot.
+    table_count = machine.succeed(
+        "sudo -u postgres psql -d paperclip -tAc "
+        "\"SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema='public' AND table_type='BASE TABLE'\""
+    ).strip()
+    assert int(table_count) > 0, (
+        f"expected paperclip.public to contain migration-created tables, "
+        f"got count={table_count!r} — server likely fell back to embedded PG"
+    )
   '';
 }

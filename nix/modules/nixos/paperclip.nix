@@ -59,6 +59,28 @@ let
       > "${runtimeDbEnvFile}"
   '';
 
+  # ExecStart wrapper that sources runtimeDbEnvFile inline before
+  # exec'ing the paperclip binary. We do NOT rely on systemd's
+  # `EnvironmentFile=` for the runtime db env: the file is created by
+  # `ExecStartPre = buildDbEnvScript`, and there are systemd-version
+  # combinations where `EnvironmentFile` is parsed before `ExecStartPre`
+  # runs. With the file missing at parse time and the `-` prefix
+  # silencing the error, the main process would start without
+  # DATABASE_URL — at which point the server's runtime falls back to
+  # embedded PostgreSQL inside `$PAPERCLIP_HOME`, splitting data away
+  # from the NixOS-managed database. Sourcing in the wrapper makes the
+  # ordering explicit and immune to that race.
+  paperclipExecStart = pkgs.writeShellScript "paperclip-exec-start" ''
+    set -euo pipefail
+    if [ -r "${runtimeDbEnvFile}" ]; then
+      set -a
+      # shellcheck disable=SC1091
+      . "${runtimeDbEnvFile}"
+      set +a
+    fi
+    exec ${resolvedPackage}/bin/paperclip
+  '';
+
   agentCliPackage =
     if cfg.agentClis.enable then
       [ (if cfg.agentClis.package != null then cfg.agentClis.package else pkgs.paperclip-agent-clis) ]
@@ -1078,7 +1100,10 @@ in
           User = cfg.user;
           Group = cfg.group;
           WorkingDirectory = "${resolvedPackage}/lib/paperclip";
-          ExecStart = "${resolvedPackage}/bin/paperclip";
+          # Wrapper sources /run/paperclip/db-env inline before exec'ing
+          # paperclip; see `paperclipExecStart` definition for the
+          # systemd race rationale.
+          ExecStart = "${paperclipExecStart}";
           Restart = "on-failure";
           RestartSec = 5;
           # /run/paperclip — used to hold the runtime-built db-env file.
@@ -1136,17 +1161,18 @@ in
         // optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; }
         // optionalAttrs cfg.database.createLocally {
           # Build DATABASE_URL from `passwordFile` into a runtime env
-          # file, then load it via EnvironmentFile below. The script
-          # runs as the unit's User so it can write into the
-          # RuntimeDirectory without elevated privileges.
+          # file at /run/paperclip/db-env; `paperclipExecStart` sources
+          # it inline so we are not subject to systemd's
+          # EnvironmentFile/ExecStartPre ordering. The script runs as
+          # the unit's User so it can write into the RuntimeDirectory
+          # without elevated privileges.
           ExecStartPre = [ buildDbEnvScript ];
         }
         // (
           let
             envFiles =
               optional (cfg.environmentFile != null) cfg.environmentFile
-              ++ map toString cfg.environmentFiles
-              ++ optional cfg.database.createLocally "-${runtimeDbEnvFile}";
+              ++ map toString cfg.environmentFiles;
           in
           optionalAttrs (envFiles != [ ]) { EnvironmentFile = envFiles; }
         );
@@ -1156,7 +1182,10 @@ in
     (mkIf cfg.database.createLocally {
       services.postgresql = {
         enable = true;
-        package = pkgs.postgresql_17;
+        # `mkDefault` so operators can override with a newer (or
+        # older — eval-time assertion floors at PG 17) package without
+        # tripping a definition-priority conflict.
+        package = lib.mkDefault pkgs.postgresql_17;
         ensureDatabases = [ cfg.database.name ];
         ensureUsers = [
           {

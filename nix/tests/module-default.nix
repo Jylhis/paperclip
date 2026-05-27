@@ -57,5 +57,17 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_unit("nginx.service")
     machine.wait_for_open_port(80)
     machine.succeed("curl -fsS -H 'Host: localhost' http://127.0.0.1/health")
+
+    # Guard against silent fallback to embedded PG: confirm migrations
+    # actually populated the NixOS-managed database.
+    table_count = machine.succeed(
+        "sudo -u postgres psql -d paperclip -tAc "
+        "\"SELECT count(*) FROM information_schema.tables "
+        "WHERE table_schema='public' AND table_type='BASE TABLE'\""
+    ).strip()
+    assert int(table_count) > 0, (
+        f"expected paperclip.public to contain migration-created tables, "
+        f"got count={table_count!r} — server likely fell back to embedded PG"
+    )
   '';
 }
