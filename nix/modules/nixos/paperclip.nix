@@ -20,12 +20,13 @@ let
     versionAtLeast
     ;
 
-  # postgres-js (porsager/postgres) cannot parse a Unix-socket URL —
-  # `?host=` is ignored, and `postgres://user@/db` fails `new URL()`. So
-  # for the NixOS-managed local Postgres we go TCP + password and build
-  # the full URL at runtime from `passwordFile` (kept out of the store).
-  # Eval-time DATABASE_URL is only set when the caller supplies an
-  # external URL (database.createLocally = false).
+  # `DATABASE_URL` is only set when the caller supplies an external URL
+  # (database.createLocally = false). For the NixOS-managed local
+  # PostgreSQL we instead export the `PAPERCLIP_DATABASE_SOCKET_DIR` /
+  # `_NAME` / `_USER` env vars (set inside the createLocally branch
+  # below); the server's runtime-config resolver turns that into a
+  # Unix-socket peer-auth connection through postgres-js's structured
+  # options form. No password material, no `db-env` file, no oneshot.
   evalTimeDatabaseUrl = if !cfg.database.createLocally then cfg.database.url else null;
 
   # Extract the hostname from `publicUrl` for the synthesised proxy vhost.
@@ -45,27 +46,21 @@ let
   proxyEnabled = cfg.proxy.nginx || cfg.proxy.caddy;
 
   runtimeEnvDir = "/run/paperclip";
-  runtimeDbEnvFile = "${runtimeEnvDir}/db-env";
   # Assembled at boot when grafanaCloud.selfTelemetry.otlpInstanceId is
-  # set; sourced by paperclipExecStart alongside runtimeDbEnvFile so the
-  # OTLP exporter's auth header never lives in the unit's static env
-  # block (and thus never lands in the nix store).
+  # set; sourced by paperclipExecStart so the OTLP exporter's auth
+  # header never lives in the unit's static env block (and thus never
+  # lands in the nix store).
   runtimeOtlpEnvFile = "${runtimeEnvDir}/otlp-env";
 
-  buildDbEnvScript = pkgs.writeShellScript "paperclip-build-db-env" ''
-    set -euo pipefail
-    pass=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.passwordFile}")
-    # URL-encode the password so special characters don't break the URL.
-    encoded=$(${pkgs.coreutils}/bin/printf '%s' "$pass" | ${pkgs.jq}/bin/jq -sRr @uri)
-    umask 077
-    ${pkgs.coreutils}/bin/printf \
-      'DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' \
-      ${lib.escapeShellArg cfg.user} "$encoded" ${lib.escapeShellArg cfg.database.name} \
-      > "${runtimeDbEnvFile}"
-  '';
+  # True when an ExecStartPre needs to assemble a runtime env file the
+  # wrapper later sources. Today only the OTLP Basic-auth header — the
+  # DB credentials moved to compile-time env vars + peer auth.
+  needsRuntimeEnvFile =
+    cfg.grafanaCloud.enable
+    && cfg.grafanaCloud.selfTelemetry.enable
+    && cfg.grafanaCloud.selfTelemetry.otlpInstanceId != null;
 
-  # Mirror of buildDbEnvScript for the OTLP Basic-auth header. Reads
-  # the stack token at boot (kept out of the store), base64-encodes
+  # Reads the stack token at boot (kept out of the store), base64-encodes
   # `${otlpInstanceId}:${token}`, and writes a shell-sourceable line
   # that paperclipExecStart picks up. Guarded by otlpInstanceId being
   # non-null at the call site.
@@ -92,27 +87,29 @@ let
       "--diagnostic-dir=${cfg.heapSnapshots.dir}"
     ];
 
-  # ExecStart wrapper that sources runtimeDbEnvFile and (when present)
-  # runtimeOtlpEnvFile inline before exec'ing the paperclip binary.
-  # We do NOT rely on systemd's `EnvironmentFile=` for these runtime
-  # files: they are created by `ExecStartPre` scripts, and there are
-  # systemd-version combinations where `EnvironmentFile` is parsed
-  # before `ExecStartPre` runs. With the file missing at parse time
-  # and the `-` prefix silencing the error, the main process would
-  # start without DATABASE_URL — at which point the server's runtime
-  # falls back to embedded PostgreSQL inside `$PAPERCLIP_HOME`,
-  # splitting data away from the NixOS-managed database. Sourcing in
-  # the wrapper makes the ordering explicit and immune to that race.
+  # ExecStart wrapper that sources runtimeOtlpEnvFile inline before
+  # exec'ing the paperclip binary. We do NOT rely on systemd's
+  # `EnvironmentFile=` for this runtime file: it is created by an
+  # `ExecStartPre`, and there are systemd-version combinations where
+  # `EnvironmentFile` is parsed before `ExecStartPre` runs. With the
+  # file missing at parse time and the `-` prefix silencing the error,
+  # the OTLP exporter would start without an Authorization header and
+  # silently drop traces. Sourcing in the wrapper makes the ordering
+  # explicit and immune to that race.
+  #
+  # Only used when `needsRuntimeEnvFile` is true; otherwise `ExecStart`
+  # invokes the paperclip binary directly. Database credentials are now
+  # passed as compile-time env vars and resolved via Unix-socket peer
+  # auth (see `PAPERCLIP_DATABASE_SOCKET_DIR` in the createLocally
+  # branch below), so the DB no longer needs a runtime env file.
   paperclipExecStart = pkgs.writeShellScript "paperclip-exec-start" ''
     set -euo pipefail
-    for f in "${runtimeDbEnvFile}" "${runtimeOtlpEnvFile}"; do
-      if [ -r "$f" ]; then
-        set -a
-        # shellcheck disable=SC1091
-        . "$f"
-        set +a
-      fi
-    done
+    if [ -r "${runtimeOtlpEnvFile}" ]; then
+      set -a
+      # shellcheck disable=SC1091
+      . "${runtimeOtlpEnvFile}"
+      set +a
+    fi
     exec ${resolvedPackage}/bin/paperclip
   '';
 
@@ -255,8 +252,9 @@ in
       supports two database shapes selected by services.paperclip.database.createLocally:
 
         - createLocally = true  (default): NixOS-managed local PostgreSQL
-          via services.postgresql. Replaces mode = "postgresql". Requires
-          database.passwordFile.
+          via services.postgresql. Replaces mode = "postgresql".
+          Authenticates over the Unix socket via PostgreSQL peer auth —
+          no password file required.
         - createLocally = false: caller-supplied connection URL. Replaces
           mode = "external". Requires database.url.
 
@@ -264,6 +262,15 @@ in
       module — production deployments must use one of the two shapes
       above. The embedded fallback in the server runtime remains
       available for local development via `pnpm dev`.
+    '')
+    (mkRemovedOptionModule [ "services" "paperclip" "database" "passwordFile" ] ''
+      services.paperclip.database.passwordFile has been removed. The
+      module now authenticates the local paperclip role over the
+      PostgreSQL Unix socket via peer auth — the OS user `paperclip`
+      maps to the `paperclip` role with no password material. Remove
+      `passwordFile` from your configuration. Hosted / external
+      deployments (database.createLocally = false) keep their existing
+      `database.url`, which still encodes credentials when needed.
     '')
   ];
 
@@ -622,9 +629,14 @@ in
 
           - `true` (default): NixOS-managed local PostgreSQL. The module
             enables `services.postgresql`, pins it to PostgreSQL 17,
-            provisions the database/role, and applies the password from
-            `database.passwordFile` on every boot. Requires
-            `database.passwordFile`.
+            provisions the database and role with `ensureDBOwnership`,
+            and exports `PAPERCLIP_DATABASE_SOCKET_DIR`,
+            `PAPERCLIP_DATABASE_NAME`, and `PAPERCLIP_DATABASE_USER` on
+            the unit. The paperclip server connects via the Unix socket
+            at `/run/postgresql` and authenticates using the default
+            NixOS `pg_hba.conf` peer-auth mapping (the `paperclip` OS
+            user maps to the `paperclip` PG role). No password file or
+            secret material is required for this path.
           - `false`: caller-supplied database. The module wires
             `database.url` (and optionally `database.migrationUrl`) into
             the unit environment as `DATABASE_URL` /
@@ -655,7 +667,10 @@ in
         description = ''
           PostgreSQL connection string. Required when
           `createLocally = false`; rejected when `createLocally = true`
-          (the URL is built at boot from `passwordFile` instead).
+          (the local case uses Unix-socket peer authentication via the
+          `PAPERCLIP_DATABASE_SOCKET_DIR` / `_NAME` / `_USER` env vars
+          set by this module, and a connection URL would override that
+          path).
 
           Exported as `DATABASE_URL` in the unit environment. The
           server's runtime resolver treats this as
@@ -682,30 +697,6 @@ in
         '';
       };
 
-      passwordFile = mkOption {
-        type = types.nullOr types.path;
-        default = null;
-        example = "/run/secrets/paperclip_db_password";
-        description = ''
-          Path to a file holding the password for the `name` Postgres
-          role. Required when `createLocally = true`. Must be readable
-          by the paperclip service user and by the postgres user —
-          typically `mode = "0440"`, `owner = "paperclip"`,
-          `group = "postgres"`.
-
-          Runtime behaviour worth knowing about:
-
-          - The password is re-applied to the Postgres role on every
-            restart via `ALTER USER` (see
-            `paperclip-postgres-password.service`). Rotating the file
-            and restarting the unit is enough to update the live role —
-            no manual `psql` step.
-          - The full DATABASE_URL is assembled from this file into
-            `/run/paperclip/db-env` by an ExecStartPre and loaded via
-            `EnvironmentFile=`. The password is never baked into the
-            Nix store.
-        '';
-      };
     };
 
     environmentFile = mkOption {
@@ -1064,22 +1055,15 @@ in
           '';
         }
         {
-          assertion = !cfg.database.createLocally || cfg.database.passwordFile != null;
-          message = ''
-            services.paperclip.database.passwordFile is required when
-            database.createLocally = true (postgres-js cannot use a
-            Unix socket via URL, so we authenticate over TCP with a
-            password loaded from this file at boot).
-          '';
-        }
-        {
           assertion = !cfg.database.createLocally || cfg.database.url == null;
           message = ''
             services.paperclip.database.url must be null when
-            database.createLocally = true — the URL is assembled at
-            boot from `database.passwordFile` and is never baked into
-            the Nix store. Switch to createLocally = false if you want
-            to supply a complete URL yourself.
+            database.createLocally = true — the local path uses
+            Unix-socket peer authentication via the
+            `PAPERCLIP_DATABASE_SOCKET_DIR` / `_NAME` / `_USER` env
+            vars set by this module. Switch to
+            `database.createLocally = false` if you want to supply a
+            complete connection URL.
           '';
         }
         {
@@ -1307,13 +1291,18 @@ in
           User = cfg.user;
           Group = cfg.group;
           WorkingDirectory = "${resolvedPackage}/lib/paperclip";
-          # Wrapper sources /run/paperclip/db-env inline before exec'ing
-          # paperclip; see `paperclipExecStart` definition for the
-          # systemd race rationale.
-          ExecStart = "${paperclipExecStart}";
+          # When a runtime env file is in play (today: the OTLP
+          # Basic-auth header), use the wrapper that sources
+          # /run/paperclip/otlp-env inline before exec'ing paperclip.
+          # Otherwise, exec the binary directly — there is no DB env
+          # file to source any more (the local DB path uses Unix-socket
+          # peer auth via env vars set at unit-build time).
+          ExecStart =
+            if needsRuntimeEnvFile then "${paperclipExecStart}" else "${resolvedPackage}/bin/paperclip";
           Restart = "on-failure";
           RestartSec = cfg.restart.restartSec;
-          # /run/paperclip — used to hold the runtime-built db-env file.
+          # /run/paperclip — holds the runtime-built OTLP auth header
+          # env file when Grafana Cloud self-telemetry is enabled.
           RuntimeDirectory = "paperclip";
           RuntimeDirectoryMode = "0750";
 
@@ -1367,21 +1356,15 @@ in
         // optionalAttrs (cfg.memoryHigh != null) { MemoryHigh = cfg.memoryHigh; }
         // optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; }
         // (
-          # Build any runtime env files (DATABASE_URL and/or OTLP auth
-          # header) before exec'ing the wrapper. The wrapper sources
-          # each file inline, sidestepping systemd's
-          # EnvironmentFile/ExecStartPre ordering. Each script runs as
-          # the unit's User and writes into RuntimeDirectory with
-          # umask 077, so the secrets never sit in the static unit
-          # env or the nix store.
+          # Build the runtime OTLP auth-header file before exec'ing the
+          # wrapper. The wrapper sources it inline, sidestepping
+          # systemd's EnvironmentFile/ExecStartPre ordering. The script
+          # runs as the unit's User and writes into RuntimeDirectory
+          # with umask 077, so the secret never sits in the static unit
+          # env or the nix store. The local-DB path no longer needs an
+          # ExecStartPre — peer auth requires no runtime secrets.
           let
-            execStartPre =
-              optional cfg.database.createLocally buildDbEnvScript
-              ++ optional (
-                cfg.grafanaCloud.enable
-                && cfg.grafanaCloud.selfTelemetry.enable
-                && cfg.grafanaCloud.selfTelemetry.otlpInstanceId != null
-              ) buildOtlpEnvScript;
+            execStartPre = optional needsRuntimeEnvFile buildOtlpEnvScript;
           in
           optionalAttrs (execStartPre != [ ]) { ExecStartPre = execStartPre; }
         )
@@ -1411,51 +1394,16 @@ in
         ];
       };
 
-      # NixOS `ensureUsers` does not set a password. Apply the one
-      # from `passwordFile` after postgres is up and before the
-      # paperclip service tries to connect.
-      systemd.services."paperclip-postgres-password" = {
-        description = "Set Postgres password for the paperclip role";
-        after = [
-          "postgresql.service"
-          "postgresql-setup.service"
-        ];
-        requires = [
-          "postgresql.service"
-          "postgresql-setup.service"
-        ];
-        wantedBy = [ "multi-user.target" ];
-        # Re-run on rekey of the password file.
-        restartTriggers = [ (toString cfg.database.passwordFile) ];
-        serviceConfig = {
-          Type = "oneshot";
-          User = "postgres";
-          Group = "postgres";
-          RemainAfterExit = true;
-          ExecStart = pkgs.writeShellScript "paperclip-postgres-password" ''
-            set -euo pipefail
-            for _ in $(${pkgs.coreutils}/bin/seq 1 30); do
-              ${config.services.postgresql.package}/bin/pg_isready -q && break
-              ${pkgs.coreutils}/bin/sleep 1
-            done
-            pass=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.passwordFile}")
-            # Double any single quotes so the SQL literal is safe.
-            escaped=$(${pkgs.coreutils}/bin/printf '%s' "$pass" \
-              | ${pkgs.gnused}/bin/sed "s/'/'''/g")
-            ${config.services.postgresql.package}/bin/psql -d ${cfg.database.name} \
-              -c "ALTER USER ${cfg.user} WITH PASSWORD '$escaped';"
-          '';
-        };
-      };
-
-      systemd.services.paperclip = {
-        after = [ "paperclip-postgres-password.service" ];
-        requires = [ "paperclip-postgres-password.service" ];
-        # Rebuild `/run/paperclip/db-env` on rekey so the running unit
-        # reconnects with the new password instead of failing on the
-        # next reconnect. The password-applier already restarts on
-        # rekey via its own restartTriggers above.
-        restartTriggers = [ (toString cfg.database.passwordFile) ];
+      # Tell paperclip to connect through the PostgreSQL Unix socket
+      # using peer authentication (the default NixOS `pg_hba.conf`
+      # `local` records use `peer`, and `ensureDBOwnership = true`
+      # above gives the `paperclip` PG role ownership of the matching
+      # database). No password is exchanged — the kernel proves the
+      # connecting OS user identity to Postgres on the socket.
+      systemd.services.paperclip.environment = {
+        PAPERCLIP_DATABASE_SOCKET_DIR = "/run/postgresql";
+        PAPERCLIP_DATABASE_NAME = cfg.database.name;
+        PAPERCLIP_DATABASE_USER = cfg.user;
       };
     })
 

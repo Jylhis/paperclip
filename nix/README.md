@@ -85,10 +85,9 @@ bundles with no native build steps, so they cover darwin too.
           services.paperclip = {
             enable = true;
             deploymentMode = "authenticated";
-            database = {
-              mode = "postgresql";
-              passwordFile = "/run/secrets/paperclip_db_password";
-            };
+            # NixOS-managed PostgreSQL via Unix-socket peer auth — no
+            # password file or DATABASE_URL required.
+            database.createLocally = true;
             publicUrl = "https://paperclip.example.com";
             # Must contain at minimum BETTER_AUTH_SECRET when
             # deploymentMode = "authenticated" — Better Auth refuses to
