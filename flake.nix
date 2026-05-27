@@ -78,10 +78,11 @@
       nixosModules.paperclip = import ./nix/modules/nixos/paperclip.nix;
       nixosModules.default = self.nixosModules.paperclip;
 
-      # `nixosTest` only runs on linux. Each test boots a VM, brings the unit
-      # up, and exercises `/health` to catch regressions in the module wiring
-      # (bind presets, postgres password rotation, env-file ordering).
-      checks = forSystems linuxSystems (pkgs: {
+      # NixOS VM tests are heavy (each boots a full VM). Keep them OUT of
+      # `flake.checks` so `nix flake check` stays fast — operators run
+      # them via `just test-vm` or `nix build .#vmTests.<system>.<name>`
+      # when explicitly requested.
+      vmTests = forSystems linuxSystems (pkgs: {
         module-default = pkgs.callPackage ./nix/tests/module-default.nix {
           paperclipModule = self.nixosModules.paperclip;
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
@@ -91,6 +92,10 @@
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
         module-tailnet = pkgs.callPackage ./nix/tests/module-tailnet.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+        module-external = pkgs.callPackage ./nix/tests/module-external.nix {
           paperclipModule = self.nixosModules.paperclip;
           paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
         };
