@@ -12,6 +12,12 @@ export {
   type Db,
 } from "./client.js";
 export {
+  type DatabaseTarget,
+  describeTarget,
+  postgresOptions,
+  targetFromUrl,
+} from "./target.js";
+export {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
   type EmbeddedPostgresTestDatabase,
