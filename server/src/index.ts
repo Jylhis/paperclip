@@ -13,6 +13,7 @@ import type { Request as ExpressRequest, RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
+  type DatabaseTarget,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
@@ -23,6 +24,7 @@ import {
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
+  targetFromUrl,
   authUsers,
   companies,
   companyMemberships,
@@ -146,20 +148,20 @@ export async function startServer(): Promise<StartedServer> {
   };
   
   async function ensureMigrations(
-    connectionString: string,
+    target: DatabaseTarget,
     label: string,
     opts?: EnsureMigrationsOptions,
   ): Promise<MigrationSummary> {
     const autoApply = opts?.autoApply === true;
-    let state = await inspectMigrations(connectionString);
+    let state = await inspectMigrations(target);
     if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
-      const repair = await reconcilePendingMigrationHistory(connectionString);
+      const repair = await reconcilePendingMigrationHistory(target);
       if (repair.repairedMigrations.length > 0) {
         logger.warn(
           { repairedMigrations: repair.repairedMigrations },
           `${label} had drifted migration history; repaired migration journal entries from existing schema state.`,
         );
-        state = await inspectMigrations(connectionString);
+        state = await inspectMigrations(target);
         if (state.status === "upToDate") return "already applied";
       }
     }
@@ -176,12 +178,12 @@ export async function startServer(): Promise<StartedServer> {
             "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
         );
       }
-  
+
       logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
       return "applied (pending migrations)";
     }
-  
+
     const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
     if (!apply) {
       throw new Error(
@@ -189,9 +191,9 @@ export async function startServer(): Promise<StartedServer> {
           "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
       );
     }
-  
+
     logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-    await applyPendingMigrations(connectionString);
+    await applyPendingMigrations(target);
     return "applied (pending migrations)";
   }
   
@@ -311,10 +313,10 @@ export async function startServer(): Promise<StartedServer> {
   assertCloudDatabaseContract();
   if (config.databaseUrl) {
     const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
-    migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
-  
-    db = createDb(config.databaseUrl);
-    pluginMigrationDb = config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
+    migrationSummary = await ensureMigrations(targetFromUrl(migrationUrl), "PostgreSQL");
+
+    db = createDb(targetFromUrl(config.databaseUrl));
+    pluginMigrationDb = config.databaseMigrationUrl ? createDb(targetFromUrl(config.databaseMigrationUrl)) : db;
     logger.info("Using external PostgreSQL via DATABASE_URL/config");
     activeDatabaseConnectionString = config.databaseUrl;
     startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
@@ -401,14 +403,14 @@ export async function startServer(): Promise<StartedServer> {
     } else {
       const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
       try {
-        const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
+        const actualDataDir = await getPostgresDataDirectory(targetFromUrl(configuredAdminConnectionString));
         if (
           typeof actualDataDir !== "string" ||
           resolve(actualDataDir) !== resolve(dataDir)
         ) {
           throw new Error("reachable postgres does not use the expected embedded data directory");
         }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
+        await ensurePostgresDatabase(targetFromUrl(configuredAdminConnectionString), "paperclip");
         logger.warn(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
@@ -462,21 +464,21 @@ export async function startServer(): Promise<StartedServer> {
     }
   
     const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
+    const dbStatus = await ensurePostgresDatabase(targetFromUrl(embeddedAdminConnectionString), "paperclip");
     if (dbStatus === "created") {
       logger.info("Created embedded PostgreSQL database: paperclip");
     }
-  
+
     const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
     }
-    migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
+    migrationSummary = await ensureMigrations(targetFromUrl(embeddedConnectionString), "Embedded PostgreSQL", {
       autoApply: shouldAutoApplyFirstRunMigrations,
     });
-  
-    db = createDb(embeddedConnectionString);
+
+    db = createDb(targetFromUrl(embeddedConnectionString));
     pluginMigrationDb = db;
     logger.info("Embedded PostgreSQL ready");
     activeDatabaseConnectionString = embeddedConnectionString;
@@ -601,7 +603,7 @@ export async function startServer(): Promise<StartedServer> {
       const retention = generalSettings.backupRetention;
 
       const result = await runDatabaseBackup({
-        connectionString: activeDatabaseConnectionString,
+        target: targetFromUrl(activeDatabaseConnectionString),
         backupDir: config.databaseBackupDir,
         retention,
         filenamePrefix: "paperclip",

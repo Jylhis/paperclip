@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { and, eq, gt, isNull } from "drizzle-orm";
-import { createDb, instanceUserRoles, invites } from "@paperclipai/db";
+import { createDb, instanceUserRoles, invites, targetFromUrl } from "@paperclipai/db";
 import { inferBindModeFromHost } from "@paperclipai/shared";
 import { loadPaperclipEnvFile } from "../config/env.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
@@ -79,7 +79,7 @@ export async function bootstrapCeoInvite(opts: {
     return;
   }
 
-  const db = createDb(dbUrl);
+  const db = createDb(targetFromUrl(dbUrl));
   const closableDb = db as typeof db & {
     $client?: {
       end?: (options?: { timeout?: number }) => Promise<void>;

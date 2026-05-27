@@ -46,6 +46,7 @@ import {
   createEmbeddedPostgresLogBuffer,
   formatEmbeddedPostgresError,
   prepareEmbeddedPostgresNativeRuntime,
+  targetFromUrl,
 } from "@paperclipai/db";
 import type { Command } from "commander";
 import { ensureAgentJwtSecret, loadPaperclipEnvFile, mergePaperclipEnvEntries, readPaperclipEnvEntries, resolvePaperclipEnvFile } from "../config/env.js";
@@ -746,7 +747,7 @@ async function rebindSeededProjectWorkspaces(input: {
   const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
   if (!targetRepo) return [];
 
-  const db = createDb(input.targetConnectionString);
+  const db = createDb(targetFromUrl(input.targetConnectionString));
   const closableDb = db as typeof db & {
     $client?: { end?: (opts?: { timeout?: number }) => Promise<void> };
   };
@@ -1117,7 +1118,7 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
 }
 
 export async function pauseSeededScheduledRoutines(connectionString: string): Promise<number> {
-  const db = createDb(connectionString);
+  const db = createDb(targetFromUrl(connectionString));
   try {
     const scheduledRoutineIds = await db
       .selectDistinct({ routineId: routineTriggers.routineId })
@@ -1186,7 +1187,7 @@ function normalizeWorktreeRuntimeConfig(runtimeConfig: unknown): {
 export async function quarantineSeededWorktreeExecutionState(
   connectionString: string,
 ): Promise<SeededWorktreeExecutionQuarantineSummary> {
-  const db = createDb(connectionString);
+  const db = createDb(targetFromUrl(connectionString));
   const summary = { ...EMPTY_SEEDED_WORKTREE_EXECUTION_QUARANTINE_SUMMARY };
   try {
     await db.transaction(async (tx) => {
@@ -1301,7 +1302,7 @@ async function seedWorktreeDatabase(input: {
         input.sourceConfig.database.embeddedPostgresPort,
       );
       const sourceAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${sourceHandle.port}/postgres`;
-      await ensurePostgresDatabase(sourceAdminConnectionString, "paperclip");
+      await ensurePostgresDatabase(targetFromUrl(sourceAdminConnectionString), "paperclip");
     }
     const sourceConnectionString = resolveSourceConnectionString(
       input.sourceConfig,
@@ -1309,7 +1310,7 @@ async function seedWorktreeDatabase(input: {
       sourceHandle?.port,
     );
     const backup = await runDatabaseBackup({
-      connectionString: sourceConnectionString,
+      target: targetFromUrl(sourceConnectionString),
       backupDir: path.resolve(input.targetPaths.backupDir, "seed"),
       retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
       filenamePrefix: `${input.instanceId}-seed`,
@@ -1325,13 +1326,13 @@ async function seedWorktreeDatabase(input: {
     );
 
     const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${targetHandle.port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
+    await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
     const targetConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${targetHandle.port}/paperclip`;
     await runDatabaseRestore({
-      connectionString: targetConnectionString,
+      target: targetFromUrl(targetConnectionString),
       backupFile: backup.backupFile,
     });
-    await applyPendingMigrations(targetConnectionString);
+    await applyPendingMigrations(targetFromUrl(targetConnectionString));
     const executionQuarantine = input.preserveLiveWork
       ? { ...EMPTY_SEEDED_WORKTREE_EXECUTION_QUARANTINE_SUMMARY }
       : await quarantineSeededWorktreeExecutionState(targetConnectionString);
@@ -1939,7 +1940,7 @@ async function openConfiguredDb(configPath: string): Promise<OpenDbHandle> {
       );
     }
     const connectionString = resolveSourceConnectionString(config, envEntries, embeddedHandle?.port);
-    const migrationState = await inspectMigrations(connectionString);
+    const migrationState = await inspectMigrations(targetFromUrl(connectionString));
     if (migrationState.status !== "upToDate") {
       const pending =
         migrationState.reason === "pending-migrations"
@@ -1949,7 +1950,7 @@ async function openConfiguredDb(configPath: string): Promise<OpenDbHandle> {
         `Database for ${configPath} is not up to date.${pending} Run \`pnpm db:migrate\` (or start Paperclip once) before using worktree merge history.`,
       );
     }
-    const db = createDb(connectionString) as ClosableDb;
+    const db = createDb(targetFromUrl(connectionString)) as ClosableDb;
     return {
       db,
       stop: async () => {
