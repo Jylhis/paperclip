@@ -12,20 +12,21 @@ let
     mkOption
     mkIf
     mkMerge
-    mkRenamedOptionModule
+    mkRemovedOptionModule
     types
     literalExpression
     optionalAttrs
     optional
+    versionAtLeast
     ;
 
   # postgres-js (porsager/postgres) cannot parse a Unix-socket URL —
   # `?host=` is ignored, and `postgres://user@/db` fails `new URL()`. So
   # for the NixOS-managed local Postgres we go TCP + password and build
   # the full URL at runtime from `passwordFile` (kept out of the store).
-  # Eval-time DATABASE_URL is only set for `external` mode where the
-  # caller supplies a complete URL.
-  evalTimeDatabaseUrl = if cfg.database.mode == "external" then cfg.database.url else null;
+  # Eval-time DATABASE_URL is only set when the caller supplies an
+  # external URL (database.createLocally = false).
+  evalTimeDatabaseUrl = if !cfg.database.createLocally then cfg.database.url else null;
 
   # Extract the hostname from `publicUrl` for the synthesised proxy vhost.
   # Returns null when `publicUrl` is unset (the assertions block proxy.* in
@@ -136,6 +137,9 @@ let
     }
   )
   // optionalAttrs (evalTimeDatabaseUrl != null) { DATABASE_URL = evalTimeDatabaseUrl; }
+  // optionalAttrs (cfg.database.migrationUrl != null) {
+    DATABASE_MIGRATION_URL = cfg.database.migrationUrl;
+  }
   // optionalAttrs cfg.grafanaCloud.enable (
     {
       # Token files are loaded by the server at runtime — only paths are baked
@@ -159,21 +163,36 @@ let
   // cfg.extraEnvironment;
 in
 {
-  # Old top-level options collapsed into `services.paperclip.listen.*`.
-  # `mkRenamedOptionModule` keeps existing consumers working with a
-  # one-line eval-time deprecation warning until they migrate.
+  # Old options collapsed into `services.paperclip.listen.*` and
+  # `services.paperclip.database.{createLocally,url}`. `mkRemovedOptionModule`
+  # surfaces a clean eval-time error pointing at the replacement instead of
+  # silently dropping the value.
   imports = [
-    (mkRenamedOptionModule [ "services" "paperclip" "host" ] [ "services" "paperclip" "listen" "host" ])
-    (mkRenamedOptionModule [ "services" "paperclip" "port" ] [ "services" "paperclip" "listen" "port" ])
-    (mkRenamedOptionModule [ "services" "paperclip" "bind" ] [ "services" "paperclip" "listen" "mode" ])
-    (mkRenamedOptionModule
-      [ "services" "paperclip" "bindHost" ]
-      [ "services" "paperclip" "listen" "bindHost" ]
-    )
-    (mkRenamedOptionModule
-      [ "services" "paperclip" "tailnetBindHost" ]
-      [ "services" "paperclip" "listen" "tailnetBindHost" ]
-    )
+    (mkRemovedOptionModule [ "services" "paperclip" "host" ]
+      "Use services.paperclip.listen.host.")
+    (mkRemovedOptionModule [ "services" "paperclip" "port" ]
+      "Use services.paperclip.listen.port.")
+    (mkRemovedOptionModule [ "services" "paperclip" "bind" ]
+      "Use services.paperclip.listen.mode.")
+    (mkRemovedOptionModule [ "services" "paperclip" "bindHost" ]
+      "Use services.paperclip.listen.bindHost.")
+    (mkRemovedOptionModule [ "services" "paperclip" "tailnetBindHost" ]
+      "Use services.paperclip.listen.tailnetBindHost.")
+    (mkRemovedOptionModule [ "services" "paperclip" "database" "mode" ] ''
+      services.paperclip.database.mode has been removed. The module now
+      supports two database shapes selected by services.paperclip.database.createLocally:
+
+        - createLocally = true  (default): NixOS-managed local PostgreSQL
+          via services.postgresql. Replaces mode = "postgresql". Requires
+          database.passwordFile.
+        - createLocally = false: caller-supplied connection URL. Replaces
+          mode = "external". Requires database.url.
+
+      The legacy mode = "embedded" is no longer supported by the NixOS
+      module — production deployments must use one of the two shapes
+      above. The embedded fallback in the server runtime remains
+      available for local development via `pnpm dev`.
+    '')
   ];
 
   options.services.paperclip = {
@@ -224,10 +243,10 @@ in
     };
 
     # All listen-side knobs live in one submodule so callers don't have
-    # to thread four mutually-constrained top-level options. The old
-    # flat options (`host`, `port`, `bind`, `bindHost`,
-    # `tailnetBindHost`) still work via `mkRenamedOptionModule` in the
-    # `imports` block above.
+    # to thread four mutually-constrained top-level options. The
+    # legacy flat names (`host`, `port`, `bind`, `bindHost`,
+    # `tailnetBindHost`) have been removed; see the `imports` block above
+    # for the migration error pointing at these replacements.
     listen = {
       host = mkOption {
         type = types.str;
@@ -523,35 +542,37 @@ in
     };
 
     database = {
-      mode = mkOption {
-        type = types.enum [
-          "postgresql"
-          "embedded"
-          "external"
-        ];
-        default = "postgresql";
+      createLocally = mkOption {
+        type = types.bool;
+        default = true;
         description = ''
-          - `postgresql`: NixOS-managed local Postgres, peer auth via
-            Unix socket. Recommended for server deployments.
-          - `embedded`: server runs its own bundled Postgres. Good for
-            single-user / development.
-          - `external`: provide DATABASE_URL via `database.url`.
+          Selects the database shape:
+
+          - `true` (default): NixOS-managed local PostgreSQL. The module
+            enables `services.postgresql`, pins it to PostgreSQL 17,
+            provisions the database/role, and applies the password from
+            `database.passwordFile` on every boot. Requires
+            `database.passwordFile`.
+          - `false`: caller-supplied database. The module wires
+            `database.url` (and optionally `database.migrationUrl`) into
+            the unit environment as `DATABASE_URL` /
+            `DATABASE_MIGRATION_URL`. Use this for hosted databases
+            (e.g. Supabase) or a separately managed PostgreSQL.
+
+          Both shapes resolve to the server's internal
+          `mode = "postgres"` runtime mode (see
+          `packages/db/src/runtime-config.ts`). The legacy embedded
+          fallback is not supported by the NixOS module.
         '';
       };
 
       name = mkOption {
         type = types.str;
         default = "paperclip";
-        description = "Database/role name (postgresql mode).";
-      };
-
-      createLocally = mkOption {
-        type = types.bool;
-        default = true;
         description = ''
-          When `mode = "postgresql"`, also enable and provision
-          services.postgresql here. Set false if you manage Postgres
-          via a separate NixOS module.
+          Database and role name. Only meaningful when
+          `createLocally = true` — externally-managed databases encode
+          this inside `database.url` instead.
         '';
       };
 
@@ -559,7 +580,34 @@ in
         type = types.nullOr types.str;
         default = null;
         example = "postgres://paperclip:secret@db.internal:5432/paperclip";
-        description = "Connection string used when `mode = \"external\"`.";
+        description = ''
+          PostgreSQL connection string. Required when
+          `createLocally = false`; rejected when `createLocally = true`
+          (the URL is built at boot from `passwordFile` instead).
+
+          Exported as `DATABASE_URL` in the unit environment. The
+          server's runtime resolver treats this as
+          `mode = "postgres"`.
+        '';
+      };
+
+      migrationUrl = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "postgres://paperclip:secret@db.internal:5432/paperclip";
+        description = ''
+          Optional alternate connection string used only for schema
+          migrations and plugin namespace migrations. Recommended when
+          the runtime `database.url` points at a connection pooler that
+          forbids prepared statements (e.g. Supabase Supavisor on port
+          6543) — set `migrationUrl` to the direct connection (port
+          5432) so migrations and plugin schema work succeed while the
+          app continues to use the pooled URL.
+
+          Only valid when `createLocally = false`. Exported as
+          `DATABASE_MIGRATION_URL`; see `doc/DATABASE.md` §3 and
+          §"Plugin database namespaces" for the upstream contract.
+        '';
       };
 
       passwordFile = mkOption {
@@ -568,10 +616,10 @@ in
         example = "/run/secrets/paperclip_db_password";
         description = ''
           Path to a file holding the password for the `name` Postgres
-          role. Required when `mode = "postgresql"`. Must be readable by
-          the paperclip service user, and (when `createLocally = true`)
-          by the postgres user too — typically `mode = "0440"`,
-          `owner = "paperclip"`, `group = "postgres"`.
+          role. Required when `createLocally = true`. Must be readable
+          by the paperclip service user and by the postgres user —
+          typically `mode = "0440"`, `owner = "paperclip"`,
+          `group = "postgres"`.
 
           Runtime behaviour worth knowing about:
 
@@ -778,16 +826,79 @@ in
           '';
         }
         {
-          assertion = cfg.database.mode != "external" || cfg.database.url != null;
-          message = "services.paperclip.database.mode = \"external\" requires database.url.";
+          assertion = cfg.database.createLocally || cfg.database.url != null;
+          message = ''
+            services.paperclip.database.url is required when
+            database.createLocally = false. Provide the connection
+            string for the externally-managed PostgreSQL.
+          '';
         }
         {
-          assertion = cfg.database.mode != "postgresql" || cfg.database.passwordFile != null;
+          assertion = !cfg.database.createLocally || cfg.database.passwordFile != null;
           message = ''
-            services.paperclip.database.mode = "postgresql" requires
-            `database.passwordFile` (postgres-js cannot use a Unix
-            socket via URL, so we authenticate over TCP with a
+            services.paperclip.database.passwordFile is required when
+            database.createLocally = true (postgres-js cannot use a
+            Unix socket via URL, so we authenticate over TCP with a
             password loaded from this file at boot).
+          '';
+        }
+        {
+          assertion = !cfg.database.createLocally || cfg.database.url == null;
+          message = ''
+            services.paperclip.database.url must be null when
+            database.createLocally = true — the URL is assembled at
+            boot from `database.passwordFile` and is never baked into
+            the Nix store. Switch to createLocally = false if you want
+            to supply a complete URL yourself.
+          '';
+        }
+        {
+          assertion = cfg.database.migrationUrl == null || !cfg.database.createLocally;
+          message = ''
+            services.paperclip.database.migrationUrl is only valid
+            when database.createLocally = false. It separates the
+            migration connection from the runtime URL for hosted
+            deployments behind a connection pooler — see
+            doc/DATABASE.md §3.
+          '';
+        }
+        {
+          assertion =
+            cfg.database.url == null
+            || builtins.match "postgres(ql)?://.*" cfg.database.url != null;
+          message = ''
+            services.paperclip.database.url must start with
+            `postgres://` or `postgresql://`. Got:
+            "${toString cfg.database.url}".
+          '';
+        }
+        {
+          assertion =
+            cfg.database.migrationUrl == null
+            || builtins.match "postgres(ql)?://.*" cfg.database.migrationUrl != null;
+          message = ''
+            services.paperclip.database.migrationUrl must start with
+            `postgres://` or `postgresql://`. Got:
+            "${toString cfg.database.migrationUrl}".
+          '';
+        }
+        {
+          # Floor at PG 17 — matches the Docker quickstart
+          # (postgres:17-alpine), the docs (doc/DATABASE.md §2), and
+          # the schema's stated PG 15+ requirement with comfortable
+          # headroom. Operators who pin a newer package are fine; this
+          # only catches accidental downgrades.
+          assertion =
+            !cfg.database.createLocally
+            || versionAtLeast config.services.postgresql.package.version "17";
+          message = ''
+            services.paperclip requires PostgreSQL 17 or newer when
+            database.createLocally = true. The configured
+            services.postgresql.package is version
+            "${config.services.postgresql.package.version}". Override
+            services.postgresql.package to pkgs.postgresql_17 (or
+            newer) or set database.createLocally = false to manage
+            PostgreSQL outside this module.
           '';
         }
         {
@@ -922,7 +1033,7 @@ in
         after = [
           "network-online.target"
         ]
-        ++ optional (cfg.database.mode == "postgresql" && cfg.database.createLocally) "postgresql.service"
+        ++ optional cfg.database.createLocally "postgresql.service"
         # `listen.mode = "tailnet"` makes Paperclip shell out to
         # `tailscale ip -4` at startup; without this ordering it can
         # race the tailscaled login and listen on nothing.
@@ -930,7 +1041,7 @@ in
         wants = [
           "network-online.target"
         ]
-        ++ optional (cfg.database.mode == "postgresql" && cfg.database.createLocally) "postgresql.service"
+        ++ optional cfg.database.createLocally "postgresql.service"
         ++ optional (cfg.listen.mode == "tailnet") "tailscaled-autoconnect.service";
 
         environment = baseEnv;
@@ -1023,7 +1134,7 @@ in
         # restart from systemd instead of a silent kernel OOM-kill.
         // optionalAttrs (cfg.memoryHigh != null) { MemoryHigh = cfg.memoryHigh; }
         // optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; }
-        // optionalAttrs (cfg.database.mode == "postgresql") {
+        // optionalAttrs cfg.database.createLocally {
           # Build DATABASE_URL from `passwordFile` into a runtime env
           # file, then load it via EnvironmentFile below. The script
           # runs as the unit's User so it can write into the
@@ -1035,16 +1146,17 @@ in
             envFiles =
               optional (cfg.environmentFile != null) cfg.environmentFile
               ++ map toString cfg.environmentFiles
-              ++ optional (cfg.database.mode == "postgresql") "-${runtimeDbEnvFile}";
+              ++ optional cfg.database.createLocally "-${runtimeDbEnvFile}";
           in
           optionalAttrs (envFiles != [ ]) { EnvironmentFile = envFiles; }
         );
       };
     }
 
-    (mkIf (cfg.database.mode == "postgresql" && cfg.database.createLocally) {
+    (mkIf cfg.database.createLocally {
       services.postgresql = {
         enable = true;
+        package = pkgs.postgresql_17;
         ensureDatabases = [ cfg.database.name ];
         ensureUsers = [
           {

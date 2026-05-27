@@ -43,6 +43,12 @@ This mode is ideal for local development and one-command installs.
 
 Docker note: the Docker quickstart image also uses embedded PostgreSQL by default. Persist `/paperclip` to keep DB state across container restarts (see `doc/DOCKER.md`).
 
+> **NixOS deployments do not support embedded PostgreSQL.** The NixOS
+> module (`services.paperclip`) exposes only `database.createLocally =
+> true` (NixOS-managed PostgreSQL via `services.postgresql`) and
+> `database.createLocally = false` (caller-supplied `database.url`). See
+> the NixOS module options or the §"Deployment surface map" below.
+
 ## 2. Local PostgreSQL (Docker)
 
 For a full PostgreSQL server locally, use the included Docker Compose setup:
@@ -142,6 +148,25 @@ The database mode is controlled by `DATABASE_URL`:
 | `postgres://...supabase.com...` | Hosted Supabase |
 
 Your Drizzle schema (`packages/db/src/schema/`) stays the same regardless of mode.
+
+## Deployment surface map
+
+The server's runtime resolver (`packages/db/src/runtime-config.ts`)
+recognises two internal modes — `embedded-postgres` and `postgres` —
+which the various deployment surfaces map onto as follows:
+
+| Deployment surface | Runtime mode | How it's selected |
+|---|---|---|
+| `pnpm dev` (laptop) | `embedded-postgres` | `DATABASE_URL` unset |
+| Docker quickstart (`docker-compose.quickstart.yml`) | `embedded-postgres` | `DATABASE_URL` unset inside the container |
+| Docker full stack (`docker-compose.yml`) | `postgres` | sidecar `postgres:17-alpine`, URL injected |
+| Quadlet (Podman / systemd) | `postgres` | sidecar `postgres:17-alpine`, URL injected |
+| NixOS module, `database.createLocally = true` | `postgres` | `services.postgresql` (PG 17), URL built at boot from `passwordFile` |
+| NixOS module, `database.createLocally = false` | `postgres` | caller-supplied `database.url` (Supabase, RDS, etc.) |
+
+The `embedded-postgres` mode is intentionally not exposed by the NixOS
+module — production deployments must use one of the `postgres`-mode
+shapes above.
 
 ## Plugin database namespaces
 

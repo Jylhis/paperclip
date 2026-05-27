@@ -33,10 +33,17 @@ for the caveats around the darwin build.
 | `packages.<sys>.default`                | Alias for `paperclip` (Linux only)                      |
 | `overlays.default`                      | Adds all of the above to `pkgs`                         |
 | `nixosModules.paperclip`                | `services.paperclip.enable = true`                      |
-| `checks.<sys>.module-default`           | NixOS VM test: embedded DB + nginx proxy                |
-| `checks.<sys>.module-postgres`          | NixOS VM test: NixOS-managed Postgres                   |
+| `vmTests.<sys>.module-default`          | NixOS VM test: NixOS-managed PG + nginx proxy           |
+| `vmTests.<sys>.module-postgres`         | NixOS VM test: NixOS-managed PG (canonical, PG 17 pin)  |
+| `vmTests.<sys>.module-tailnet`          | NixOS VM test: `listen.mode = "tailnet"` shim           |
+| `vmTests.<sys>.module-external`         | NixOS VM test: external DB + `migrationUrl`             |
 | `devShells.<sys>.default`               | `nix develop` toolchain                                 |
 | `apps.<sys>.install-deps`               | Materialise local `node_modules` from the Nix PNPM store |
+
+VM tests live under `vmTests.<sys>.*` rather than `checks.<sys>.*` so
+they do not run on every `nix flake check`. Invoke them through the
+repo `justfile` (`just test-vm`, `just test-vm-external`, etc.) or
+directly via `nix build .#vmTests.<sys>.<name>`.
 
 Platform support. The `nixosModules.paperclip` row only makes sense
 on Linux because `pkgs.paperclip` (which the module defaults to) is
@@ -53,11 +60,11 @@ Linux-only — importing the module on darwin is harmless as long as
 | `paperclip-ui`               | ✅           | ✅            | ✅             | ✅            |
 | `paperclip-pnpm-deps`        | ✅           | ✅            | ✅             | ✅            |
 | `devShells.default`          | ✅           | ✅            | ✅             | ✅            |
-| `checks.*`                   | ✅           | ✅            | ❌             | ❌            |
+| `vmTests.*`                  | ✅           | ✅            | ❌             | ❌            |
 | `nixosModules.paperclip`     | ✅           | ✅            | ❌             | ❌            |
 
 `paperclip-agent-clis` is Linux-only because the upstream npm packages
-ship per-arch tarballs only for `linux-x64` / `linux-arm64`. `checks.*`
+ship per-arch tarballs only for `linux-x64` / `linux-arm64`. `vmTests.*`
 runs `nixosTest`, which only works on Linux. The lighter outputs
 (`paperclip-mcp-server`, `paperclipai`, `paperclip-ui`) are pure JS
 bundles with no native build steps, so they cover darwin too.
@@ -195,7 +202,9 @@ nix build .#paperclipai               # any system
 nix build .#paperclip-ui              # any system
 nix build .#paperclip-pnpm-deps       # prefetched PNPM store
 nix run .#install-deps                # local node_modules, offline via Nix store
-nix flake check                       # runs nixosTests on Linux
+nix flake check                       # eval-only sanity check (fast)
+just test-vm                          # run every NixOS VM test (heavy)
+just test-vm-external                 # single VM test (see justfile)
 nix develop                           # toolchain shell
 ```
 
@@ -233,8 +242,10 @@ nix/
   modules/nixos/
     paperclip.nix          # services.paperclip NixOS module
   tests/
-    module-default.nix     # nixosTest: embedded DB + nginx proxy
-    module-postgres.nix    # nixosTest: NixOS-managed Postgres
+    module-default.nix     # nixosTest: NixOS-managed PG + nginx proxy
+    module-postgres.nix    # nixosTest: NixOS-managed PG (PG 17 pin)
+    module-tailnet.nix     # nixosTest: listen.mode = "tailnet"
+    module-external.nix    # nixosTest: external DB + migrationUrl
 ```
 
 `devenv.nix` at the repo root is a faster iteration shell for

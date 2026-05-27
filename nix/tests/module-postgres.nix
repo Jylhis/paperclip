@@ -3,9 +3,10 @@
   paperclipModule,
   paperclipPackage,
 }:
-# Exercises the postgresql database mode end-to-end: NixOS-managed Postgres,
+# Exercises `createLocally = true` end-to-end: NixOS-managed Postgres,
 # the `paperclip-postgres-password` oneshot that applies the password via
 # ALTER USER, and the runtime db-env file that the main unit consumes.
+# Also pins PostgreSQL 17 (the module's floor) and checks the version.
 pkgs.testers.runNixOSTest {
   name = "paperclip-module-postgres";
 
@@ -29,11 +30,10 @@ pkgs.testers.runNixOSTest {
         package = paperclipPackage;
         deploymentMode = "local_trusted";
         database = {
-          mode = "postgresql";
           createLocally = true;
           passwordFile = "/etc/paperclip-db-pass";
         };
-        bind = "default";
+        listen.mode = "default";
         agentClis.enable = false;
         memoryHigh = null;
         memoryMax = null;
@@ -52,6 +52,12 @@ pkgs.testers.runNixOSTest {
     # Sanity-check the role exists and owns the database.
     machine.succeed(
         "sudo -u postgres psql -d paperclip -tAc \"SELECT 1 FROM pg_roles WHERE rolname='paperclip'\" | grep -q '^1$'"
+    )
+
+    # Confirm the module pinned PostgreSQL 17 (the floor enforced by the
+    # version assertion).
+    machine.succeed(
+        "sudo -u postgres psql -d paperclip -tAc 'SHOW server_version' | grep -E '^\\s*17\\.'"
     )
   '';
 }

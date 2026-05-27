@@ -34,11 +34,22 @@ pkgs.testers.runNixOSTest {
     {
       imports = [ paperclipModule ];
 
+      # Test-only credential, same shape as module-postgres.nix.
+      environment.etc."paperclip-db-pass" = {
+        text = "test-password";
+        mode = "0440";
+        user = "paperclip";
+        group = "postgres";
+      };
+
       services.paperclip = {
         enable = true;
         package = paperclipPackage;
         deploymentMode = "local_trusted";
-        database.mode = "embedded";
+        database = {
+          createLocally = true;
+          passwordFile = "/etc/paperclip-db-pass";
+        };
         listen = {
           mode = "tailnet";
           tailnetBindHost = shimmedTailnetIp;
