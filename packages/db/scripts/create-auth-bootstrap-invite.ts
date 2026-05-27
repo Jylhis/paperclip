@@ -4,6 +4,7 @@ import path from "node:path";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { createDb } from "../src/client.js";
 import { invites } from "../src/schema/index.js";
+import { targetFromUrl } from "../src/target.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -42,7 +43,7 @@ async function main() {
     throw new Error(`Could not resolve database connection from ${configPath}`);
   }
 
-  const db = createDb(dbUrl);
+  const db = createDb(targetFromUrl(dbUrl));
   const closableDb = db as typeof db & {
     $client?: {
       end?: (options?: { timeout?: number }) => Promise<void>;

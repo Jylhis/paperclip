@@ -5,13 +5,18 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as schema from "./schema/index.js";
+import { type DatabaseTarget, postgresOptions } from "./target.js";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url));
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
-function createUtilitySql(url: string) {
-  return postgres(url, { max: 1, onnotice: () => {} });
+function createUtilitySql(target: DatabaseTarget) {
+  const [arg] = postgresOptions(target);
+  if (typeof arg === "string") {
+    return postgres(arg, { max: 1, onnotice: () => {} });
+  }
+  return postgres({ ...arg, max: 1, onnotice: () => {} });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -45,13 +50,14 @@ export type MigrationState =
       reason: "no-migration-journal-empty-db" | "no-migration-journal-non-empty-db" | "pending-migrations";
     };
 
-export function createDb(url: string) {
-  const sql = postgres(url);
+export function createDb(target: DatabaseTarget) {
+  const [arg] = postgresOptions(target);
+  const sql = typeof arg === "string" ? postgres(arg) : postgres(arg);
   return drizzlePg(sql, { schema });
 }
 
-export async function getPostgresDataDirectory(url: string): Promise<string | null> {
-  const sql = createUtilitySql(url);
+export async function getPostgresDataDirectory(target: DatabaseTarget): Promise<string | null> {
+  const sql = createUtilitySql(target);
   try {
     const rows = await sql<{ data_directory: string | null }[]>`
       SELECT current_setting('data_directory', true) AS data_directory
@@ -231,7 +237,7 @@ async function recordMigrationHistoryEntry(
 }
 
 async function applyPendingMigrationsManually(
-  url: string,
+  target: DatabaseTarget,
   pendingMigrations: string[],
 ): Promise<void> {
   if (pendingMigrations.length === 0) return;
@@ -242,7 +248,7 @@ async function applyPendingMigrationsManually(
     journalEntries.map((entry) => [entry.fileName, normalizeFolderMillis(entry.folderMillis)]),
   );
 
-  const sql = createUtilitySql(url);
+  const sql = createUtilitySql(target);
   try {
     const { migrationTableSchema, columnNames } = await ensureMigrationJournalTable(sql);
     const qualifiedTable = `${quoteIdentifier(migrationTableSchema)}.${quoteIdentifier(DRIZZLE_MIGRATIONS_TABLE)}`;
@@ -484,14 +490,14 @@ export type MigrationHistoryReconcileResult = {
 };
 
 export async function reconcilePendingMigrationHistory(
-  url: string,
+  target: DatabaseTarget,
 ): Promise<MigrationHistoryReconcileResult> {
-  const state = await inspectMigrations(url);
+  const state = await inspectMigrations(target);
   if (state.status !== "needsMigrations" || state.reason !== "pending-migrations") {
     return { repairedMigrations: [], remainingMigrations: [] };
   }
 
-  const sql = createUtilitySql(url);
+  const sql = createUtilitySql(target);
   const repairedMigrations: string[] = [];
 
   try {
@@ -570,7 +576,7 @@ export async function reconcilePendingMigrationHistory(
     await sql.end();
   }
 
-  const refreshed = await inspectMigrations(url);
+  const refreshed = await inspectMigrations(target);
   return {
     repairedMigrations,
     remainingMigrations:
@@ -597,8 +603,8 @@ async function discoverMigrationTableSchema(sql: ReturnType<typeof postgres>): P
   return rows[0]?.schemaName ?? null;
 }
 
-export async function inspectMigrations(url: string): Promise<MigrationState> {
-  const sql = createUtilitySql(url);
+export async function inspectMigrations(target: DatabaseTarget): Promise<MigrationState> {
+  const sql = createUtilitySql(target);
 
   try {
     const availableMigrations = await listMigrationFiles();
@@ -657,12 +663,12 @@ export async function inspectMigrations(url: string): Promise<MigrationState> {
   }
 }
 
-export async function applyPendingMigrations(url: string): Promise<void> {
-  const initialState = await inspectMigrations(url);
+export async function applyPendingMigrations(target: DatabaseTarget): Promise<void> {
+  const initialState = await inspectMigrations(target);
   if (initialState.status === "upToDate") return;
 
   if (initialState.reason === "no-migration-journal-empty-db") {
-    const sql = createUtilitySql(url);
+    const sql = createUtilitySql(target);
     try {
       const db = drizzlePg(sql);
       await migratePg(db, { migrationsFolder: MIGRATIONS_FOLDER });
@@ -670,16 +676,16 @@ export async function applyPendingMigrations(url: string): Promise<void> {
       await sql.end();
     }
 
-    let bootstrappedState = await inspectMigrations(url);
+    let bootstrappedState = await inspectMigrations(target);
     if (bootstrappedState.status === "upToDate") return;
     if (bootstrappedState.reason === "pending-migrations") {
-      const repair = await reconcilePendingMigrationHistory(url);
+      const repair = await reconcilePendingMigrationHistory(target);
       if (repair.repairedMigrations.length > 0) {
-        bootstrappedState = await inspectMigrations(url);
+        bootstrappedState = await inspectMigrations(target);
       }
       if (bootstrappedState.status === "needsMigrations" && bootstrappedState.reason === "pending-migrations") {
-        await applyPendingMigrationsManually(url, bootstrappedState.pendingMigrations);
-        bootstrappedState = await inspectMigrations(url);
+        await applyPendingMigrationsManually(target, bootstrappedState.pendingMigrations);
+        bootstrappedState = await inspectMigrations(target);
       }
     }
     if (bootstrappedState.status === "upToDate") return;
@@ -694,12 +700,12 @@ export async function applyPendingMigrations(url: string): Promise<void> {
     );
   }
 
-  let state = await inspectMigrations(url);
+  let state = await inspectMigrations(target);
   if (state.status === "upToDate") return;
 
-  const repair = await reconcilePendingMigrationHistory(url);
+  const repair = await reconcilePendingMigrationHistory(target);
   if (repair.repairedMigrations.length > 0) {
-    state = await inspectMigrations(url);
+    state = await inspectMigrations(target);
     if (state.status === "upToDate") return;
   }
 
@@ -707,9 +713,9 @@ export async function applyPendingMigrations(url: string): Promise<void> {
     throw new Error("Migrations are still pending after migration-history reconciliation; run inspectMigrations for details.");
   }
 
-  await applyPendingMigrationsManually(url, state.pendingMigrations);
+  await applyPendingMigrationsManually(target, state.pendingMigrations);
 
-  const finalState = await inspectMigrations(url);
+  const finalState = await inspectMigrations(target);
   if (finalState.status !== "upToDate") {
     throw new Error(
       `Failed to apply pending migrations: ${finalState.pendingMigrations.join(", ")}`,
@@ -722,8 +728,8 @@ export type MigrationBootstrapResult =
   | { migrated: false; reason: "already-migrated"; tableCount: number }
   | { migrated: false; reason: "not-empty-no-migration-journal"; tableCount: number };
 
-export async function migratePostgresIfEmpty(url: string): Promise<MigrationBootstrapResult> {
-  const sql = createUtilitySql(url);
+export async function migratePostgresIfEmpty(target: DatabaseTarget): Promise<MigrationBootstrapResult> {
+  const sql = createUtilitySql(target);
 
   try {
     const migrationTableSchema = await discoverMigrationTableSchema(sql);
@@ -755,14 +761,14 @@ export async function migratePostgresIfEmpty(url: string): Promise<MigrationBoot
 }
 
 export async function ensurePostgresDatabase(
-  url: string,
+  target: DatabaseTarget,
   databaseName: string,
 ): Promise<"created" | "exists"> {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(databaseName)) {
     throw new Error(`Unsafe database name: ${databaseName}`);
   }
 
-  const sql = createUtilitySql(url);
+  const sql = createUtilitySql(target);
   try {
     const existing = await sql<{ one: number }[]>`
       select 1 as one from pg_database where datname = ${databaseName} limit 1

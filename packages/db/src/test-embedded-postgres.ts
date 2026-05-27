@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { applyPendingMigrations, ensurePostgresDatabase } from "./client.js";
 import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
+import { targetFromUrl } from "./target.js";
 
 type EmbeddedPostgresInstance = {
   initialise(): Promise<void>;
@@ -158,9 +159,9 @@ export async function startEmbeddedPostgresTestDatabase(
     await instance.start();
 
     const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
+    await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
     const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
-    await applyPendingMigrations(connectionString);
+    await applyPendingMigrations(targetFromUrl(connectionString));
 
     return {
       connectionString,
