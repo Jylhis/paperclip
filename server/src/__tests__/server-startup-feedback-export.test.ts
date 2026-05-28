@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ResolvedDatabaseTarget } from "@paperclipai/db";
 
 const ORIGINAL_PAPERCLIP_API_URL = process.env.PAPERCLIP_API_URL;
 const ORIGINAL_PAPERCLIP_RUNTIME_API_URL = process.env.PAPERCLIP_RUNTIME_API_URL;
@@ -16,11 +17,19 @@ const {
   feedbackServiceFactoryMock,
   fakeServer,
   loadConfigMock,
+  resolveDatabaseTargetMock,
 } = vi.hoisted(() => {
   const createAppMock = vi.fn(async () => ((_: unknown, __: unknown) => {}) as never);
   const createBetterAuthInstanceMock = vi.fn(() => ({}));
   const createDbMock = vi.fn(() => ({}) as never);
   const detectPortMock = vi.fn(async (port: number) => port);
+  const resolveDatabaseTargetMock = vi.fn((): ResolvedDatabaseTarget => ({
+    mode: "postgres",
+    target: { kind: "url", connectionString: "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip" },
+    source: "DATABASE_URL",
+    configPath: "",
+    envPath: "",
+  }));
   const deriveAuthTrustedOriginsMock = vi.fn(() => []);
   const feedbackExportServiceMock = {
     flushPendingFeedbackTraces: vi.fn(async () => ({ attempted: 0, sent: 0, failed: 0 })),
@@ -47,6 +56,7 @@ const {
     feedbackServiceFactoryMock,
     fakeServer,
     loadConfigMock,
+    resolveDatabaseTargetMock,
   };
 });
 
@@ -101,6 +111,10 @@ vi.mock("detect-port", () => ({
 
 vi.mock("@paperclipai/db", () => ({
   createDb: createDbMock,
+  resolveDatabaseTarget: resolveDatabaseTargetMock,
+  targetFromUrl: (connectionString: string) => ({ kind: "url", connectionString }),
+  describeTarget: (target: { kind: string; connectionString?: string; socketDir?: string; database?: string }) =>
+    target.kind === "url" ? target.connectionString : `socket:${target.socketDir}/${target.database}`,
   ensurePostgresDatabase: vi.fn(),
   getPostgresDataDirectory: vi.fn(),
   inspectMigrations: vi.fn(async () => ({ status: "upToDate" })),
@@ -222,17 +236,23 @@ describe("startServer feedback export wiring", () => {
     });
   });
 
-  it("refuses authenticated public startup without an external database URL", async () => {
+  it("refuses authenticated public startup when the database resolves to embedded", async () => {
     loadConfigMock.mockReturnValue(buildTestConfig({
       deploymentExposure: "public",
       authBaseUrlMode: "explicit",
       authPublicBaseUrl: "https://tenant.example.com",
-      databaseMode: "embedded-postgres",
-      databaseUrl: undefined,
     }));
+    resolveDatabaseTargetMock.mockReturnValueOnce({
+      mode: "embedded-postgres",
+      dataDir: "/tmp/paperclip-test-db",
+      port: 54329,
+      source: "embedded-postgres@54329",
+      configPath: "",
+      envPath: "",
+    });
 
     await expect(startServer()).rejects.toThrow(
-      "authenticated public deployments require DATABASE_URL or config.database.connectionString",
+      "authenticated public deployments require an external PostgreSQL target",
     );
     expect(createDbMock).not.toHaveBeenCalled();
   });
@@ -242,8 +262,14 @@ describe("startServer feedback export wiring", () => {
       deploymentExposure: "public",
       authBaseUrlMode: "explicit",
       authPublicBaseUrl: "https://tenant.example.com",
-      databaseUrl: "secret://paperclip-cloud/stacks/alpha/database/runtime-url",
     }));
+    resolveDatabaseTargetMock.mockReturnValueOnce({
+      mode: "postgres",
+      target: { kind: "url", connectionString: "secret://paperclip-cloud/stacks/alpha/database/runtime-url" },
+      source: "DATABASE_URL",
+      configPath: "",
+      envPath: "",
+    });
 
     await expect(startServer()).rejects.toThrow(
       "authenticated public deployments require DATABASE_URL to be a postgres/postgresql connection string",

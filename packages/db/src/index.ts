@@ -18,6 +18,11 @@ export {
   targetFromUrl,
 } from "./target.js";
 export {
+  resolveDatabaseTarget,
+  type ResolvedDatabaseTarget,
+  type ResolvedDatabaseTargetSource,
+} from "./runtime-config.js";
+export {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
   type EmbeddedPostgresTestDatabase,

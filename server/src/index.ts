@@ -14,6 +14,9 @@ import { and, eq } from "drizzle-orm";
 import {
   createDb,
   type DatabaseTarget,
+  describeTarget,
+  resolveDatabaseTarget,
+  type ResolvedDatabaseTarget,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
@@ -211,16 +214,16 @@ export async function startServer(): Promise<StartedServer> {
     }
   }
 
-  function assertCloudDatabaseContract(): void {
+  function assertCloudDatabaseContract(resolved: ResolvedDatabaseTarget): void {
     if (config.deploymentMode !== "authenticated" || config.deploymentExposure !== "public") {
       return;
     }
-    if (!config.databaseUrl) {
+    if (resolved.mode !== "postgres") {
       throw new Error(
-        "authenticated public deployments require DATABASE_URL or config.database.connectionString; refusing embedded PostgreSQL fallback",
+        "authenticated public deployments require an external PostgreSQL target (DATABASE_URL, socket, or config.database.connectionString); refusing embedded PostgreSQL fallback",
       );
     }
-    if (!isPostgresConnectionString(config.databaseUrl)) {
+    if (resolved.target.kind === "url" && !isPostgresConnectionString(resolved.target.connectionString)) {
       throw new Error(
         "authenticated public deployments require DATABASE_URL to be a postgres/postgresql connection string",
       );
@@ -305,21 +308,25 @@ export async function startServer(): Promise<StartedServer> {
   let embeddedPostgres: EmbeddedPostgresInstance | null = null;
   let embeddedPostgresStartedByThisProcess = false;
   let migrationSummary: MigrationSummary = "skipped";
-  let activeDatabaseConnectionString: string;
+  let activeDatabaseTarget: DatabaseTarget;
   let resolvedEmbeddedPostgresPort: number | null = null;
   let startupDbInfo:
     | { mode: "external-postgres"; connectionString: string }
     | { mode: "embedded-postgres"; dataDir: string; port: number };
-  assertCloudDatabaseContract();
-  if (config.databaseUrl) {
-    const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
-    migrationSummary = await ensureMigrations(targetFromUrl(migrationUrl), "PostgreSQL");
+  const resolvedDatabase = resolveDatabaseTarget();
+  assertCloudDatabaseContract(resolvedDatabase);
+  if (resolvedDatabase.mode === "postgres") {
+    const dbTarget = resolvedDatabase.target;
+    const migrationTarget = config.databaseMigrationUrl
+      ? targetFromUrl(config.databaseMigrationUrl)
+      : dbTarget;
+    migrationSummary = await ensureMigrations(migrationTarget, "PostgreSQL");
 
-    db = createDb(targetFromUrl(config.databaseUrl));
-    pluginMigrationDb = config.databaseMigrationUrl ? createDb(targetFromUrl(config.databaseMigrationUrl)) : db;
-    logger.info("Using external PostgreSQL via DATABASE_URL/config");
-    activeDatabaseConnectionString = config.databaseUrl;
-    startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+    db = createDb(dbTarget);
+    pluginMigrationDb = config.databaseMigrationUrl ? createDb(migrationTarget) : db;
+    logger.info(`Using PostgreSQL via ${resolvedDatabase.source}`);
+    activeDatabaseTarget = dbTarget;
+    startupDbInfo = { mode: "external-postgres", connectionString: describeTarget(dbTarget) };
   } else {
     const moduleName = "embedded-postgres";
     let EmbeddedPostgres: EmbeddedPostgresCtor;
@@ -332,9 +339,9 @@ export async function startServer(): Promise<StartedServer> {
       );
     }
     await prepareEmbeddedPostgresNativeRuntime();
-  
-    const dataDir = resolve(config.embeddedPostgresDataDir);
-    const configuredPort = config.embeddedPostgresPort;
+
+    const dataDir = resolve(resolvedDatabase.dataDir);
+    const configuredPort = resolvedDatabase.port;
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
     const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
@@ -481,7 +488,7 @@ export async function startServer(): Promise<StartedServer> {
     db = createDb(targetFromUrl(embeddedConnectionString));
     pluginMigrationDb = db;
     logger.info("Embedded PostgreSQL ready");
-    activeDatabaseConnectionString = embeddedConnectionString;
+    activeDatabaseTarget = targetFromUrl(embeddedConnectionString);
     resolvedEmbeddedPostgresPort = port;
     startupDbInfo = { mode: "embedded-postgres", dataDir, port };
   }
@@ -603,7 +610,7 @@ export async function startServer(): Promise<StartedServer> {
       const retention = generalSettings.backupRetention;
 
       const result = await runDatabaseBackup({
-        target: targetFromUrl(activeDatabaseConnectionString),
+        target: activeDatabaseTarget,
         backupDir: config.databaseBackupDir,
         retention,
         filenamePrefix: "paperclip",
@@ -965,7 +972,7 @@ export async function startServer(): Promise<StartedServer> {
     host: config.host,
     listenPort,
     apiUrl: configuredApiUrl,
-    databaseUrl: activeDatabaseConnectionString,
+    databaseUrl: describeTarget(activeDatabaseTarget),
   };
 }
 

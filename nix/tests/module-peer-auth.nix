@@ -17,6 +17,10 @@
 #     unit's static env block.
 #   - `sudo -u paperclip psql -h /run/postgresql paperclip` works —
 #     peer auth succeeds for the right OS user.
+#   - The server logged "Using PostgreSQL via PAPERCLIP_DATABASE_SOCKET"
+#     and never "Using embedded PostgreSQL" — proves the server (not
+#     just the CLI tooling) took the socket branch instead of the
+#     embedded fallback that crash-loops on read-only deployments.
 #   - The drizzle migration ledger has rows — migrations applied
 #     end-to-end through the socket connection.
 #   - `sudo -u nobody psql -h /run/postgresql paperclip` fails —
@@ -52,6 +56,21 @@ testLib.mkPaperclipTest {
     # Peer auth as the matching OS user succeeds.
     machine.succeed(
         "sudo -u paperclip psql -h /run/postgresql paperclip -tAc 'select 1' | grep -q '^1$'"
+    )
+
+    # The server itself resolved the socket target — not just the CLI
+    # tooling. resolveDatabaseTarget() logs its source on startup, so a
+    # socket connection emits "via PAPERCLIP_DATABASE_SOCKET".
+    machine.succeed(
+        "journalctl -u paperclip.service | grep -q "
+        "'Using PostgreSQL via PAPERCLIP_DATABASE_SOCKET'"
+    )
+
+    # And it must NOT have fallen back to embedded Postgres — the exact
+    # regression that shipped the socket env vars for tooling while the
+    # server silently span up (and crash-looped on) embedded.
+    machine.fail(
+        "journalctl -u paperclip.service | grep -q 'Using embedded PostgreSQL'"
     )
 
     # Migrations actually ran against the NixOS-managed database via
