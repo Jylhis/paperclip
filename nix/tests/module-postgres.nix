@@ -61,10 +61,13 @@ testLib.mkPaperclipTest {
     )
 
     # The drizzle migration ledger table must exist and have applied
-    # rows, queried through peer auth as the paperclip role.
+    # rows, queried through peer auth as the paperclip role. drizzle
+    # creates the ledger in the `drizzle` schema, which is not on the
+    # role's default search_path (`"$user", public`) — qualify it
+    # explicitly so the query resolves the table.
     migrations_count = machine.succeed(
         "sudo -u paperclip psql -h /run/postgresql paperclip -tAc "
-        "\"SELECT count(*) FROM __drizzle_migrations\""
+        "\"SELECT count(*) FROM drizzle.__drizzle_migrations\""
     ).strip()
     assert int(migrations_count) > 0, (
         f"expected __drizzle_migrations to contain applied rows, got "

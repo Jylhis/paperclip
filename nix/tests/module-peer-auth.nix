@@ -75,10 +75,15 @@ testLib.mkPaperclipTest {
 
     # Migrations actually ran against the NixOS-managed database via
     # the socket connection — guards against silent fallback to the
-    # embedded Postgres path.
+    # embedded Postgres path. drizzle creates its ledger in the
+    # `drizzle` schema (both the bootstrap `migrate()` and the server's
+    # manual migration path), which is NOT on the `paperclip` role's
+    # default search_path (`"$user", public`) — so the table must be
+    # schema-qualified or the query errors with "relation does not
+    # exist".
     migrations_count = machine.succeed(
         "sudo -u paperclip psql -h /run/postgresql paperclip -tAc "
-        "\"SELECT count(*) FROM __drizzle_migrations\""
+        "\"SELECT count(*) FROM drizzle.__drizzle_migrations\""
     ).strip()
     assert int(migrations_count) > 0, (
         f"expected __drizzle_migrations to contain applied rows, got "
