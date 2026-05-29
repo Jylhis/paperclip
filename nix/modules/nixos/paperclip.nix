@@ -1321,6 +1321,10 @@ in
             "AF_UNIX"
             "AF_INET"
             "AF_INET6"
+            # os.networkInterfaces() (via getifaddrs) opens a netlink
+            # socket to enumerate interfaces; without this the runtime-api
+            # host probe fails at startup with EAFNOSUPPORT.
+            "AF_NETLINK"
           ];
           RestrictNamespaces = true;
           RestrictRealtime = true;
