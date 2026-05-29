@@ -365,7 +365,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     await onLog("stderr", `[paperclip] ${authMessage}\n`);
     return {
       exitCode: 1,
-      errorCode: "auth_required",
+      signal: null,
+      timedOut: false,
+      errorCode: "codex_auth_required",
       errorMessage: authMessage,
       billingType: "subscription",
     };
@@ -811,6 +813,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         stderr: attempt.proc.stderr,
         errorMessage: fallbackErrorMessage,
       });
+    const authError =
+      (attempt.proc.exitCode ?? 0) !== 0 &&
+      !transientUpstream &&
+      isCodexAuthError({
+        stdout: attempt.proc.stdout,
+        stderr: attempt.proc.stderr,
+        errorMessage: fallbackErrorMessage,
+      });
 
     return {
       exitCode: attempt.proc.exitCode,
@@ -823,7 +833,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorCode:
         transientUpstream
           ? "codex_transient_upstream"
-          : null,
+          : authError
+            ? "codex_auth_required"
+            : null,
       errorFamily: transientUpstream ? "transient_upstream" : null,
       retryNotBefore: transientRetryNotBefore ? transientRetryNotBefore.toISOString() : null,
       usage: attempt.parsed.usage,
