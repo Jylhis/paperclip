@@ -20,7 +20,13 @@ import {
   resolveAdapterExecutionTargetCwd,
 } from "@paperclipai/adapter-utils/execution-target";
 import path from "node:path";
-import { detectClaudeLoginRequired, parseClaudeStreamJson } from "./parse.js";
+import {
+  detectClaudeLoginRequired,
+  isClaudeQuotaOrBillingError,
+  isClaudeTransientUpstreamError,
+  parseClaudeStreamJson,
+  summarizeClaudeProbeFailureDetail,
+} from "./parse.js";
 import { isBedrockModelId } from "./models.js";
 import { buildClaudeProbePermissionArgs } from "./permissions.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
@@ -242,7 +248,15 @@ export async function testEnvironment(
         stdout: probe.stdout,
         stderr: probe.stderr,
       });
-      const detail = summarizeProbeDetail(probe.stdout, probe.stderr);
+      // Prefer the structured result/error text (where API errors such as a low
+      // credit balance surface) over the first raw output line.
+      const detail =
+        summarizeClaudeProbeFailureDetail({
+          parsed,
+          summary: parsedStream.summary,
+          stdout: probe.stdout,
+          stderr: probe.stderr,
+        }) ?? summarizeProbeDetail(probe.stdout, probe.stderr);
 
       if (probe.timedOut) {
         checks.push({
@@ -276,6 +290,28 @@ export async function testEnvironment(
             : {
                 hint: "Try the probe manually (`claude --print - --output-format stream-json --verbose`) and prompt `Respond with hello`.",
               }),
+        });
+      } else if (isClaudeQuotaOrBillingError({ parsed, stdout: probe.stdout, stderr: probe.stderr })) {
+        // Auth succeeded but the account cannot bill the request (e.g. credit
+        // balance too low). This is a billing state, not a setup failure, so
+        // surface it as a warning so onboarding can still proceed once the
+        // account is topped up.
+        checks.push({
+          code: "claude_hello_probe_quota_exhausted",
+          level: "warn",
+          message: "Claude is authenticated, but the account is out of credits or quota.",
+          ...(detail ? { detail } : {}),
+          hint: "Add credits or upgrade in Anthropic's Plans & Billing (or your subscription), then retry. Authentication is working — this is a billing state, not a setup problem.",
+        });
+      } else if (isClaudeTransientUpstreamError({ parsed, stdout: probe.stdout, stderr: probe.stderr })) {
+        // Rate limits / overload / usage-limit windows are transient: the setup
+        // is fine, so report a warning and let the user retry.
+        checks.push({
+          code: "claude_hello_probe_transient",
+          level: "warn",
+          message: "Claude is reachable but temporarily rate-limited or at a usage limit.",
+          ...(detail ? { detail } : {}),
+          hint: "This is a temporary upstream limit, not a setup problem. Wait for the limit to reset and retry the probe.",
         });
       } else {
         checks.push({

@@ -20,7 +20,7 @@ import {
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { parseCodexJsonl } from "./parse.js";
+import { isCodexQuotaOrBillingError, parseCodexJsonl } from "./parse.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
 import { buildCodexExecArgs } from "./codex-args.js";
@@ -366,6 +366,23 @@ export async function testEnvironment(
             hint: probeApiKey
               ? "OPENAI_API_KEY was provided but Codex still rejected the request. Verify the key is valid for the OpenAI Responses API (e.g. `curl -H \"Authorization: Bearer $OPENAI_API_KEY\" https://api.openai.com/v1/models`), or run `codex login` and seed `~/.codex/auth.json`."
               : "Codex CLI does not read OPENAI_API_KEY from the environment; set OPENAI_API_KEY in this adapter's config (so Paperclip writes it to `$CODEX_HOME/auth.json`) or run `codex login` on the host first.",
+          });
+        } else if (
+          isCodexQuotaOrBillingError({
+            errorMessage: parsed.errorMessage,
+            stdout: probe.stdout,
+            stderr: probe.stderr,
+          })
+        ) {
+          // Auth succeeded but the account is out of quota/credits. This is a
+          // billing state, not a setup failure, so surface it as a warning so
+          // onboarding can still proceed once the account is topped up.
+          checks.push({
+            code: "codex_hello_probe_quota_exhausted",
+            level: "warn",
+            message: "Codex is authenticated, but the account is out of quota or credits.",
+            ...(detail ? { detail } : {}),
+            hint: "Add credits or raise the limit on your OpenAI/ChatGPT plan (Plan & billing), then retry. Authentication is working — this is a billing state, not a setup problem.",
           });
         } else {
           checks.push({

@@ -10,6 +10,13 @@ const CODEX_TRANSIENT_UPSTREAM_RE =
 const CODEX_REMOTE_COMPACTION_RE = /remote\s+compact\s+task/i;
 const CODEX_USAGE_LIMIT_RE =
   /you(?:'|’)ve hit your usage limit for .+\.\s+switch to another model now,\s+or try again at\s+([^.!\n]+)(?:[.!]|\n|$)/i;
+// Account-level billing / quota exhaustion (distinct from transient rate limits
+// and from auth failures): the CLI is installed and authenticated, but the
+// account has no remaining quota or credits. These are not setup problems, so
+// the hello probe should report them as a billing state rather than a hard
+// failure.
+const CODEX_QUOTA_BILLING_RE =
+  /(?:quota\s+exceeded|insufficient[_\s]quota|exceeded\s+your\s+current\s+quota|check\s+your\s+plan\s+and\s+billing|billing\s+(?:hard\s+)?limit|insufficient\s+(?:credit|funds)|out\s+of\s+credits?|payment\s+required|\b402\b)/i;
 
 export function parseCodexJsonl(stdout: string) {
   let sessionId: string | null = null;
@@ -70,6 +77,16 @@ export function parseCodexJsonl(stdout: string) {
     usage,
     errorMessage,
   };
+}
+
+export function isCodexQuotaOrBillingError(input: {
+  stdout?: string | null;
+  stderr?: string | null;
+  errorMessage?: string | null;
+}): boolean {
+  const haystack = buildCodexErrorHaystack(input);
+  if (!haystack) return false;
+  return CODEX_QUOTA_BILLING_RE.test(haystack);
 }
 
 export function isCodexUnknownSessionError(stdout: string, stderr: string): boolean {

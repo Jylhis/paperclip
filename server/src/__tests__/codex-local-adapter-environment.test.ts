@@ -99,6 +99,62 @@ describe("codex_local environment diagnostics", () => {
     }
   });
 
+  it("classifies an out-of-quota probe failure as a billing warning, not a hard error", async () => {
+    const result = await testEnvironment({
+      companyId: "company-1",
+      adapterType: "codex_local",
+      config: {
+        command: "codex",
+        env: { OPENAI_API_KEY: "sk-test" },
+      },
+      executionTarget: {
+        kind: "remote",
+        transport: "sandbox",
+        providerKey: "cloudflare",
+        remoteCwd: "/workspace/paperclip",
+        runner: {
+          execute: async (input) => {
+            // The hello probe carries the `exec` subcommand (the install/detect
+            // command does not); only that call should report the quota error.
+            const isProbe = (input.args ?? []).includes("exec");
+            if (isProbe) {
+              return {
+                exitCode: 1,
+                signal: null,
+                timedOut: false,
+                stdout: JSON.stringify({
+                  type: "error",
+                  message: "Quota exceeded. Check your plan and billing details.",
+                }),
+                stderr: "",
+                pid: null,
+                startedAt: new Date().toISOString(),
+              };
+            }
+            return {
+              exitCode: 0,
+              signal: null,
+              timedOut: false,
+              stdout: "",
+              stderr: "",
+              pid: null,
+              startedAt: new Date().toISOString(),
+            };
+          },
+        },
+      },
+      environmentName: "QA Cloudflare",
+    });
+
+    const quotaCheck = result.checks.find(
+      (check) => check.code === "codex_hello_probe_quota_exhausted",
+    );
+    expect(quotaCheck?.level).toBe("warn");
+    expect(quotaCheck?.detail).toContain("Quota exceeded");
+    expect(result.checks.some((check) => check.code === "codex_hello_probe_failed")).toBe(false);
+    expect(result.checks.some((check) => check.level === "error")).toBe(false);
+  });
+
   itWindows("runs the hello probe when Codex is available via a Windows .cmd wrapper", async () => {
     const root = path.join(
       os.tmpdir(),

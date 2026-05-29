@@ -11,6 +11,12 @@ const URL_RE = /(https?:\/\/[^\s'"`<>()[\]{};,!?]+[^\s'"`<>()[\]{};,!.?:]+)/gi;
 
 const CLAUDE_TRANSIENT_UPSTREAM_RE =
   /(?:rate[-\s]?limit(?:ed)?|rate_limit_error|too\s+many\s+requests|\b429\b|overloaded(?:_error)?|server\s+overloaded|service\s+unavailable|\b503\b|\b529\b|high\s+demand|try\s+again\s+later|temporarily\s+unavailable|throttl(?:ed|ing)|throttlingexception|servicequotaexceededexception|out\s+of\s+extra\s+usage|extra\s+usage\b|claude\s+usage\s+limit\s+reached|5[-\s]?hour\s+limit\s+reached|weekly\s+limit\s+reached|usage\s+limit\s+reached|usage\s+cap\s+reached)/i;
+// Account-level billing / quota exhaustion (e.g. "Your credit balance is too
+// low to access the Claude API"). The CLI is installed and authenticated, but
+// the account cannot bill the request. These are not setup problems, so the
+// hello probe reports them as a billing state rather than a hard failure.
+const CLAUDE_QUOTA_BILLING_RE =
+  /(?:credit\s+balance\s+is\s+too\s+low|insufficient\s+(?:credit|quota|funds)|quota\s+exceeded|exceeded\s+your\s+current\s+quota|plans?\s*&?\s*billing|billing\s+(?:hard\s+)?limit|payment\s+required|purchase\s+credits|\b402\b)/i;
 const CLAUDE_EXTRA_USAGE_RESET_RE =
   /(?:out\s+of\s+extra\s+usage|extra\s+usage|usage\s+limit\s+reached|usage\s+cap\s+reached|5[-\s]?hour\s+limit\s+reached|weekly\s+limit\s+reached|claude\s+usage\s+limit\s+reached)[\s\S]{0,80}?\bresets?\s+(?:at\s+)?([^\n()]+?)(?:\s*\(([^)]+)\))?(?:[.!]|\n|$)/i;
 
@@ -365,6 +371,45 @@ export function extractClaudeRetryNotBefore(
   const match = haystack.match(CLAUDE_EXTRA_USAGE_RESET_RE);
   if (!match) return null;
   return parseClaudeResetClockTime(match[1] ?? "", now, match[2]);
+}
+
+export function isClaudeQuotaOrBillingError(input: {
+  parsed?: Record<string, unknown> | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  errorMessage?: string | null;
+}): boolean {
+  const haystack = buildClaudeTransientHaystack(input);
+  if (!haystack) return false;
+  return CLAUDE_QUOTA_BILLING_RE.test(haystack);
+}
+
+// Builds a human-readable reason for a failed Claude hello probe. Prefers the
+// structured result/error text from the stream-json output (where API errors
+// such as a low credit balance surface) and only falls back to the first raw
+// stdout/stderr line when nothing structured is available.
+export function summarizeClaudeProbeFailureDetail(input: {
+  parsed: Record<string, unknown> | null;
+  summary: string;
+  stdout: string;
+  stderr: string;
+}): string | null {
+  const firstNonEmptyLine = (text: string): string =>
+    text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find(Boolean) ?? "";
+  const candidates = [
+    input.summary,
+    ...extractClaudeErrorMessages(input.parsed ?? {}),
+    firstNonEmptyLine(input.stderr),
+    firstNonEmptyLine(input.stdout),
+  ];
+  const raw = candidates.map((value) => value?.trim() ?? "").find(Boolean);
+  if (!raw) return null;
+  const clean = raw.replace(/\s+/g, " ").trim();
+  const max = 240;
+  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
 
 export function isClaudeTransientUpstreamError(input: {

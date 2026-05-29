@@ -219,6 +219,64 @@ describe("claude_local environment diagnostics", () => {
     expect(result.checks.some((check) => check.code === "claude_cwd_invalid")).toBe(false);
   });
 
+  it("classifies a low-credit-balance probe failure as a billing warning, not a hard error", async () => {
+    const result = await testEnvironment({
+      companyId: "company-1",
+      adapterType: "claude_local",
+      config: {
+        command: "claude",
+        env: { ANTHROPIC_API_KEY: "sk-test-config" },
+      },
+      executionTarget: {
+        kind: "remote",
+        transport: "sandbox",
+        providerKey: "cloudflare",
+        remoteCwd: "/workspace/paperclip",
+        runner: {
+          execute: async (input) => {
+            if (input.command === "claude") {
+              return {
+                exitCode: 1,
+                signal: null,
+                timedOut: false,
+                stdout: [
+                  JSON.stringify({
+                    type: "result",
+                    subtype: "error_during_execution",
+                    is_error: true,
+                    result:
+                      "Your credit balance is too low to access the Claude API. Please go to Plans & Billing to upgrade or purchase credits.",
+                  }),
+                ].join("\n"),
+                stderr: "",
+                pid: null,
+                startedAt: new Date().toISOString(),
+              };
+            }
+            return {
+              exitCode: 0,
+              signal: null,
+              timedOut: false,
+              stdout: "",
+              stderr: "",
+              pid: null,
+              startedAt: new Date().toISOString(),
+            };
+          },
+        },
+      },
+      environmentName: "QA Cloudflare",
+    });
+
+    const quotaCheck = result.checks.find(
+      (check) => check.code === "claude_hello_probe_quota_exhausted",
+    );
+    expect(quotaCheck?.level).toBe("warn");
+    expect(quotaCheck?.detail).toContain("credit balance is too low");
+    expect(result.checks.some((check) => check.code === "claude_hello_probe_failed")).toBe(false);
+    expect(result.checks.some((check) => check.level === "error")).toBe(false);
+  });
+
   it("uses --allowedTools instead of --dangerously-skip-permissions for sandbox hello probes", async () => {
     const executeCalls: Array<{ command: string; args?: string[] }> = [];
 

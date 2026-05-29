@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractCodexRetryNotBefore,
+  isCodexQuotaOrBillingError,
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
   parseCodexJsonl,
@@ -64,6 +65,33 @@ describe("parseCodexJsonl", () => {
       },
       errorMessage: null,
     });
+  });
+});
+
+describe("isCodexQuotaOrBillingError", () => {
+  it("detects the OpenAI quota-exceeded billing error", () => {
+    expect(
+      isCodexQuotaOrBillingError({
+        errorMessage: "Quota exceeded. Check your plan and billing details.",
+      }),
+    ).toBe(true);
+  });
+
+  it("detects insufficient_quota from stderr", () => {
+    expect(
+      isCodexQuotaOrBillingError({ stderr: "Error: 429 insufficient_quota" }),
+    ).toBe(true);
+  });
+
+  it("does not flag transient rate limits or auth failures", () => {
+    expect(
+      isCodexQuotaOrBillingError({ errorMessage: "We're currently experiencing high demand" }),
+    ).toBe(false);
+    expect(isCodexQuotaOrBillingError({ stderr: "Please run `codex login`" })).toBe(false);
+  });
+
+  it("returns false when there is no output", () => {
+    expect(isCodexQuotaOrBillingError({})).toBe(false);
   });
 });
 

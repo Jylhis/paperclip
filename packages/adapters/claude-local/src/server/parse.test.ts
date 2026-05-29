@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   extractClaudeRetryNotBefore,
+  isClaudeQuotaOrBillingError,
   isClaudeTransientUpstreamError,
+  summarizeClaudeProbeFailureDetail,
 } from "./parse.js";
 
 describe("isClaudeTransientUpstreamError", () => {
@@ -118,6 +120,61 @@ describe("extractClaudeRetryNotBefore", () => {
   it("returns null when no reset hint is present", () => {
     expect(
       extractClaudeRetryNotBefore({ errorMessage: "Overloaded. Try again later." }, new Date()),
+    ).toBeNull();
+  });
+});
+
+describe("isClaudeQuotaOrBillingError", () => {
+  it("detects a low credit balance from the stream-json result text", () => {
+    const parsed = {
+      type: "result",
+      subtype: "error_during_execution",
+      is_error: true,
+      result:
+        "Your credit balance is too low to access the Claude API. Please go to Plans & Billing to upgrade or purchase credits.",
+    };
+    expect(isClaudeQuotaOrBillingError({ parsed })).toBe(true);
+  });
+
+  it("detects quota exhaustion from stderr", () => {
+    expect(
+      isClaudeQuotaOrBillingError({ stderr: "API Error: 400 exceeded your current quota" }),
+    ).toBe(true);
+  });
+
+  it("does not flag ordinary login/auth failures", () => {
+    expect(isClaudeQuotaOrBillingError({ stderr: "Invalid API key. Please log in." })).toBe(false);
+  });
+
+  it("returns false when there is no output", () => {
+    expect(isClaudeQuotaOrBillingError({})).toBe(false);
+  });
+});
+
+describe("summarizeClaudeProbeFailureDetail", () => {
+  it("prefers the structured result text over raw output lines", () => {
+    const detail = summarizeClaudeProbeFailureDetail({
+      parsed: { type: "result", is_error: true, result: "Credit balance is too low." },
+      summary: "Credit balance is too low.",
+      stdout: '{"type":"system","subtype":"init"}',
+      stderr: "",
+    });
+    expect(detail).toBe("Credit balance is too low.");
+  });
+
+  it("falls back to the first stderr line when no structured text exists", () => {
+    const detail = summarizeClaudeProbeFailureDetail({
+      parsed: null,
+      summary: "",
+      stdout: "",
+      stderr: "\nAPI Error: 401 unauthorized\n",
+    });
+    expect(detail).toBe("API Error: 401 unauthorized");
+  });
+
+  it("returns null when there is nothing to summarize", () => {
+    expect(
+      summarizeClaudeProbeFailureDetail({ parsed: null, summary: "", stdout: "", stderr: "" }),
     ).toBeNull();
   });
 });
