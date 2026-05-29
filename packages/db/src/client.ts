@@ -5,7 +5,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as schema from "./schema/index.js";
-import { type DatabaseTarget, postgresOptions } from "./target.js";
+import { type DatabaseTarget, postgresOptions, targetFromUrl } from "./target.js";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url));
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
@@ -50,8 +50,9 @@ export type MigrationState =
       reason: "no-migration-journal-empty-db" | "no-migration-journal-non-empty-db" | "pending-migrations";
     };
 
-export function createDb(target: DatabaseTarget) {
-  const [arg] = postgresOptions(target);
+export function createDb(target: DatabaseTarget | string) {
+  const resolvedTarget = typeof target === "string" ? targetFromUrl(target) : target;
+  const [arg] = postgresOptions(resolvedTarget);
   const sql = typeof arg === "string" ? postgres(arg) : postgres(arg);
   return drizzlePg(sql, { schema });
 }
