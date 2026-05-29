@@ -8,8 +8,16 @@ import {
 const CODEX_TRANSIENT_UPSTREAM_RE =
   /(?:we(?:'|’)re\s+currently\s+experiencing\s+high\s+demand|temporary\s+errors|rate[-\s]?limit(?:ed)?|too\s+many\s+requests|\b429\b|server\s+overloaded|service\s+unavailable|try\s+again\s+later)/i;
 const CODEX_REMOTE_COMPACTION_RE = /remote\s+compact\s+task/i;
-const CODEX_AUTH_ERROR_RE =
-  /(?:missing\s+bearer\s+or\s+basic\s+authentication|\bunauthorized\b|\b401\b|invalid\s+api\s+key|incorrect\s+api\s+key|authentication\s+(?:required|failed)|not\s+logged\s+in)/i;
+const CODEX_AUTH_ERROR_PATTERNS: RegExp[] = [
+  /missing\s+bearer\s+or\s+basic\s+authentication/i,
+  /\bunauthorized\b/i,
+  // Scope a bare "401" to an HTTP/status context so line numbers and file
+  // counts ("line 401", "401 files") are not misread as auth failures.
+  /\b(?:status|code|error|http)[\s:]+401\b/i,
+  /(?:invalid|incorrect)\s+api\s+key/i,
+  /authentication\s+(?:required|failed)/i,
+  /not\s+logged\s+in/i,
+];
 const CODEX_USAGE_LIMIT_RE =
   /you(?:'|’)ve hit your usage limit for .+\.\s+switch to another model now,\s+or try again at\s+([^.!\n]+)(?:[.!]|\n|$)/i;
 
@@ -267,5 +275,6 @@ export function isCodexAuthError(input: {
   stderr?: string | null;
   errorMessage?: string | null;
 }): boolean {
-  return CODEX_AUTH_ERROR_RE.test(buildCodexErrorHaystack(input));
+  const haystack = buildCodexErrorHaystack(input);
+  return CODEX_AUTH_ERROR_PATTERNS.some((re) => re.test(haystack));
 }
