@@ -45,7 +45,7 @@ import {
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
 } from "./parse.js";
-import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir } from "./codex-home.js";
+import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir, writeApiKeyAuthJson } from "./codex-home.js";
 import { resolveCodexDesiredSkillNames } from "./skills.js";
 import { buildCodexExecArgs } from "./codex-args.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
@@ -349,6 +349,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const defaultCodexHome = resolveManagedCodexHomeDir(process.env, agent.companyId);
   const effectiveCodexHome = configuredCodexHome ?? preparedManagedCodexHome ?? defaultCodexHome;
   await fs.mkdir(effectiveCodexHome, { recursive: true });
+  // With a custom CODEX_HOME we skip prepareManagedCodexHome, so a configured
+  // OPENAI_API_KEY would otherwise never reach auth.json (Codex >= 0.122 reads
+  // credentials only from there, not the env var). Write it explicitly to keep
+  // custom homes consistent with the managed path and avoid silent auth failures.
+  if (configuredOpenAiApiKey && configuredCodexHome) {
+    await writeApiKeyAuthJson(effectiveCodexHome, configuredOpenAiApiKey);
+    await onLog(
+      "stdout",
+      `[paperclip] Wrote API-key auth.json into custom Codex home "${effectiveCodexHome}" from configured OPENAI_API_KEY.\n`,
+    );
+  }
   // Fail fast with an actionable message when Codex has no usable credentials.
   // Codex (>= 0.122) ignores the OPENAI_API_KEY env var and authenticates only
   // from `$CODEX_HOME/auth.json`. Without a configured key (which we write to
@@ -821,6 +832,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         stderr: attempt.proc.stderr,
         errorMessage: fallbackErrorMessage,
       });
+    let outcomeErrorCode: string | null = null;
+    if (transientUpstream) {
+      outcomeErrorCode = "codex_transient_upstream";
+    } else if (authError) {
+      outcomeErrorCode = "codex_auth_required";
+    }
 
     return {
       exitCode: attempt.proc.exitCode,
@@ -830,12 +847,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         (attempt.proc.exitCode ?? 0) === 0
           ? null
           : fallbackErrorMessage,
-      errorCode:
-        transientUpstream
-          ? "codex_transient_upstream"
-          : authError
-            ? "codex_auth_required"
-            : null,
+      errorCode: outcomeErrorCode,
       errorFamily: transientUpstream ? "transient_upstream" : null,
       retryNotBefore: transientRetryNotBefore ? transientRetryNotBefore.toISOString() : null,
       usage: attempt.parsed.usage,

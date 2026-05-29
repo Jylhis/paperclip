@@ -168,4 +168,13 @@ describe("isCodexAuthError", () => {
     expect(isCodexAuthError({ errorMessage: "Codex exited with code 1" })).toBe(false);
     expect(isCodexAuthError({})).toBe(false);
   });
+
+  it("does not match a bare 401 outside an HTTP/status context", () => {
+    expect(isCodexAuthError({ errorMessage: "Syntax error on line 401" })).toBe(false);
+    expect(isCodexAuthError({ stdout: "Processed 401 files successfully" })).toBe(false);
+  });
+
+  it("still classifies a 401 in an HTTP/status context without the word Unauthorized", () => {
+    expect(isCodexAuthError({ stderr: "request failed with status 401" })).toBe(true);
+  });
 });
