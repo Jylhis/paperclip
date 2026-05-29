@@ -22,7 +22,10 @@ const {
   const createAppMock = vi.fn(async () => ((_: unknown, __: unknown) => {}) as never);
   const createBetterAuthInstanceMock = vi.fn(() => ({}));
   const createDbMock = vi.fn(() => ({}) as never);
-  const detectPortMock = vi.fn(async (port: number) => port);
+  const detectPortMock = vi.fn(
+    async (input: number | { port: number; hostname: string }) =>
+      typeof input === "number" ? input : input.port,
+  );
   const resolveDatabaseTargetMock = vi.fn((): ResolvedDatabaseTarget => ({
     mode: "postgres",
     target: { kind: "url", connectionString: "postgres://paperclip:paperclip@127.0.0.1:5432/paperclip" },

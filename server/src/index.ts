@@ -33,10 +33,10 @@ import {
   companyMemberships,
   instanceUserRoles,
 } from "@paperclipai/db";
-import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
+import { detectAvailablePort } from "./port-detection.js";
 import { initObservability } from "./observability/index.js";
 import { serverVersion } from "./version.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
@@ -422,7 +422,7 @@ export async function startServer(): Promise<StartedServer> {
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
       } catch {
-        const detectedPort = await detectPort(configuredPort);
+        const detectedPort = await detectAvailablePort(configuredPort, "127.0.0.1");
         if (detectedPort !== configuredPort) {
           logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
         }
@@ -519,7 +519,7 @@ export async function startServer(): Promise<StartedServer> {
   }
 
   const requestedListenPort = config.port;
-  const listenPort = await detectPort(requestedListenPort);
+  const listenPort = await detectAvailablePort(requestedListenPort, config.host);
   if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
     config.authPublicBaseUrl = rewriteLocalUrlPort(config.authPublicBaseUrl, listenPort);
   }
