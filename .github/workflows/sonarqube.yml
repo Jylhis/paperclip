@@ -1,19 +1,157 @@
-name: Build
+name: SonarCloud
 on:
   push:
     branches:
       - master
   pull_request:
     types: [opened, synchronize, reopened]
+
 jobs:
-  sonarqube:
-    name: SonarQube
+  # Test coverage is expensive, so it only runs on push to master. Pull requests
+  # are still analyzed (issues, hadolint, actionlint) but without fresh coverage.
+  coverage:
+    name: Coverage (${{ matrix.name }})
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PAPERCLIP_COVERAGE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: general-server
+            command: pnpm test:run:general -- --group general-server
+          - name: general-workspaces-a
+            command: pnpm test:run:general -- --group general-workspaces-a
+          - name: general-workspaces-b
+            command: pnpm test:run:general -- --group general-workspaces-b
+          - name: serialized-0
+            command: pnpm test:run:serialized -- --shard-index 0 --shard-count 4
+          - name: serialized-1
+            command: pnpm test:run:serialized -- --shard-index 1 --shard-count 4
+          - name: serialized-2
+            command: pnpm test:run:serialized -- --shard-index 2 --shard-count 4
+          - name: serialized-3
+            command: pnpm test:run:serialized -- --shard-index 3 --shard-count 4
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
         with:
-          fetch-depth: 0 # Shallow clones should be disabled for a better relevancy of analysis
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install coverage provider
+        # @vitest/coverage-v8 must match the installed Vitest version exactly. It
+        # is added at runtime (and intentionally not committed) because PR CI runs
+        # `pnpm install --frozen-lockfile` and forbids lockfile changes in PRs.
+        run: |
+          VITEST_VERSION="$(node -p "require('vitest/package.json').version")"
+          pnpm add -Dw "@vitest/coverage-v8@${VITEST_VERSION}" --no-frozen-lockfile
+
+      - name: Run tests with coverage
+        run: ${{ matrix.command }}
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.name }}
+          path: coverage/
+          retention-days: 1
+          if-no-files-found: warn
+
+  sonarqube:
+    name: SonarQube Scan
+    needs: [coverage]
+    # Run even when the coverage matrix is skipped (pull requests) or partially
+    # fails, so analysis and lint imports are never blocked.
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history improves SonarCloud relevancy.
+
+      - name: Setup Node.js
+        # Provides the runtime the scanner reuses (sonar.scanner.skipNodeProvisioning).
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download coverage reports
+        if: github.event_name == 'push'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          path: coverage-reports
+        continue-on-error: true
+
+      - name: Lint Dockerfiles (hadolint)
+        run: |
+          HADOLINT_VERSION=v2.12.0
+          curl -fsSL -o hadolint \
+            "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64"
+          chmod +x hadolint
+          # %P prints paths without the leading "./" so they match SonarCloud's indexed file keys.
+          mapfile -t dockerfiles < <(find . -type f -name 'Dockerfile*' -not -path '*/node_modules/*' -printf '%P\n' | sort)
+          ./hadolint -f json "${dockerfiles[@]}" > hadolint-report.json || true
+          [ -s hadolint-report.json ] || echo '[]' > hadolint-report.json
+          cat hadolint-report.json
+
+      - name: Lint GitHub Actions workflows (actionlint)
+        run: |
+          ACTIONLINT_VERSION=1.7.7
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
+            "${ACTIONLINT_VERSION}"
+          ./actionlint -format '{{json .}}' -no-color > actionlint-raw.json || true
+          [ -s actionlint-raw.json ] || echo '[]' > actionlint-raw.json
+          # Convert actionlint output into SonarQube's generic external-issues format.
+          jq '{
+            issues: [
+              (if . == null then [] else . end)[] | {
+                engineId: "actionlint",
+                ruleId: (.kind // "actionlint"),
+                type: "CODE_SMELL",
+                severity: "MAJOR",
+                primaryLocation: {
+                  message: .message,
+                  filePath: .filepath,
+                  textRange: { startLine: (.line // 1) }
+                }
+              }
+            ]
+          }' actionlint-raw.json > actionlint-sonar.json
+          cat actionlint-sonar.json
+
+      - name: Collect coverage report paths
+        id: lcov
+        run: |
+          if [ -d coverage-reports ]; then
+            paths="$(find coverage-reports -name lcov.info -printf '%p,' | sed 's/,$//')"
+          else
+            paths=""
+          fi
+          echo "Found lcov reports: ${paths:-<none>}"
+          echo "paths=${paths}" >> "$GITHUB_OUTPUT"
+
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.javascript.lcov.reportPaths=${{ steps.lcov.outputs.paths }}
