@@ -46,6 +46,10 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/routines-e2e.test.ts",
 ]);
 let invocationIndex = 0;
+// When PAPERCLIP_COVERAGE=1, every Vitest invocation emits V8 coverage into its
+// own directory so the many separate `vitest run` calls this script makes do not
+// clobber one another. SonarCloud merges the resulting lcov files at scan time.
+const coverageEnabled = process.env.PAPERCLIP_COVERAGE === "1";
 const serializedModeName = "serialized";
 const generalModeName = "general";
 const allModeName = "all";
@@ -253,7 +257,10 @@ function runVitest(args, label) {
   };
   mkdirSync(env.PAPERCLIP_HOME, { recursive: true });
   mkdirSync(env.TMPDIR, { recursive: true });
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...args], {
+  const coverageArgs = coverageEnabled
+    ? ["--coverage.enabled=true", `--coverage.reportsDirectory=coverage/${invocationIndex}`]
+    : [];
+  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...coverageArgs, ...args], {
     cwd: repoRoot,
     env,
     stdio: "inherit",

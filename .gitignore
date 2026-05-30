@@ -9,6 +9,11 @@ ui/storybook-static/
 drizzle/meta/
 .vite/
 coverage/
+coverage-reports/
+# CI-generated external analyzer reports (hadolint / actionlint) for SonarCloud.
+hadolint-report.json
+actionlint-raw.json
+actionlint-sonar.json
 .DS_Store
 data/
 .paperclip/
