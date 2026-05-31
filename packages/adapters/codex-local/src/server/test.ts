@@ -85,11 +85,18 @@ async function prepareCodexHelloProbe(input: {
 }> {
   let preparedRuntime: Awaited<ReturnType<typeof prepareAdapterExecutionTargetRuntime>> | null = null;
   let preparedRuntimeWorkspaceLocalDir: string | null = null;
+  let localProbeHomeForCleanup: string | null = null;
 
   const cleanup = async () => {
     await preparedRuntime?.restoreWorkspace().catch(() => {});
     if (preparedRuntimeWorkspaceLocalDir) {
       await fs.rm(preparedRuntimeWorkspaceLocalDir, { recursive: true, force: true }).catch(() => {});
+    }
+    if (localProbeHomeForCleanup) {
+      // Fallback sweep in case the shell EXIT trap was bypassed (SIGKILL, OOM).
+      await fs
+        .rm(localProbeHomeForCleanup, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        .catch(() => {});
     }
   };
 
@@ -135,11 +142,17 @@ async function prepareCodexHelloProbe(input: {
     const probeHome = input.targetIsRemote
       ? path.posix.join(input.cwd, ".paperclip-runtime", "codex", `probe-home-${input.runId}`)
       : localCodexProbeHome(input.runId);
+    if (!input.targetIsRemote) {
+      localProbeHomeForCleanup = probeHome;
+    }
+    // Trap chmods before rm so codex's plugin-clone (which inherits Nix-store
+    // read-only modes) can be removed, and ends with `:` so the trap's exit
+    // status doesn't mask codex's real exit code.
     return {
       command: "sh",
       args: [
         "-c",
-        'set -e; mkdir -p "$CODEX_HOME"; umask 077; printf "%s" "$_PAPERCLIP_CODEX_AUTH_JSON" > "$CODEX_HOME/auth.json"; unset _PAPERCLIP_CODEX_AUTH_JSON; trap \'rm -rf "$CODEX_HOME"\' EXIT INT TERM; "$0" "$@"',
+        'set -e; mkdir -p "$CODEX_HOME"; umask 077; printf "%s" "$_PAPERCLIP_CODEX_AUTH_JSON" > "$CODEX_HOME/auth.json"; unset _PAPERCLIP_CODEX_AUTH_JSON; trap \'chmod -R u+rwX "$CODEX_HOME" 2>/dev/null; rm -rf "$CODEX_HOME" 2>/dev/null; :\' EXIT INT TERM; "$0" "$@"',
         input.command,
         ...input.args,
       ],
