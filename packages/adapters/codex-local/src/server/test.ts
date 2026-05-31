@@ -7,6 +7,7 @@ import {
   asString,
   parseObject,
   ensurePathInEnv,
+  resolvePaperclipInstanceRootForAdapter,
 } from "@paperclipai/adapter-utils/server-utils";
 import {
   ensureAdapterExecutionTargetCommandResolvable,
@@ -60,6 +61,11 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
 
 const CODEX_AUTH_REQUIRED_RE =
   /(?:not\s+logged\s+in|login\s+required|authentication\s+required|unauthorized|invalid(?:\s+or\s+missing)?\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|api[_\s-]?key.*required|please\s+run\s+`?codex\s+login`?)/i;
+
+function localCodexProbeHome(runId: string): string {
+  const instanceRoot = resolvePaperclipInstanceRootForAdapter({ env: process.env });
+  return path.join(instanceRoot, "data", "codex-probes", runId);
+}
 
 async function prepareCodexHelloProbe(input: {
   runId: string;
@@ -128,7 +134,7 @@ async function prepareCodexHelloProbe(input: {
   if (input.probeApiKey) {
     const probeHome = input.targetIsRemote
       ? path.posix.join(input.cwd, ".paperclip-runtime", "codex", `probe-home-${input.runId}`)
-      : path.join(os.tmpdir(), `paperclip-codex-probe-${input.runId}`);
+      : localCodexProbeHome(input.runId);
     return {
       command: "sh",
       args: [

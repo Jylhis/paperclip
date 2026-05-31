@@ -99,6 +99,53 @@ describe("codex_local environment diagnostics", () => {
     }
   });
 
+  it.skipIf(process.platform === "win32")("uses Paperclip state for local API-key probe homes", async () => {
+    const root = path.join(
+      os.tmpdir(),
+      `paperclip-codex-local-probe-home-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    );
+    const paperclipHome = path.join(root, "paperclip-home");
+    const binDir = path.join(root, "bin");
+    const cwd = path.join(root, "workspace");
+    const fakeCodex = path.join(binDir, "codex");
+    const recordPath = path.join(root, "codex-home.txt");
+    const script = [
+      "#!/bin/sh",
+      `printf '%s' "$CODEX_HOME" > ${JSON.stringify(recordPath)}`,
+      "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"test-thread\"}'",
+      "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hello\"}}'",
+      "printf '%s\\n' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}'",
+      "",
+    ].join("\n");
+
+    try {
+      await fs.mkdir(binDir, { recursive: true });
+      await fs.writeFile(fakeCodex, script, { mode: 0o755 });
+      await fs.chmod(fakeCodex, 0o755);
+      vi.stubEnv("PAPERCLIP_HOME", paperclipHome);
+      vi.stubEnv("PAPERCLIP_INSTANCE_ID", "default");
+
+      const result = await testEnvironment({
+        companyId: "company-1",
+        adapterType: "codex_local",
+        config: {
+          command: fakeCodex,
+          cwd,
+          env: {
+            OPENAI_API_KEY: "test-key",
+          },
+        },
+      });
+
+      expect(result.status).toBe("pass");
+      const codexHome = await fs.readFile(recordPath, "utf8");
+      expect(codexHome).toContain(path.join(paperclipHome, "instances", "default", "data", "codex-probes"));
+      expect(codexHome).not.toContain("paperclip-codex-probe-");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   itWindows("runs the hello probe when Codex is available via a Windows .cmd wrapper", async () => {
     const root = path.join(
       os.tmpdir(),

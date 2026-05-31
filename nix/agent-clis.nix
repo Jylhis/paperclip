@@ -39,6 +39,8 @@ let
       urls,
       dynamicLinked ? info.dynamicLinked,
       extraLibs ? [ ],
+      preservePayload ? false,
+      installCheck ? "",
     }:
     stdenv.mkDerivation {
       inherit pname version;
@@ -51,6 +53,7 @@ let
 
       nativeBuildInputs = lib.optional dynamicLinked autoPatchelfHook ++ [ makeWrapper ];
       buildInputs = lib.optionals dynamicLinked (extraLibs ++ [ stdenv.cc.cc.lib ]);
+      dontStrip = preservePayload;
 
       dontConfigure = true;
       dontBuild = true;
@@ -60,6 +63,9 @@ let
         install -Dm755 ${binPath} $out/bin/${binName}
         runHook postInstall
       '';
+
+      doInstallCheck = installCheck != "";
+      installCheckPhase = installCheck;
 
       meta = {
         description = "Agent CLI bundled for Paperclip (${pname}@${version})";
@@ -84,6 +90,24 @@ let
       "linux-x64" = "sha256-6679jbV6yZ1hogNyqTs0gS95d1cCWeiPu6GikYw/otI=";
       "linux-arm64" = "sha256-EktgpkRV7kVMDHX07z2ViQJUbskOKYwhUIJLsl38LN8=";
     };
+    # Claude Code is a Bun single-file executable. Stripping preserves a valid
+    # ELF but drops the appended application payload, leaving raw Bun behavior.
+    preservePayload = true;
+    installCheck = ''
+      runHook preInstallCheck
+      version_output="$($out/bin/claude --version 2>&1)"
+      case "$version_output" in
+        *"2.1.144"*) ;;
+        *)
+          echo "unexpected claude --version output: $version_output" >&2
+          exit 1
+          ;;
+      esac
+      help_output="$($out/bin/claude --help 2>&1)"
+      echo "$help_output" | grep -q -- "--print"
+      ! echo "$help_output" | grep -q "Bun v"
+      runHook postInstallCheck
+    '';
   };
 
   # codex ships as a static-pie ELF; no runtime patching needed.
