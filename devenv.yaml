@@ -1,0 +1,5 @@
+inputs:
+  flake:
+    url: path:.
+  nixpkgs:
+    follows: flake/nixpkgs

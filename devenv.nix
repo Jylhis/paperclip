@@ -25,6 +25,11 @@ in
   # Node + pnpm toolchain. Matches Dockerfile (node:lts-trixie-slim →
   # Node 22 LTS), CI (pr.yml, release.yml use node-version: 24 — Node 22
   # is the LTS compromise) and package.json engines `>=20`.
+  #
+  # `pkgs` here comes from devenv's `nixpkgs` input, which follows
+  # `flake/nixpkgs` (see devenv.yaml). flake.lock is the single source of
+  # truth for the nixpkgs pin — `devenv shell` and `nix develop` build the
+  # same toolchain closure.
   languages.javascript = {
     enable = true;
     package = toolchain.nodejs;
