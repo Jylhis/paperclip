@@ -16,6 +16,10 @@ jobs:
     timeout-minutes: 25
     env:
       PAPERCLIP_COVERAGE: "1"
+    # Node/pnpm come from the flake dev shell (nix/dev-toolchain.nix).
+    defaults:
+      run:
+        shell: nix develop --command bash --noprofile --norc -eo pipefail {0}
     strategy:
       fail-fast: false
       matrix:
@@ -38,16 +42,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -80,6 +76,11 @@ jobs:
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Lint + coverage-collation steps run in the CI dev shell, which adds
+    # hadolint/actionlint (and jq) on top of the standard toolchain.
+    defaults:
+      run:
+        shell: nix develop .#ci --command bash --noprofile --norc -eo pipefail {0}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -87,10 +88,14 @@ jobs:
           fetch-depth: 0 # Full history improves SonarCloud relevancy.
 
       - name: Setup Node.js
-        # Provides the runtime the scanner reuses (sonar.scanner.skipNodeProvisioning).
+        # Host runtime the SonarQube scanner reuses (sonar.scanner.skipNodeProvisioning).
+        # The scanner runs as its own action and cannot see the nix dev shell.
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Download coverage reports
         if: github.event_name == 'push'
@@ -101,23 +106,18 @@ jobs:
         continue-on-error: true
 
       - name: Lint Dockerfiles (hadolint)
+        # hadolint comes from the .#ci dev shell (nix), not a release download.
         run: |
-          HADOLINT_VERSION=v2.12.0
-          curl -fsSL -o hadolint \
-            "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64"
-          chmod +x hadolint
           # %P prints paths without the leading "./" so they match SonarCloud's indexed file keys.
           mapfile -t dockerfiles < <(find . -type f -name 'Dockerfile*' -not -path '*/node_modules/*' -printf '%P\n' | sort)
-          ./hadolint -f json "${dockerfiles[@]}" > hadolint-report.json || true
+          hadolint -f json "${dockerfiles[@]}" > hadolint-report.json || true
           [ -s hadolint-report.json ] || echo '[]' > hadolint-report.json
           cat hadolint-report.json
 
       - name: Lint GitHub Actions workflows (actionlint)
+        # actionlint comes from the .#ci dev shell (nix), not a release download.
         run: |
-          ACTIONLINT_VERSION=1.7.7
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) \
-            "${ACTIONLINT_VERSION}"
-          ./actionlint -format '{{json .}}' -no-color > actionlint-raw.json || true
+          actionlint -format '{{json .}}' -no-color > actionlint-raw.json || true
           [ -s actionlint-raw.json ] || echo '[]' > actionlint-raw.json
           # Convert actionlint output into SonarQube's generic external-issues format.
           jq '{

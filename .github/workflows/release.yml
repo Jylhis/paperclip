@@ -25,6 +25,12 @@ concurrency:
   group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
+# Every job runs its commands inside the flake dev shell, so Node, pnpm and
+# npm all come from nix/dev-toolchain.nix (Node 22 LTS, matching the Dockerfile).
+defaults:
+  run:
+    shell: nix develop --command bash --noprofile --norc -eo pipefail {0}
+
 jobs:
   verify_canary:
     if: github.event_name == 'push'
@@ -39,16 +45,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Validate release package manifest
         run: node ./scripts/release-package-map.mjs check
@@ -81,16 +79,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Validate release package manifest
         run: node ./scripts/release-package-map.mjs check
@@ -134,16 +124,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.source_ref }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Validate release package manifest
         run: node ./scripts/release-package-map.mjs check
@@ -175,16 +157,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.source_ref }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Validate release package manifest
         run: node ./scripts/release-package-map.mjs check
@@ -219,16 +193,8 @@ jobs:
           fetch-depth: 0
           ref: ${{ inputs.source_ref }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile

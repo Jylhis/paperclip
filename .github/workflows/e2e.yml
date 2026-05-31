@@ -15,17 +15,14 @@ jobs:
     env:
       PAPERCLIP_E2E_SKIP_LLM: ${{ inputs.skip_llm && 'true' || 'false' }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # Node, pnpm and friends come from the flake dev shell (nix/dev-toolchain.nix).
+    defaults:
+      run:
+        shell: nix develop --command bash --noprofile --norc -eo pipefail {0}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
+      - uses: ./.github/actions/setup-nix
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build

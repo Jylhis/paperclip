@@ -133,6 +133,9 @@
 
       devShells = forSystems shellSystems (pkgs: {
         default = pkgs.callPackage ./nix/shell.nix { };
+        # `nix develop .#ci` — the default shell plus hadolint/actionlint, used
+        # by the GitHub Actions lint lane so CI sources every tool from nixpkgs.
+        ci = pkgs.callPackage ./nix/ci-shell.nix { };
       });
 
       apps = forSystems shellSystems (

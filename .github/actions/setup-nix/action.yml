@@ -1,0 +1,42 @@
+name: Setup Nix (apt)
+description: >-
+  Install Nix from Ubuntu's apt `nix-bin` package, enable flakes + the
+  nix-command, start the daemon, and restore the pnpm content-addressable
+  store. Workflows then run their steps inside the flake dev shell via
+  `nix develop --command …` so Node, pnpm and lint tools all come from nixpkgs.
+
+runs:
+  using: composite
+  steps:
+    - name: Install nix-bin
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nix-bin nix-setup-systemd
+
+    - name: Enable flakes and start the daemon
+      shell: bash
+      run: |
+        # cache.nixos.org stays a built-in default substituter, so the pinned
+        # nodejs_22/pnpm_9 closures are fetched prebuilt rather than compiled.
+        sudo install -d -m 0755 /etc/nix
+        printf 'experimental-features = nix-command flakes\ntrusted-users = root %s\nmax-jobs = auto\n' \
+          "$(whoami)" | sudo tee /etc/nix/nix.conf >/dev/null
+        sudo systemctl restart nix-daemon
+        # Block until the daemon socket exists before any nix invocation.
+        for _ in $(seq 1 30); do
+          [ -S /nix/var/nix/daemon-socket/socket ] && break
+          sleep 1
+        done
+        nix --version
+
+    - name: Cache pnpm store
+      # Replaces the pnpm cache that actions/setup-node used to provide. The
+      # nix toolchain closures come from cache.nixos.org, so only the project's
+      # pnpm store needs an Actions cache.
+      uses: actions/cache@v4
+      with:
+        path: ~/.local/share/pnpm/store
+        key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: |
+          pnpm-${{ runner.os }}-

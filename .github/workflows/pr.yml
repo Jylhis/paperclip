@@ -9,6 +9,13 @@ concurrency:
   group: pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+# Steps run inside the flake dev shell so Node/pnpm come from
+# nix/dev-toolchain.nix. The aggregation-only `verify` job overrides this back
+# to plain bash because it never installs the Nix toolchain.
+defaults:
+  run:
+    shell: nix develop --command bash --noprofile --norc -eo pipefail {0}
+
 jobs:
   policy:
     runs-on: ubuntu-latest
@@ -20,6 +27,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Install Nix first: every run step below executes inside `nix develop`.
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
+
       - name: Block manual lockfile edits
         if: github.head_ref != 'chore/refresh-lockfile'
         run: |
@@ -30,17 +41,6 @@ jobs:
             echo "Do not commit pnpm-lock.yaml in pull requests. CI owns lockfile updates."
             exit 1
           fi
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-          run_install: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
 
       - name: Validate Dockerfile deps stage
         run: node ./scripts/check-docker-deps-stage.mjs
@@ -78,16 +78,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -118,16 +110,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -142,6 +126,11 @@ jobs:
     needs: [typecheck_release_registry, general_tests, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Aggregation only — no Nix toolchain installed, so use plain bash and skip
+    # the workflow-level `nix develop` default.
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Fail if any split verify lane failed
@@ -164,16 +153,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -207,16 +188,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -234,16 +207,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -265,16 +230,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9.15.4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: pnpm
+      - name: Setup Nix toolchain
+        uses: ./.github/actions/setup-nix
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
