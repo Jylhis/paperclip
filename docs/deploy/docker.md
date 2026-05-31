@@ -39,6 +39,27 @@ docker run --name paperclip \
   paperclip-local
 ```
 
+## Build the Image with Nix
+
+The published `ghcr.io/jylhis/paperclip` images are built with Nix
+(`dockerTools`, see `nix/docker.nix`) rather than from this `Dockerfile`,
+which keeps the image in lockstep with the `nix build .#paperclip` server
+package. Build it locally on Linux:
+
+```sh
+nix build .#docker        # produces ./result, a gzipped image tarball
+docker load < result      # loads paperclip:latest
+docker run --name paperclip \
+  -p 3100:3100 \
+  -e BETTER_AUTH_SECRET=change-me \
+  -v "$(pwd)/data/docker-paperclip:/paperclip" \
+  paperclip:latest
+```
+
+This lean image runs the server as the non-root `node` user and does **not**
+bundle the agent CLIs. Use the `Dockerfile` build above (or the compose files)
+if you need `claude` / `codex` / `opencode` inside the container.
+
 ## Data Persistence
 
 All data is persisted under the bind mount (`./data/docker-paperclip`):

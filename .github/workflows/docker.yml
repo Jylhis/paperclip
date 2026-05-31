@@ -11,16 +11,70 @@ permissions:
   contents: read
   packages: write
 
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  # Build the image with Nix (`nix build .#docker`, see nix/docker.nix) on a
+  # native runner per architecture — dockerTools produces a single-arch image,
+  # so we build amd64 and arm64 separately and stitch them into a multi-arch
+  # manifest in the `merge` job. No Dockerfile / buildx build is involved.
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     concurrency:
-      group: docker-${{ github.ref }}
+      group: docker-${{ github.ref }}-${{ matrix.arch }}
       cancel-in-progress: true
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Build image with Nix
+        run: nix build .#docker -L
+
+      - name: Push ${{ matrix.arch }} image by digest
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" \
+            | nix run nixpkgs#skopeo -- login ghcr.io \
+                -u "${{ github.repository_owner }}" --password-stdin
+          mkdir -p /tmp/digests
+          # skopeo needs a tag destination; push to a per-arch sha tag and
+          # record the resulting digest for the manifest-merge job.
+          nix run nixpkgs#skopeo -- copy --digestfile /tmp/digests/${{ matrix.arch }} \
+            docker-archive:result \
+            "docker://${IMAGE}:${{ github.sha }}-${{ matrix.arch }}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  # Assemble the per-arch images into a single multi-arch manifest tagged with
+  # the usual scheme (latest on default branch, semver on tags, sha always).
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -36,20 +90,17 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+      - name: Create multi-arch manifest
+        run: |
+          amd64="$(cat /tmp/digests/amd64)"
+          arm64="$(cat /tmp/digests/arm64)"
+          tags="$(jq -r '.tags[] | "-t " + .' <<< "$DOCKER_METADATA_OUTPUT_JSON")"
+          docker buildx imagetools create $tags \
+            "${IMAGE}@${amd64}" "${IMAGE}@${arm64}"

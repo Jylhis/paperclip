@@ -29,6 +29,7 @@ for the caveats around the darwin build.
 | `packages.<sys>.paperclip-mcp-server`   | `@paperclipai/mcp-server` standalone with `bin/paperclip-mcp-server` |
 | `packages.<sys>.paperclipai`            | Standalone `paperclipai` CLI (no server bundle)         |
 | `packages.<sys>.paperclip-ui`           | Prebuilt board UI static assets under `share/paperclip-ui/` |
+| `packages.<sys>.docker`                 | Nix-built (`dockerTools`) container image for the server (Linux only) |
 | `packages.<sys>.paperclip-pnpm-deps`    | Fixed-output PNPM store fetched from `pnpm-lock.yaml`   |
 | `packages.<sys>.default`                | Alias for `paperclip` (Linux only)                      |
 | `overlays.default`                      | Adds all of the above to `pkgs`                         |
@@ -59,6 +60,7 @@ Linux-only — importing the module on darwin is harmless as long as
 | `paperclipai`                | ✅           | ✅            | ✅             | ✅            |
 | `paperclip-ui`               | ✅           | ✅            | ✅             | ✅            |
 | `paperclip-pnpm-deps`        | ✅           | ✅            | ✅             | ✅            |
+| `docker`                     | ✅           | ✅            | ❌             | ❌            |
 | `devShells.default`          | ✅           | ✅            | ✅             | ✅            |
 | `vmTests.*`                  | ✅           | ✅            | ❌             | ❌            |
 | `nixosModules.paperclip`     | ✅           | ✅            | ❌             | ❌            |
@@ -200,6 +202,7 @@ nix build .#paperclip-mcp-server      # any system
 nix build .#paperclipai               # any system
 nix build .#paperclip-ui              # any system
 nix build .#paperclip-pnpm-deps       # prefetched PNPM store
+nix build .#docker                    # container image (Linux only); docker load < result
 nix run .#install-deps                # local node_modules, offline via Nix store
 nix flake check                       # eval-only sanity check (fast)
 just test-vm                          # run every NixOS VM test (heavy)
@@ -236,6 +239,7 @@ nix/
   mcp-server.nix           # @paperclipai/mcp-server
   ui.nix                   # @paperclipai/ui static assets
   agent-clis.nix           # claude-code + codex + opencode bundle
+  docker.nix               # dockerTools container image (server)
   overlay.nix              # final: prev: { paperclip = ...; ... }
   shell.nix                # flake devShell
   modules/nixos/
