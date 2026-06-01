@@ -21,7 +21,7 @@ import {
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { parseCodexJsonl } from "./parse.js";
+import { CODEX_AUTH_REQUIRED_RE, parseCodexJsonl } from "./parse.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
 import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
 import { buildCodexExecArgs } from "./codex-args.js";
@@ -58,9 +58,6 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   const max = 240;
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
 }
-
-const CODEX_AUTH_REQUIRED_RE =
-  /(?:not\s+logged\s+in|login\s+required|authentication\s+required|unauthorized|invalid(?:\s+or\s+missing)?\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|api[_\s-]?key.*required|please\s+run\s+`?codex\s+login`?)/i;
 
 function localCodexProbeHome(runId: string): string {
   const instanceRoot = resolvePaperclipInstanceRootForAdapter({ env: process.env });

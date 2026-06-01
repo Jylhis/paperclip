@@ -7,6 +7,15 @@ import {
 
 const CODEX_TRANSIENT_UPSTREAM_RE =
   /(?:we(?:'|’)re\s+currently\s+experiencing\s+high\s+demand|temporary\s+errors|rate[-\s]?limit(?:ed)?|too\s+many\s+requests|\b429\b|server\s+overloaded|service\s+unavailable|try\s+again\s+later)/i;
+// Shared with the environment probe in `test.ts`. Matches the wordings the
+// Codex CLI / OpenAI Responses API surface when authentication is missing or
+// rejected, including the "please run `codex login`" prompt.
+export const CODEX_AUTH_REQUIRED_RE =
+  /(?:not\s+logged\s+in|login\s+required|authentication\s+required|unauthorized|invalid(?:\s+or\s+missing)?\s+api(?:[_\s-]?key)?|openai[_\s-]?api[_\s-]?key|api[_\s-]?key.*required|please\s+run\s+`?codex\s+login`?)/i;
+// Login URLs carry their auth code/token in the query string, so (unlike a
+// generic prose-URL matcher) this keeps `?`, `=`, and `&`. Trailing sentence
+// punctuation is removed separately by `extractCodexLoginUrl`.
+const CODEX_URL_RE = /https?:\/\/[^\s'"`<>{}\\|^]+/gi;
 const CODEX_REMOTE_COMPACTION_RE = /remote\s+compact\s+task/i;
 const CODEX_USAGE_LIMIT_RE =
   /you(?:'|’)ve hit your usage limit for .+\.\s+switch to another model now,\s+or try again at\s+([^.!\n]+)(?:[.!]|\n|$)/i;
@@ -81,6 +90,52 @@ export function isCodexUnknownSessionError(stdout: string, stderr: string): bool
   return /unknown (session|thread)|session .* not found|thread .* not found|conversation .* not found|missing rollout path for thread|state db missing rollout path|no rollout found for thread id/i.test(
     haystack,
   );
+}
+
+/**
+ * Extracts the most likely Codex login URL from CLI output. Prefers URLs that
+ * point at an OpenAI / ChatGPT / generic auth host, then falls back to the
+ * first URL found (e.g. the localhost callback the CLI prints).
+ */
+export function extractCodexLoginUrl(text: string): string | null {
+  const matches = text.match(CODEX_URL_RE);
+  if (!matches || matches.length === 0) return null;
+  const stripTrailing = (raw: string): string => raw.replace(/[\])}.!,?;:'"]+$/g, "");
+  for (const rawUrl of matches) {
+    const cleaned = stripTrailing(rawUrl);
+    if (
+      cleaned.includes("openai") ||
+      cleaned.includes("chatgpt") ||
+      cleaned.includes("auth")
+    ) {
+      return cleaned;
+    }
+  }
+  return stripTrailing(matches[0] ?? "") || null;
+}
+
+/**
+ * Detects whether Codex output indicates that interactive login (or a valid
+ * API key) is required, and surfaces any login URL the CLI printed. Mirrors
+ * `detectClaudeLoginRequired` in the claude-local adapter.
+ */
+export function detectCodexLoginRequired(input: {
+  parsed: { errorMessage?: string | null } | Record<string, unknown> | null;
+  stdout: string;
+  stderr: string;
+}): { requiresLogin: boolean; loginUrl: string | null } {
+  const parsedError = asString((input.parsed ?? {}).errorMessage, "").trim();
+  const messages = [parsedError, input.stdout, input.stderr]
+    .join("\n")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const requiresLogin = messages.some((line) => CODEX_AUTH_REQUIRED_RE.test(line));
+  return {
+    requiresLogin,
+    loginUrl: extractCodexLoginUrl([input.stdout, input.stderr].join("\n")),
+  };
 }
 
 function buildCodexErrorHaystack(input: {

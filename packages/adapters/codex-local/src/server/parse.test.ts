@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  detectCodexLoginRequired,
+  extractCodexLoginUrl,
   extractCodexRetryNotBefore,
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
@@ -135,6 +137,82 @@ describe("isCodexTransientUpstreamError", () => {
           "}",
         ].join("\n"),
       }),
+    ).toBe(false);
+  });
+});
+
+describe("extractCodexLoginUrl", () => {
+  it("prefers an OpenAI/ChatGPT auth URL over unrelated URLs", () => {
+    const text = [
+      "See https://example.com/help for docs.",
+      "Starting local login server. Open this URL to authenticate:",
+      "https://auth.openai.com/authorize?client_id=codex&code=abc123",
+    ].join("\n");
+
+    expect(extractCodexLoginUrl(text)).toBe(
+      "https://auth.openai.com/authorize?client_id=codex&code=abc123",
+    );
+  });
+
+  it("matches chatgpt.com login URLs", () => {
+    const text = "Open https://chatgpt.com/auth/login?token=xyz to finish signing in.";
+    expect(extractCodexLoginUrl(text)).toBe("https://chatgpt.com/auth/login?token=xyz");
+  });
+
+  it("falls back to the first URL when no provider URL is present", () => {
+    const text = "Visit https://localhost:1455/callback to continue.";
+    expect(extractCodexLoginUrl(text)).toBe("https://localhost:1455/callback");
+  });
+
+  it("strips trailing punctuation from the URL", () => {
+    const text = "Authenticate at https://auth.openai.com/device.";
+    expect(extractCodexLoginUrl(text)).toBe("https://auth.openai.com/device");
+  });
+
+  it("returns null when there is no URL", () => {
+    expect(extractCodexLoginUrl("not logged in; please run `codex login`.")).toBeNull();
+  });
+});
+
+describe("detectCodexLoginRequired", () => {
+  it("flags 'not logged in' output and extracts the login URL", () => {
+    const result = detectCodexLoginRequired({
+      parsed: null,
+      stdout: "Open https://auth.openai.com/authorize?code=abc to sign in.",
+      stderr: "Error: not logged in. Please run `codex login`.",
+    });
+
+    expect(result.requiresLogin).toBe(true);
+    expect(result.loginUrl).toBe("https://auth.openai.com/authorize?code=abc");
+  });
+
+  it("flags missing API key / unauthorized responses", () => {
+    expect(
+      detectCodexLoginRequired({
+        parsed: null,
+        stdout: "",
+        stderr: "401 Unauthorized: invalid or missing api key",
+      }).requiresLogin,
+    ).toBe(true);
+  });
+
+  it("reads the error message from parsed JSONL output", () => {
+    expect(
+      detectCodexLoginRequired({
+        parsed: { errorMessage: "authentication required" },
+        stdout: "",
+        stderr: "",
+      }).requiresLogin,
+    ).toBe(true);
+  });
+
+  it("does not flag ordinary failures", () => {
+    expect(
+      detectCodexLoginRequired({
+        parsed: null,
+        stdout: "done",
+        stderr: "Error: file not found",
+      }).requiresLogin,
     ).toBe(false);
   });
 });

@@ -40,6 +40,7 @@ import {
 } from "@paperclipai/adapter-utils/server-utils";
 import {
   parseCodexJsonl,
+  detectCodexLoginRequired,
   extractCodexRetryNotBefore,
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
@@ -280,6 +281,93 @@ export async function ensureCodexSkillsInjected(
     skillsEntries.map((entry) => entry.runtimeName),
     onLog,
   );
+}
+
+/**
+ * Runs `codex login` against the same CODEX_HOME that `execute()` uses so the
+ * resulting `auth.json` is picked up on the next run. Mirrors `runClaudeLogin`
+ * in the claude-local adapter: it spawns the CLI, streams output, and reports
+ * any login URL the CLI prints. Login is a local-only operation.
+ */
+export async function runCodexLogin(input: {
+  runId: string;
+  agent: AdapterExecutionContext["agent"];
+  config: Record<string, unknown>;
+  context?: Record<string, unknown>;
+  authToken?: string;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
+}): Promise<{
+  exitCode: number | null;
+  signal: string | null;
+  timedOut: boolean;
+  stdout: string;
+  stderr: string;
+  loginUrl: string | null;
+}> {
+  const onLog = input.onLog ?? (async () => {});
+  const config = input.config;
+  const command = asString(config.command, "codex");
+  const envConfig = parseObject(config.env);
+  const cwd = asString(config.cwd, "") || process.cwd();
+  await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
+
+  const configuredCodexHome =
+    typeof envConfig.CODEX_HOME === "string" && envConfig.CODEX_HOME.trim().length > 0
+      ? path.resolve(envConfig.CODEX_HOME.trim())
+      : null;
+  const configuredOpenAiApiKey =
+    typeof envConfig.OPENAI_API_KEY === "string" && envConfig.OPENAI_API_KEY.trim().length > 0
+      ? envConfig.OPENAI_API_KEY.trim()
+      : null;
+  const preparedManagedCodexHome = configuredCodexHome
+    ? null
+    : await prepareManagedCodexHome(process.env, onLog, input.agent.companyId, {
+        apiKey: configuredOpenAiApiKey,
+      });
+  const effectiveCodexHome =
+    configuredCodexHome ??
+    preparedManagedCodexHome ??
+    resolveManagedCodexHomeDir(process.env, input.agent.companyId);
+  await fs.mkdir(effectiveCodexHome, { recursive: true });
+
+  const env: Record<string, string> = { ...buildPaperclipEnv(input.agent) };
+  env.PAPERCLIP_RUN_ID = input.runId;
+  env.CODEX_HOME = effectiveCodexHome;
+  const effectiveEnv = Object.fromEntries(
+    Object.entries({ ...process.env, ...env }).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  const runtimeEnv = Object.fromEntries(
+    Object.entries(ensurePathInEnv(effectiveEnv)).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
+    ),
+  );
+  const timeoutSec = asNumber(config.timeoutSec, 0);
+  const graceSec = asNumber(config.graceSec, 20);
+
+  const proc = await runAdapterExecutionTargetProcess(input.runId, null, command, ["login"], {
+    cwd,
+    env: runtimeEnv,
+    timeoutSec,
+    graceSec,
+    onLog,
+  });
+
+  const loginMeta = detectCodexLoginRequired({
+    parsed: null,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+  });
+
+  return {
+    exitCode: proc.exitCode,
+    signal: proc.signal,
+    timedOut: proc.timedOut,
+    stdout: proc.stdout,
+    stderr: proc.stderr,
+    loginUrl: loginMeta.loginUrl,
+  };
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -774,8 +862,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       parsedError ||
       stderrLine ||
       `Codex exited with code ${attempt.proc.exitCode ?? -1}`;
-    const transientRetryNotBefore =
+    const loginMeta =
       (attempt.proc.exitCode ?? 0) !== 0
+        ? detectCodexLoginRequired({
+            parsed: attempt.parsed,
+            stdout: attempt.proc.stdout,
+            stderr: attempt.proc.stderr,
+          })
+        : { requiresLogin: false, loginUrl: null };
+    const transientRetryNotBefore =
+      (attempt.proc.exitCode ?? 0) !== 0 && !loginMeta.requiresLogin
         ? extractCodexRetryNotBefore({
             stdout: attempt.proc.stdout,
             stderr: attempt.proc.stderr,
@@ -784,6 +880,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         : null;
     const transientUpstream =
       (attempt.proc.exitCode ?? 0) !== 0 &&
+      !loginMeta.requiresLogin &&
       isCodexTransientUpstreamError({
         stdout: attempt.proc.stdout,
         stderr: attempt.proc.stderr,
@@ -799,9 +896,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           ? null
           : fallbackErrorMessage,
       errorCode:
-        transientUpstream
+        loginMeta.requiresLogin
+          ? "codex_auth_required"
+          : transientUpstream
           ? "codex_transient_upstream"
           : null,
+      ...(loginMeta.loginUrl != null ? { errorMeta: { loginUrl: loginMeta.loginUrl } } : {}),
       errorFamily: transientUpstream ? "transient_upstream" : null,
       retryNotBefore: transientRetryNotBefore ? transientRetryNotBefore.toISOString() : null,
       usage: attempt.parsed.usage,

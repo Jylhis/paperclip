@@ -51,6 +51,8 @@ export interface ClaudeLoginResult {
   stderr: string;
 }
 
+export type CodexLoginResult = ClaudeLoginResult;
+
 export interface OrgNode {
   id: string;
   name: string;
@@ -222,6 +224,8 @@ export const agentsApi = {
   ) => api.post<AgentWakeupResponse>(agentPath(id, companyId, "/wakeup"), data),
   loginWithClaude: (id: string, companyId?: string) =>
     api.post<ClaudeLoginResult>(agentPath(id, companyId, "/claude-login"), {}),
+  loginWithCodex: (id: string, companyId?: string) =>
+    api.post<CodexLoginResult>(agentPath(id, companyId, "/codex-login"), {}),
   availableSkills: () =>
     api.get<{ skills: AvailableSkill[] }>("/skills/available"),
 };

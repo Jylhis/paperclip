@@ -3139,10 +3139,10 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
   const run = hydratedRun ?? initialRun;
   const metrics = runMetrics(run);
   const [sessionOpen, setSessionOpen] = useState(false);
-  const [claudeLoginResult, setClaudeLoginResult] = useState<ClaudeLoginResult | null>(null);
+  const [agentLoginResult, setAgentLoginResult] = useState<ClaudeLoginResult | null>(null);
 
   useEffect(() => {
-    setClaudeLoginResult(null);
+    setAgentLoginResult(null);
   }, [run.id]);
 
   const cancelRun = useMutation({
@@ -3241,10 +3241,22 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
     },
   });
 
-  const runClaudeLogin = useMutation({
-    mutationFn: () => agentsApi.loginWithClaude(run.agentId, run.companyId),
+  const loginAdapter =
+    run.errorCode === "claude_auth_required" && adapterType === "claude_local"
+      ? { provider: "Claude Code", login: agentsApi.loginWithClaude }
+      : run.errorCode === "codex_auth_required" && adapterType === "codex_local"
+        ? { provider: "Codex", login: agentsApi.loginWithCodex }
+        : null;
+
+  const runAgentLogin = useMutation({
+    mutationFn: () => {
+      if (!loginAdapter) {
+        throw new Error("Interactive login is not available for this run.");
+      }
+      return loginAdapter.login(run.agentId, run.companyId);
+    },
     onSuccess: (data) => {
-      setClaudeLoginResult(data);
+      setAgentLoginResult(data);
     },
   });
 
@@ -3378,47 +3390,49 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                 {run.errorCode && <span className="text-muted-foreground ml-1">({run.errorCode})</span>}
               </div>
             )}
-            {run.errorCode === "claude_auth_required" && adapterType === "claude_local" && (
+            {loginAdapter && (
               <div className="space-y-2">
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 px-2 text-xs"
-                  onClick={() => runClaudeLogin.mutate()}
-                  disabled={runClaudeLogin.isPending}
+                  onClick={() => runAgentLogin.mutate()}
+                  disabled={runAgentLogin.isPending}
                 >
-                  {runClaudeLogin.isPending ? "Running claude login..." : "Login to Claude Code"}
+                  {runAgentLogin.isPending
+                    ? `Running ${loginAdapter.provider} login...`
+                    : `Login to ${loginAdapter.provider}`}
                 </Button>
-                {runClaudeLogin.isError && (
+                {runAgentLogin.isError && (
                   <p className="text-xs text-destructive">
-                    {runClaudeLogin.error instanceof Error
-                      ? runClaudeLogin.error.message
-                      : "Failed to run Claude login"}
+                    {runAgentLogin.error instanceof Error
+                      ? runAgentLogin.error.message
+                      : `Failed to run ${loginAdapter.provider} login`}
                   </p>
                 )}
-                {claudeLoginResult?.loginUrl && (
+                {agentLoginResult?.loginUrl && (
                   <p className="text-xs">
                     Login URL:
                     <a
-                      href={claudeLoginResult.loginUrl}
+                      href={agentLoginResult.loginUrl}
                       className="text-blue-600 underline underline-offset-2 ml-1 break-all dark:text-blue-400"
                       target="_blank"
                       rel="noreferrer"
                     >
-                      {claudeLoginResult.loginUrl}
+                      {agentLoginResult.loginUrl}
                     </a>
                   </p>
                 )}
-                {claudeLoginResult && (
+                {agentLoginResult && (
                   <>
-                    {!!claudeLoginResult.stdout && (
+                    {!!agentLoginResult.stdout && (
                       <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">
-                        {claudeLoginResult.stdout}
+                        {agentLoginResult.stdout}
                       </pre>
                     )}
-                    {!!claudeLoginResult.stderr && (
+                    {!!agentLoginResult.stderr && (
                       <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">
-                        {claudeLoginResult.stderr}
+                        {agentLoginResult.stderr}
                       </pre>
                     )}
                   </>
