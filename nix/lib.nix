@@ -9,6 +9,7 @@
 # so the pnpm-lock hash has exactly one source of truth — re-pin instructions
 # live in nix/README.md.
 let
+  bundledPlugins = import ./bundled-plugins.nix;
   version = "0-unstable-2026-05-21";
   pnpm = pnpm_9.override { nodejs = nodejs_22; };
 
@@ -54,6 +55,12 @@ let
   };
 in
 {
+  inherit
+    (bundledPlugins)
+    workspacePackages
+    packageRoots
+    defaultLocalPlugins
+    ;
   inherit
     src
     version

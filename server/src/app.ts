@@ -57,6 +57,7 @@ import { setPluginEventBus } from "./services/activity-log.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
+import { defaultLocalPluginPathsFromEnv, ensureDefaultLocalPluginsInstalled } from "./services/default-plugins.js";
 import { createHostClientHandlers } from "@paperclipai/plugin-sdk";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 import { createCachedViteHtmlRenderer } from "./vite-html-renderer.js";
@@ -463,14 +464,30 @@ export async function createApp(
     lifecycle,
     async (pluginId) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
   );
-  void loader.loadAll().then((result) => {
-    if (!result) return;
+  void (async () => {
+    const defaultPluginIds = await ensureDefaultLocalPluginsInstalled({
+      pluginPaths: defaultLocalPluginPathsFromEnv(),
+      loader,
+      registry: pluginRegistry,
+    });
+    const result = await loader.loadAll();
     for (const loaded of result.results) {
       if (devWatcher && loaded.success && loaded.plugin.packagePath) {
         devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
       }
     }
-  }).catch((err) => {
+    for (const pluginId of defaultPluginIds) {
+      try {
+        await lifecycle.load(pluginId);
+        const plugin = await pluginRegistry.getById(pluginId);
+        if (devWatcher && plugin?.packagePath) {
+          devWatcher.watch(plugin.id, plugin.packagePath);
+        }
+      } catch (err) {
+        logger.warn({ err, pluginId }, "Failed to activate default plugin on startup");
+      }
+    }
+  })().catch((err) => {
     logger.error({ err }, "Failed to load ready plugins on startup");
   });
   let appServicesShutdown = false;

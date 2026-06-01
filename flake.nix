@@ -8,6 +8,7 @@
   outputs =
     { self, nixpkgs }:
     let
+      bundledPlugins = import ./nix/bundled-plugins.nix;
       # The server + agent-CLI bundles are Linux-only (matches the production
       # deployment shape). The dev shell and the lighter outputs
       # (paperclip-mcp-server, paperclipai, paperclip-ui) additionally support
@@ -59,8 +60,19 @@
           }).pnpmDeps;
       });
 
-      linuxOnlyPackages = forSystems linuxSystems (pkgs: rec {
-        paperclip = pkgs.callPackage ./nix/package.nix { };
+      linuxOnlyPackages = forSystems linuxSystems (pkgs:
+        let
+          paperclip = pkgs.callPackage ./nix/package.nix { };
+          bundledPluginPackages = nixpkgs.lib.mapAttrs (
+            _: relPath:
+            pkgs.runCommand "paperclip-bundled-plugin" { } ''
+              ln -s ${paperclip}/lib/paperclip/${relPath} $out
+            ''
+          ) bundledPlugins.packageRoots;
+        in
+        bundledPluginPackages
+        // rec {
+        inherit paperclip;
         paperclip-agent-clis = pkgs.callPackage ./nix/agent-clis.nix {
           inherit (pkgs.stdenv.hostPlatform) system;
         };

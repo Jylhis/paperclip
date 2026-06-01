@@ -125,6 +125,10 @@ stdenv.mkDerivation (finalAttrs: {
     # `@paperclipai/db`, `@paperclipai/adapter-utils`, every adapter
     # package, etc. produce their own `dist/` before the server's `tsc`
     # tries to resolve them.
+    pnpm --filter @paperclipai/plugin-sdk build
+    for plugin_pkg in ${lib.concatStringsSep " " (map lib.escapeShellArg workspace.workspacePackages)}; do
+      pnpm --filter "$plugin_pkg" build
+    done
     pnpm --filter @paperclipai/ui build
     pnpm --filter "@paperclipai/server..." build
     pnpm --filter "paperclipai..." build
@@ -171,6 +175,7 @@ stdenv.mkDerivation (finalAttrs: {
     makeWrapper ${nodejs}/bin/node $out/bin/paperclip \
       --add-flags "$out/lib/paperclip/server/dist/index.js" \
       --prefix PATH : "$runtimePath" \
+      --set PAPERCLIP_DEFAULT_LOCAL_PLUGINS "$out/lib/paperclip/${builtins.elemAt workspace.defaultLocalPlugins 0}" \
       --set NODE_ENV production
 
     # paperclipai CLI — bundled by esbuild from the cli workspace.
