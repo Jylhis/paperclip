@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@import "./styles/jylhis-design-v0.4.0.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -89,6 +90,17 @@
   --chip-match-identifier-bg: var(--muted);
   --chip-match-identifier-fg: var(--muted-foreground);
   --chip-match-identifier-border: var(--border);
+  --command-item-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, var(--accent) 72%, var(--background) 28%));
+  --command-item-selected-border: var(--jylhis-color-accent, color-mix(in oklab, var(--border) 86%, var(--foreground) 14%));
+  --command-item-selected-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.97 0.02 245) 72%, var(--background) 28%));
+  --command-search-all-border: var(--jylhis-color-decorator, color-mix(in oklab, oklch(0.72 0.09 245) 24%, var(--border) 76%));
+  --command-search-all-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.94 0.03 245) 78%, var(--background) 22%));
+  --command-keycap-bg: var(--jylhis-color-bg-subtle, color-mix(in oklab, var(--muted) 88%, var(--background) 12%));
+  --command-keycap-border: var(--jylhis-color-border-strong, color-mix(in oklab, var(--border) 88%, var(--foreground) 12%));
+  --command-keycap-foreground: var(--jylhis-color-text-muted, color-mix(in oklab, var(--foreground) 92%, var(--muted-foreground) 8%));
+  --command-keycap-shadow: var(--jylhis-color-border, color-mix(in oklab, var(--border) 88%, transparent));
 }
 
 .dark {
@@ -136,6 +148,17 @@
   --chip-match-identifier-bg: var(--muted);
   --chip-match-identifier-fg: var(--muted-foreground);
   --chip-match-identifier-border: var(--border);
+  --command-item-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, var(--accent) 84%, var(--background) 16%));
+  --command-item-selected-border: var(--jylhis-color-accent, color-mix(in oklab, var(--border) 82%, var(--foreground) 18%));
+  --command-item-selected-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.31 0.05 245) 80%, var(--background) 20%));
+  --command-search-all-border: var(--jylhis-color-decorator, color-mix(in oklab, oklch(0.58 0.09 245) 34%, var(--border) 66%));
+  --command-search-all-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.36 0.06 245) 88%, var(--background) 12%));
+  --command-keycap-bg: var(--jylhis-color-bg-subtle, color-mix(in oklab, var(--muted) 76%, var(--background) 24%));
+  --command-keycap-border: var(--jylhis-color-border-strong, color-mix(in oklab, var(--border) 78%, var(--foreground) 22%));
+  --command-keycap-foreground: var(--jylhis-color-text-muted, color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground) 12%));
+  --command-keycap-shadow: var(--jylhis-color-border, color-mix(in oklab, var(--border) 70%, transparent));
 }
 
 @layer base {
@@ -170,6 +193,115 @@
   .paperclip-mdxeditor [class*="_placeholder_"],
   .paperclip-mdxeditor-content {
     font-family: inherit;
+  }
+}
+
+@layer components {
+  .jylhis-command-dialog {
+    border: 1px solid var(--jylhis-color-border, var(--border));
+    background: var(--jylhis-color-surface-raised, var(--popover));
+    color: var(--jylhis-color-text, var(--popover-foreground));
+    border-radius: var(--jylhis-radius-md, 0.5rem);
+    box-shadow: none;
+  }
+
+  .jylhis-command-surface {
+    background: var(--jylhis-color-surface-raised, var(--popover));
+    color: var(--jylhis-color-text, var(--popover-foreground));
+  }
+
+  .jylhis-command-input-wrap {
+    border-bottom-color: var(--jylhis-color-border, var(--border));
+    padding-inline: var(--jylhis-space-md, 0.75rem);
+  }
+
+  .jylhis-command-input-wrap svg {
+    color: var(--jylhis-color-text-muted, var(--muted-foreground));
+  }
+
+  .jylhis-command-group-heading {
+    color: var(--jylhis-color-text-faint, var(--muted-foreground));
+    letter-spacing: 0.12em;
+  }
+
+  .jylhis-command-separator {
+    background: var(--jylhis-color-border, var(--border));
+  }
+
+  .jylhis-command-item {
+    border-left: 3px solid transparent;
+    border-radius: var(--jylhis-radius-sm, 0.375rem);
+    color: var(--jylhis-color-text, var(--foreground));
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      border-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-command-item:hover {
+    background: var(--jylhis-color-bg-subtle, var(--accent));
+    color: var(--jylhis-color-text-heading, var(--foreground));
+  }
+
+  .jylhis-command-item[data-selected="true"] {
+    background: var(--jylhis-color-accent-subtle, var(--accent));
+    color: var(--jylhis-color-text-heading, var(--foreground));
+    border-left-color: var(--jylhis-color-accent, var(--ring));
+  }
+
+  .jylhis-command-item[data-selected="true"] svg,
+  .jylhis-command-item:hover svg {
+    color: var(--jylhis-color-accent, var(--foreground));
+  }
+
+  .jylhis-command-search-all {
+    border: 1px solid var(--jylhis-color-decorator, var(--border));
+    background: var(--jylhis-color-accent-subtle, var(--accent));
+  }
+
+  .jylhis-command-kbd {
+    border: 1px solid var(--jylhis-color-border-strong, var(--border));
+    background: var(--jylhis-color-bg-subtle, var(--muted));
+    color: var(--jylhis-color-text-muted, var(--muted-foreground));
+    border-radius: var(--jylhis-radius-sm, 3px);
+    padding: 0.15em 0.4em;
+  }
+
+  .jylhis-activity-row {
+    padding: var(--jylhis-space-md, 1rem);
+    color: var(--jylhis-color-text, var(--foreground));
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-activity-row:hover {
+    background: var(--jylhis-color-bg-subtle, var(--accent));
+  }
+
+  .jylhis-system-notice {
+    border-radius: var(--jylhis-radius-md, 0.5rem);
+    box-shadow: none;
+  }
+
+  .jylhis-system-notice-detail-button {
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      border-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-system-notice-detail-button:hover {
+    border-color: var(--jylhis-color-border, var(--border));
+    background: color-mix(in srgb, var(--jylhis-color-surface-raised, var(--background)) 80%, transparent);
+    color: var(--jylhis-color-text-heading, var(--foreground));
+  }
+
+  .jylhis-system-notice-code {
+    border: 1px solid var(--jylhis-color-code-border, var(--border));
+    background: var(--jylhis-color-code-bg, var(--muted));
+    color: var(--jylhis-color-code-text, var(--foreground));
+    border-radius: var(--jylhis-radius-sm, 3px);
   }
 }
 

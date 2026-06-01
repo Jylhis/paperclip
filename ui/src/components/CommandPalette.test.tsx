@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
-import type { KeyboardEventHandler, ReactNode } from "react";
+import { act, type KeyboardEventHandler, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -102,10 +101,11 @@ vi.mock("@/components/ui/command", () => ({
     onSelect?: () => void;
     "data-testid"?: string;
   }) => (
-    <button data-testid={testId} onClick={onSelect}>
-      {children}
-    </button>
+      <button data-testid={testId} onClick={onSelect}>
+        {children}
+      </button>
   ),
+  CommandKeycap: ({ children }: { children: ReactNode }) => <kbd>{children}</kbd>,
   CommandList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CommandSeparator: () => <hr />,
 }));

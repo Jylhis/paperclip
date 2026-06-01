@@ -5,6 +5,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { SearchIcon, XIcon } from "lucide-react"
 import { Dialog as DialogPrimitive } from "radix-ui"
 
+import { JYLHIS_DESIGN_CONTRACT_VERSION } from "@/lib/jylhis-design"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -14,6 +15,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+const commandKeycapClass = [
+  "inline-flex min-h-5 min-w-5 items-center justify-center rounded-sm border",
+  "border-[var(--command-keycap-border)] bg-[var(--command-keycap-bg)] px-1.5 py-0.5",
+  "font-mono text-xs font-medium leading-none text-[var(--command-keycap-foreground)]",
+  "shadow-[0_1px_0_0_var(--command-keycap-shadow)]",
+].join(" ")
+
 function Command({
   className,
   ...props
@@ -21,8 +29,9 @@ function Command({
   return (
     <CommandPrimitive
       data-slot="command"
+      data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}
       className={cn(
-        "bg-popover text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-md",
+        "jylhis-command-surface flex h-full w-full flex-col overflow-hidden rounded-md",
         className
       )}
       {...props}
@@ -50,10 +59,11 @@ function CommandDialog({
         <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       <DialogContent
-        className={cn("overflow-hidden p-0", className)}
+        data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}
+        className={cn("jylhis-command-dialog overflow-hidden p-0", className)}
         showCloseButton={false}
       >
-        <Command className="[&_[cmdk-group-heading]]:text-muted-foreground **:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
+        <Command className="**:data-[slot=command-input-wrapper]:h-12 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group]]:px-2 [&_[cmdk-group]:not([hidden])_~[cmdk-group]]:pt-0 [&_[cmdk-input-wrapper]_svg]:h-5 [&_[cmdk-input-wrapper]_svg]:w-5 [&_[cmdk-input]]:h-12 [&_[cmdk-item]]:px-2 [&_[cmdk-item]]:py-3 [&_[cmdk-item]_svg]:h-5 [&_[cmdk-item]_svg]:w-5">
           {children}
         </Command>
         {showCloseButton && (
@@ -77,7 +87,7 @@ function CommandInput({
   return (
     <div
       data-slot="command-input-wrapper"
-      className="flex h-9 items-center gap-2 border-b px-3"
+      className="jylhis-command-input-wrap flex h-9 items-center gap-2 border-b px-3"
     >
       <SearchIcon className="size-4 shrink-0 opacity-50" />
       <CommandPrimitive.Input
@@ -128,7 +138,7 @@ function CommandGroup({
     <CommandPrimitive.Group
       data-slot="command-group"
       className={cn(
-        "text-foreground [&_[cmdk-group-heading]]:text-muted-foreground overflow-hidden p-1 [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium",
+        "text-foreground overflow-hidden p-1 [&_[cmdk-group-heading]]:jylhis-command-group-heading [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:font-medium",
         className
       )}
       {...props}
@@ -143,7 +153,7 @@ function CommandSeparator({
   return (
     <CommandPrimitive.Separator
       data-slot="command-separator"
-      className={cn("bg-border -mx-1 h-px", className)}
+      className={cn("jylhis-command-separator -mx-1 h-px", className)}
       {...props}
     />
   )
@@ -156,8 +166,16 @@ function CommandItem({
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
+      data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}
       className={cn(
-        "data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "jylhis-command-item relative flex cursor-default items-center gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm select-none",
+        "outline-hidden transition-[background-color,border-color,color,box-shadow] motion-reduce:transition-none",
+        "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "data-[selected=true]:border-[var(--command-item-selected-border)]",
+        "data-[selected=true]:bg-[var(--command-item-selected-bg)]",
+        "data-[selected=true]:text-[var(--command-item-selected-foreground)]",
+        "data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50",
+        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
         className
       )}
       {...props}
@@ -181,6 +199,19 @@ function CommandShortcut({
   )
 }
 
+function CommandKeycap({
+  className,
+  ...props
+}: React.ComponentProps<"kbd">) {
+  return (
+    <kbd
+      data-slot="command-keycap"
+      className={cn(commandKeycapClass, className)}
+      {...props}
+    />
+  )
+}
+
 export {
   Command,
   CommandDialog,
@@ -189,6 +220,7 @@ export {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  CommandKeycap,
   CommandShortcut,
   CommandSeparator,
 }
