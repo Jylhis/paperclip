@@ -1,0 +1,1 @@
+export const JYLHIS_DESIGN_CONTRACT_VERSION = "v0.4.0";

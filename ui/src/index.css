@@ -284,6 +284,60 @@
     box-shadow: none;
   }
 
+  .status-info {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-info);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-info);
+  }
+
+  .status-ok {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-ok);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-ok);
+  }
+
+  .status-warn {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-warn);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-warn);
+  }
+
+  .status-err {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-err);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-err);
+  }
+
+  .ansi-info {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-info);
+  }
+
+  .ansi-ok {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-ok);
+  }
+
+  .ansi-warn {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-warn);
+  }
+
+  .ansi-err {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-err);
+  }
+
+  .jylhis-system-notice-status-surface {
+    border-color: var(--jylhis-system-notice-status-color);
+    background: color-mix(in srgb, var(--jylhis-system-notice-status-color) 12%, transparent);
+  }
+
+  .jylhis-system-notice-status-icon {
+    background: color-mix(in srgb, var(--jylhis-system-notice-ansi-color) 18%, transparent);
+    color: var(--jylhis-system-notice-ansi-color);
+  }
+
+  .jylhis-system-notice-status-ink {
+    color: var(--jylhis-system-notice-ansi-color);
+  }
+
+  .jylhis-system-notice-status-divider {
+    border-color: color-mix(in srgb, var(--jylhis-system-notice-status-color) 50%, transparent);
+  }
+
   .jylhis-system-notice-detail-button {
     transition:
       background-color var(--jylhis-transition-fast, 150ms ease),

@@ -1,0 +1,68 @@
+/*
+ * Vendored from https://github.com/Jylhis/design tag v0.4.0 on 2026-06-01.
+ * Source contract: tokens.css at commit dfced9b80cc78480174f3806c880f8143c768cf0.
+ *
+ * Variables are namespaced for Paperclip to avoid collisions with Tailwind's
+ * theme variables while preserving a direct mapping to the upstream contract.
+ */
+
+:root {
+  --jylhis-color-bg: #faf7f2;
+  --jylhis-color-bg-subtle: #f0ebe3;
+  --jylhis-color-surface: #e8e1d6;
+  --jylhis-color-surface-raised: #fefdfb;
+  --jylhis-color-text: #2c2825;
+  --jylhis-color-text-muted: #6b5f54;
+  --jylhis-color-text-heading: #1e1b18;
+  --jylhis-color-text-faint: #8a7f72;
+  --jylhis-color-accent: #9a5a2a;
+  --jylhis-color-accent-hover: #7a4622;
+  --jylhis-color-brand: #b5703c;
+  --jylhis-color-border: #d5cec4;
+  --jylhis-color-border-strong: #b0a898;
+  --jylhis-color-decorator: #c4baa8;
+  --jylhis-color-code-bg: #f0ebe3;
+  --jylhis-color-code-text: #2c2825;
+  --jylhis-color-code-border: #d5cec4;
+  --jylhis-color-status-err: #a60000;
+  --jylhis-color-status-warn: #6f5500;
+  --jylhis-color-status-ok: #006800;
+  --jylhis-color-status-info: #0031a9;
+  --jylhis-color-accent-subtle: rgba(154, 90, 42, 0.12);
+  --jylhis-space-xs: 0.25rem;
+  --jylhis-space-sm: 0.5rem;
+  --jylhis-space-md: 1rem;
+  --jylhis-space-lg: 1.5rem;
+  --jylhis-space-xl: 2rem;
+  --jylhis-radius-xs: 2px;
+  --jylhis-radius-sm: 3px;
+  --jylhis-radius-md: 4px;
+  --jylhis-radius-pill: 999px;
+  --jylhis-transition-fast: 150ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  --jylhis-transition-base: 250ms cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+.dark {
+  --jylhis-color-bg: #1a1714;
+  --jylhis-color-bg-subtle: #242019;
+  --jylhis-color-surface: #2a2520;
+  --jylhis-color-surface-raised: #363230;
+  --jylhis-color-text: #e8e0d4;
+  --jylhis-color-text-muted: #b0a496;
+  --jylhis-color-text-heading: #f0eae0;
+  --jylhis-color-text-faint: #8a7f72;
+  --jylhis-color-accent: #e89b5e;
+  --jylhis-color-accent-hover: #f5b07a;
+  --jylhis-color-brand: #d4884a;
+  --jylhis-color-border: #3d3830;
+  --jylhis-color-border-strong: #5a5248;
+  --jylhis-color-decorator: #4a4338;
+  --jylhis-color-code-bg: #242019;
+  --jylhis-color-code-text: #c8bca8;
+  --jylhis-color-code-border: #3d3830;
+  --jylhis-color-status-err: #ff5f59;
+  --jylhis-color-status-warn: #d0bc00;
+  --jylhis-color-status-ok: #44bc44;
+  --jylhis-color-status-info: #2fafff;
+  --jylhis-color-accent-subtle: rgba(232, 155, 94, 0.15);
+}
