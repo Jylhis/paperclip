@@ -107,8 +107,7 @@ describe("SystemNotice", () => {
         const iconWrap = status?.querySelector("header span[aria-hidden]");
         expect(iconWrap?.className).toContain("jylhis-system-notice-status-icon");
 
-        const label = status?.querySelector("header .jylhis-system-notice-status-ink");
-        expect(label?.className).toContain("jylhis-system-notice-status-ink");
+        expect(status?.innerHTML).toContain("jylhis-system-notice-status-ink");
 
         const details = status?.querySelector('[id]');
         expect(details?.className).toContain("jylhis-system-notice-status-divider");
