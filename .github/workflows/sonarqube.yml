@@ -7,11 +7,12 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  # Test coverage is expensive, so it only runs on push to master. Pull requests
-  # are still analyzed (issues, hadolint, actionlint) but without fresh coverage.
+  # Fast unit-test coverage (the "general" suites, mirroring pr.yml's general_tests
+  # lane). These run on every push AND every pull request so SonarCloud always has
+  # fresh coverage to decorate new code on. The slow serialized server route suites
+  # are split into the coverage_serialized job below, which stays push-only.
   coverage:
     name: Coverage (${{ matrix.name }})
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -26,6 +27,57 @@ jobs:
             command: pnpm test:run:general -- --group general-workspaces-a
           - name: general-workspaces-b
             command: pnpm test:run:general -- --group general-workspaces-b
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install coverage provider
+        # @vitest/coverage-v8 must match the installed Vitest version exactly. It
+        # is added at runtime (and intentionally not committed) because PR CI runs
+        # `pnpm install --frozen-lockfile` and forbids lockfile changes in PRs.
+        run: |
+          VITEST_VERSION="$(node -p "require('vitest/package.json').version")"
+          pnpm add -Dw "@vitest/coverage-v8@${VITEST_VERSION}" --no-frozen-lockfile
+
+      - name: Run tests with coverage
+        run: ${{ matrix.command }}
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ matrix.name }}
+          path: coverage/
+          retention-days: 1
+          if-no-files-found: warn
+
+  # Slow serialized server route/authz suites. These are expensive (single worker,
+  # isolated forks) so they only run on push to master, not on every pull request.
+  coverage_serialized:
+    name: Coverage (${{ matrix.name }})
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PAPERCLIP_COVERAGE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
           - name: serialized-0
             command: pnpm test:run:serialized -- --shard-index 0 --shard-count 4
           - name: serialized-1
@@ -74,9 +126,9 @@ jobs:
 
   sonarqube:
     name: SonarQube Scan
-    needs: [coverage]
-    # Run even when the coverage matrix is skipped (pull requests) or partially
-    # fails, so analysis and lint imports are never blocked.
+    needs: [coverage, coverage_serialized]
+    # Run even when a coverage job is skipped (coverage_serialized on pull requests)
+    # or partially fails, so analysis and lint imports are never blocked.
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -93,7 +145,8 @@ jobs:
           node-version: 24
 
       - name: Download coverage reports
-        if: github.event_name == 'push'
+        # Present on both pushes and pull requests now that the fast (general)
+        # coverage job runs for PRs; push additionally adds the serialized shards.
         uses: actions/download-artifact@v4
         with:
           pattern: coverage-*
