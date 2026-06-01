@@ -1,3 +1,16 @@
+<!--
+  Jylhis fork notice — keep at the top of README.md.
+  Enforced by .github/workflows/canon.yml.
+-->
+
+> **Jylhis fork.** This repo is a Jylhis-maintained fork of
+> [paperclipai/paperclip](https://github.com/paperclipai/paperclip) backing the
+> Jylhis **Internal Developer Platform** goal. See
+> [Fork status](#jylhis-fork-status) for what differs from upstream, the
+> dogfood plan, and the upstream-sync cadence. Canon docs:
+> [`ENGINEERING_PRINCIPLES.md`](./ENGINEERING_PRINCIPLES.md) ·
+> [`WAY_OF_WORKING.md`](./WAY_OF_WORKING.md) · [`AGENTS.md`](./AGENTS.md).
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>
@@ -404,9 +417,48 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 <br/>
 
+## Jylhis fork status
+
+This repo is a Jylhis-maintained downstream of
+[paperclipai/paperclip](https://github.com/paperclipai/paperclip).
+
+**Why we fork.** Paperclip is the control plane for the Jylhis **Internal
+Developer Platform** goal — orchestration for the agents, tasks, and governance
+that run Jylhis as an agent company. We dogfood it: the same instance running
+on the Jylhis box is what manages our internal projects. Forking lets us ship
+operational fixes ahead of upstream cadence while keeping the product surface
+identical.
+
+**What differs from upstream (delta-only).**
+
+- `codex-local`: hello-probe cleanup tolerates read-only plugin trees.
+- Bundled agent CLI probe fixes.
+- `build`: justfile filled out; `devenv.nix` nixpkgs pinned to `flake.lock`.
+- `ci`: SonarCloud analysis exposes coverage and external analyzers.
+- `nixos`: AF_NETLINK allowed for interface enumeration under hardening.
+- `test`: fork fixture compatibility (schema alignment).
+- Prompt-caching telemetry: `cache_creation_input_tokens` tracked end-to-end.
+
+These are operational/build hygiene. **No product-level divergence yet.** When
+that changes we file an ADR under [`doc/adrs/`](./doc/) before merging.
+
+**Dogfood plan.**
+
+1. Run an instance against this repo as the canonical Jylhis control plane.
+2. Land Jylhis-specific patches here first; upstream them when generally
+   useful.
+3. Track upstream `paperclipai/paperclip` releases on a cadence and merge —
+   see [`AGENTS.md` §11](./AGENTS.md) for the fork-sync procedure.
+4. Any product divergence requires an ADR before merge.
+
+**Canon docs.** [`ENGINEERING_PRINCIPLES.md`](./ENGINEERING_PRINCIPLES.md),
+[`WAY_OF_WORKING.md`](./WAY_OF_WORKING.md), and [`AGENTS.md`](./AGENTS.md)
+are the contributor contract. The `canon` CI lane enforces their presence and
+the fork banner above.
+
 ## License
 
-MIT &copy; 2026 Paperclip
+MIT &copy; 2026 Paperclip (upstream) · Jylhis fork retains upstream MIT
 
 ## Star History
 

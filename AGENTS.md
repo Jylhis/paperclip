@@ -177,43 +177,47 @@ A change is done when all are true:
 4. Docs updated when behavior or commands change
 5. PR description follows the [PR template](.github/PULL_REQUEST_TEMPLATE.md) with all sections filled in (including Model Used)
 
-## 11. Fork-Specific: HenkDz/paperclip
+## 12. Fork-Specific: Jylhis/paperclip
 
-This is a fork of `paperclipai/paperclip` with QoL patches and an **external-only** Hermes adapter story on branch `feat/externalize-hermes-adapter` ([tree](https://github.com/HenkDz/paperclip/tree/feat/externalize-hermes-adapter)).
+This is the Jylhis-maintained fork of `paperclipai/paperclip`, backing the
+Jylhis **Internal Developer Platform** goal. The fork is dogfooded: the
+instance running on the Jylhis box manages our internal projects. See
+[`README.md` — Jylhis fork status](./README.md#jylhis-fork-status) and the
+canon docs ([`ENGINEERING_PRINCIPLES.md`](./ENGINEERING_PRINCIPLES.md),
+[`WAY_OF_WORKING.md`](./WAY_OF_WORKING.md)) for the contributor contract.
 
-### Branch Strategy
+### Scope of divergence
 
-- `feat/externalize-hermes-adapter` → core has **no** `hermes-paperclip-adapter` dependency and **no** built-in `hermes_local` registration. Install Hermes via the Adapter Plugin manager (`@henkey/hermes-paperclip-adapter` or a `file:` path).
-- Older fork branches may still document built-in Hermes; treat this file as authoritative for the externalize branch.
+Jylhis-owned changes are operational/build hygiene by default:
 
-### Hermes (plugin only)
+- `codex-local` and bundled agent CLI probe fixes
+- `build`: justfile / devenv nixpkgs pinned to flake.lock
+- `ci`: SonarCloud coverage + external analyzer exposure
+- `nixos`: AF_NETLINK allowance for interface enumeration under hardening
+- `test`: fork-fixture compatibility (schema alignment)
+- Prompt-caching telemetry (`cache_creation_input_tokens`)
 
-- Register through **Board → Adapter manager** (same as Droid). Type remains `hermes_local` once the package is loaded.
-- UI uses generic **config-schema** + **ui-parser.js** from the package — no Hermes imports in `server/` or `ui/` source.
-- Optional: `file:` entry in `~/.paperclip/adapter-plugins.json` for local dev of the adapter repo.
+**No product-level divergence yet.** Any product-shape change requires an
+ADR under `doc/adrs/` before merge.
 
-### Local Dev
+### Upstream sync (FoundingEngineer owns)
 
-- Fork runs on port 3101+ (auto-detects if 3100 is taken by upstream instance)
-- `npx vite build` hangs on NTFS — use `node node_modules/vite/bin/vite.js build` instead
-- Server startup from NTFS takes 30-60s — don't assume failure immediately
-- Kill ALL paperclip processes before starting: `pkill -f "paperclip"; pkill -f "tsx.*index.ts"`
-- Vite cache survives `rm -rf dist` — delete both: `rm -rf ui/dist ui/node_modules/.vite`
+- **Trigger:** upstream tagged release, plus a monthly master check.
+- **Procedure:** fetch upstream, merge into `master` (no rebase), re-run
+  `pnpm -r typecheck && pnpm test:run && pnpm build`, fix breakage on the
+  merge branch, open PR using the standard template.
+- **Patch inventory:** the diff above `upstream/master` is the live patch
+  inventory. If upstream lands one of our patches, drop it during the merge.
 
-### Fork QoL Patches (not in upstream)
+### Local dev (Jylhis)
 
-These are local modifications in the fork's UI. If re-copying source, these must be re-applied:
+- Default port: 3100. Use `PORT` env override only when running multiple
+  instances on the same host.
+- Embedded postgres is the default. Leave `DATABASE_URL` unset.
+- Reset local dev DB: `rm -rf ~/.paperclip/instances/default/db && pnpm dev`.
 
-1. **stderr_group** — amber accordion for MCP init noise in `RunTranscriptView.tsx`
-2. **tool_group** — accordion for consecutive non-terminal tools (write, read, search, browser)
-3. **Dashboard excerpt** — `LatestRunCard` strips markdown, shows first 3 lines/280 chars
+### Canon CI lane
 
-### Plugin System
-
-PR #2218 (`feat/external-adapter-phase1`) adds external adapter support. See root `AGENTS.md` for full details.
-
-- Adapters can be loaded as external plugins via `~/.paperclip/adapter-plugins.json`
-- The plugin-loader should have ZERO hardcoded adapter imports — pure dynamic loading
-- `createServerAdapter()` must include ALL optional fields (especially `detectModel`)
-- Built-in UI adapters can shadow external plugin parsers — remove built-in when fully externalizing
-- Reference external adapters: Hermes (`@henkey/hermes-paperclip-adapter` or `file:`) and Droid (npm)
+CI workflow `.github/workflows/canon.yml` enforces presence of `AGENTS.md`,
+`ENGINEERING_PRINCIPLES.md`, `WAY_OF_WORKING.md`, and the Jylhis fork banner
+at the top of `README.md`. Failures here block PR merge.

@@ -1,0 +1,65 @@
+name: Canon
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: canon-${{ github.ref }}
+  cancel-in-progress: true
+
+# Jylhis-fork canon lint. Enforces presence of fork-identity docs and the
+# Jylhis fork banner at the top of README.md. Scoped to Jylhis-owned files
+# so upstream-sync merges that drop a banner fail visibly on PR rather than
+# silently after merge.
+
+jobs:
+  canon:
+    name: Canon docs present
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Canon files present
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in AGENTS.md ENGINEERING_PRINCIPLES.md WAY_OF_WORKING.md LICENSE README.md; do
+            if [ ! -f "$f" ]; then
+              echo "::error file=$f::Canon file missing: $f"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
+      - name: Jylhis fork banner present in README
+        run: |
+          set -euo pipefail
+          # The banner is enforced in the first 40 lines so accidental
+          # demotion below the fold also fails this check.
+          if ! head -n 40 README.md | grep -qiE '\bJylhis fork\b'; then
+            echo "::error file=README.md::README.md must declare 'Jylhis fork' in the first 40 lines."
+            echo "See AGENTS.md §12 and ENGINEERING_PRINCIPLES.md."
+            exit 1
+          fi
+
+      - name: LICENSE unchanged from upstream MIT
+        run: |
+          set -euo pipefail
+          # Guard against accidental relicense. ENGINEERING_PRINCIPLES.md §5
+          # requires an ADR for any LICENSE change.
+          if ! grep -q 'MIT License' LICENSE; then
+            echo "::error file=LICENSE::LICENSE no longer declares MIT. Relicense requires an ADR under doc/adrs/."
+            exit 1
+          fi
+          if ! grep -qi 'Paperclip' LICENSE; then
+            echo "::error file=LICENSE::LICENSE no longer credits upstream Paperclip. Relicense requires an ADR."
+            exit 1
+          fi
