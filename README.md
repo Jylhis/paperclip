@@ -456,6 +456,16 @@ that changes we file an ADR under [`doc/adrs/`](./doc/) before merging.
 are the contributor contract. The `canon` CI lane enforces their presence and
 the fork banner above.
 
+**Design-token compatibility.** The fork UI vendors the Jylhis design contract
+from [`Jylhis/design` `v0.4.0`](https://github.com/Jylhis/design/releases/tag/v0.4.0)
+into [`ui/src/styles/jylhis-design-v0.4.0.css`](./ui/src/styles/jylhis-design-v0.4.0.css)
+for command palette, system notice, and activity surfaces. Those surfaces read
+namespaced `--jylhis-*` variables and keep Paperclip fallbacks
+(`var(--jylhis-…, var(--existing-paperclip-token))`), so a contract mismatch
+falls back to the previous fork styling instead of breaking rendering.
+Reverting the integration is a single patch: remove the vendored import and the
+scoped `jylhis-*` surface classes.
+
 ## License
 
 MIT &copy; 2026 Paperclip (upstream) · Jylhis fork retains upstream MIT

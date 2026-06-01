@@ -7,6 +7,7 @@ import { cn } from "../lib/utils";
 import { formatActivityVerb } from "../lib/activity-format";
 import { deriveProjectUrlKey, type ActivityEvent, type Agent } from "@paperclipai/shared";
 import type { CompanyUserProfile } from "../lib/company-members";
+import { JYLHIS_DESIGN_CONTRACT_VERSION } from "../lib/jylhis-design";
 
 function entityLink(entityType: string, entityId: string, name?: string | null): string | null {
   switch (entityType) {
@@ -73,21 +74,25 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
   );
 
   const classes = cn(
-    "px-4 py-2 text-sm",
+    "jylhis-activity-row text-sm",
     link && "cursor-pointer hover:bg-accent/50 transition-colors",
     className,
   );
 
   if (link) {
     return (
-      <Link to={link} className={cn(classes, "no-underline text-inherit block")}>
+      <Link
+        to={link}
+        data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}
+        className={cn(classes, "no-underline text-inherit block")}
+      >
         {inner}
       </Link>
     );
   }
 
   return (
-    <div className={classes}>
+    <div className={classes} data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}>
       {inner}
     </div>
   );

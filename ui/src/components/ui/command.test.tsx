@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
-import { act, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandKeycap, CommandList } from "./command";
+import { JYLHIS_DESIGN_CONTRACT_VERSION } from "@/lib/jylhis-design";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -17,11 +19,9 @@ HTMLElement.prototype.scrollIntoView ??= () => {};
 
 function render(node: ReactNode, container: HTMLDivElement) {
   const root = createRoot(container);
-
-  act(() => {
+  flushSync(() => {
     root.render(node);
   });
-
   return root;
 }
 
@@ -45,7 +45,7 @@ describe("command primitives", () => {
     expect(keycap?.className).toContain("bg-[var(--command-keycap-bg)]");
     expect(keycap?.className).toContain("font-mono");
 
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
   });
@@ -64,13 +64,17 @@ describe("command primitives", () => {
       container,
     );
 
+    const command = container.querySelector('[data-slot="command"]');
     const item = container.querySelector('[data-slot="command-item"]');
+    expect(command?.getAttribute("data-jylhis-design-contract")).toBe(JYLHIS_DESIGN_CONTRACT_VERSION);
+    expect(item?.getAttribute("data-jylhis-design-contract")).toBe(JYLHIS_DESIGN_CONTRACT_VERSION);
+    expect(item?.className).toContain("jylhis-command-item");
     expect(item?.className).toContain("focus-visible:ring-[3px]");
     expect(item?.className).toContain("data-[selected=true]:bg-[var(--command-item-selected-bg)]");
     expect(item?.className).toContain("data-[selected=true]:border-[var(--command-item-selected-border)]");
     expect(item?.className).toContain("motion-reduce:transition-none");
 
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
   });
