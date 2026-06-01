@@ -27,6 +27,7 @@ export function parseOpenCodeJsonl(stdout: string) {
   const usage = {
     inputTokens: 0,
     cachedInputTokens: 0,
+    cacheCreationInputTokens: 0,
     outputTokens: 0,
   };
   let costUsd = 0;
@@ -56,6 +57,7 @@ export function parseOpenCodeJsonl(stdout: string) {
       const cache = parseObject(tokens.cache);
       usage.inputTokens += asNumber(tokens.input, 0);
       usage.cachedInputTokens += asNumber(cache.read, 0);
+      usage.cacheCreationInputTokens += asNumber(cache.write, 0);
       usage.outputTokens += asNumber(tokens.output, 0) + asNumber(tokens.reasoning, 0);
       costUsd += asNumber(part.cost, 0);
       continue;

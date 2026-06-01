@@ -644,6 +644,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
           inputTokens: attempt.parsed.usage.inputTokens,
           outputTokens: attempt.parsed.usage.outputTokens,
           cachedInputTokens: attempt.parsed.usage.cachedInputTokens,
+          ...(attempt.parsed.usage.cacheCreationInputTokens > 0
+            ? { cacheCreationInputTokens: attempt.parsed.usage.cacheCreationInputTokens }
+            : {}),
         },
         sessionId: resolvedSessionId,
         sessionParams: resolvedSessionParams,
