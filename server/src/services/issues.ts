@@ -363,6 +363,7 @@ export type ChildIssueCompletionSummary = {
   title: string;
   status: string;
   priority: string;
+  projectId: string | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
   updatedAt: Date;
@@ -377,6 +378,22 @@ function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
 const TERMINAL_HEARTBEAT_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled", "timed_out"]);
 const ISSUE_LIST_DESCRIPTION_MAX_CHARS = 1200;
 const ISSUE_LIST_DESCRIPTION_MAX_BYTES = ISSUE_LIST_DESCRIPTION_MAX_CHARS * 4;
+const CROSS_PROJECT_CONTEXT_LABEL = "cross-project";
+
+function normalizeIssueLabelName(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase().replaceAll(/[\s_]+/g, "-");
+}
+
+function allowsCrossProjectChildContext(input: {
+  labelNames: string[];
+  assigneeAdapterOverrides: Record<string, unknown> | null;
+}) {
+  const hasCrossProjectLabel = input.labelNames.some(
+    (name) => normalizeIssueLabelName(name) === CROSS_PROJECT_CONTEXT_LABEL,
+  );
+  if (!hasCrossProjectLabel) return false;
+  return input.assigneeAdapterOverrides?.includeCrossProjectContext === true;
+}
 
 function escapeLikePattern(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -1919,6 +1936,7 @@ const issueListSelect = {
   originFingerprint: issues.originFingerprint,
   requestDepth: issues.requestDepth,
   billingCode: issues.billingCode,
+  crossProduct: issues.crossProduct,
   assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
   executionPolicy: sql<null>`null`,
   executionState: sql<null>`null`,
@@ -4221,6 +4239,8 @@ export function issueService(db: Db) {
           assigneeAgentId: issues.assigneeAgentId,
           status: issues.status,
           companyId: issues.companyId,
+          projectId: issues.projectId,
+          assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
         })
         .from(issues)
         .where(eq(issues.id, parentIssueId))
@@ -4236,6 +4256,7 @@ export function issueService(db: Db) {
           title: issues.title,
           status: issues.status,
           priority: issues.priority,
+          projectId: issues.projectId,
           assigneeAgentId: issues.assigneeAgentId,
           assigneeUserId: issues.assigneeUserId,
           updatedAt: issues.updatedAt,
@@ -4248,7 +4269,23 @@ export function issueService(db: Db) {
         return null;
       }
 
-      const childIdsForSummaries = children.slice(0, MAX_CHILD_COMPLETION_SUMMARIES).map((child) => child.id);
+      const parentLabelNames = await db
+        .select({ name: labels.name })
+        .from(issueLabels)
+        .innerJoin(labels, eq(issueLabels.labelId, labels.id))
+        .where(and(eq(issueLabels.companyId, parent.companyId), eq(issueLabels.issueId, parentIssueId)))
+        .orderBy(asc(labels.name), asc(labels.id))
+        .then((rows) => rows.map((row) => row.name));
+      const visibleChildren = allowsCrossProjectChildContext({
+        labelNames: parentLabelNames,
+        assigneeAdapterOverrides: parent.assigneeAdapterOverrides ?? null,
+      })
+        ? children
+        : children.filter((child) => child.projectId === parent.projectId);
+
+      const childIdsForSummaries = visibleChildren
+        .slice(0, MAX_CHILD_COMPLETION_SUMMARIES)
+        .map((child) => child.id);
       const commentRows = childIdsForSummaries.length > 0
         ? await db
             .select({
@@ -4266,7 +4303,7 @@ export function issueService(db: Db) {
           latestCommentByIssueId.set(comment.issueId, comment.body);
         }
       }
-      const childIssueSummaries: ChildIssueCompletionSummary[] = children
+      const childIssueSummaries: ChildIssueCompletionSummary[] = visibleChildren
         .slice(0, MAX_CHILD_COMPLETION_SUMMARIES)
         .map((child) => ({
           ...child,
@@ -4276,9 +4313,9 @@ export function issueService(db: Db) {
       return {
         id: parent.id,
         assigneeAgentId: parent.assigneeAgentId,
-        childIssueIds: children.map((child) => child.id),
+        childIssueIds: visibleChildren.map((child) => child.id),
         childIssueSummaries,
-        childIssueSummaryTruncated: children.length > childIssueSummaries.length,
+        childIssueSummaryTruncated: visibleChildren.length > childIssueSummaries.length,
       };
     },
 

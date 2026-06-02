@@ -79,6 +79,7 @@ export interface IssueAssigneeAdapterOverrides {
   modelProfile?: ModelProfileKey;
   adapterConfig?: Record<string, unknown>;
   useProjectWorkspace?: boolean;
+  includeCrossProjectContext?: boolean;
 }
 
 export type DocumentFormat = "markdown";
@@ -533,6 +534,7 @@ export interface Issue {
   executionWorkspaceId: string | null;
   executionWorkspacePreference: string | null;
   executionWorkspaceSettings: IssueExecutionWorkspaceSettings | null;
+  crossProduct: boolean;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
