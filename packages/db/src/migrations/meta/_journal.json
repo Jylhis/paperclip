@@ -652,6 +652,27 @@
       "when": 1748736000000,
       "tag": "0092_prompt_caching",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1748822400000,
+      "tag": "0093_cross_product",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1748826000000,
+      "tag": "0094_remove_feedback_exports",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1748909400000,
+      "tag": "0095_agent_plugin_configs",
+      "breakpoints": true
     }
   ]
 }

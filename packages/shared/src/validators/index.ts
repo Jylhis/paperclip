@@ -1,4 +1,16 @@
 export {
+  agentPluginConfigKindSchema,
+  agentPluginRestartPolicySchema,
+  agentPluginWorkspaceScopeSchema,
+  serverBinarySchema,
+  pluginEnvSchema,
+  createAgentPluginConfigSchema,
+  updateAgentPluginConfigSchema,
+  type CreateAgentPluginConfig,
+  type UpdateAgentPluginConfig,
+} from "./agent-plugin-config.js";
+
+export {
   instanceGeneralSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
@@ -39,9 +51,7 @@ export {
   type ProbeEnvironmentConfig,
 } from "./environment.js";
 export {
-  feedbackDataSharingPreferenceSchema,
   feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   type UpsertIssueFeedbackVote,

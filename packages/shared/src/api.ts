@@ -22,4 +22,5 @@ export const API = {
   joinRequests: `${API_PREFIX}/join-requests`,
   members: `${API_PREFIX}/members`,
   admin: `${API_PREFIX}/admin`,
+  agentPluginConfigs: `${API_PREFIX}/agents/:agentId/plugin-configs`,
 } as const;

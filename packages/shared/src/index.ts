@@ -112,6 +112,8 @@ export {
   PLUGIN_UI_SLOT_TYPES,
   PLUGIN_UI_SLOT_ENTITY_TYPES,
   PLUGIN_RESERVED_COMPANY_SETTINGS_ROUTE_SEGMENTS,
+  PAPERCLIP_FORK_TELEMETRY_NAMESPACE,
+  PAPERCLIP_FORK_TELEMETRY_EVENT_VERSION,
   PLUGIN_LAUNCHER_PLACEMENT_ZONES,
   PLUGIN_LAUNCHER_ACTIONS,
   PLUGIN_LAUNCHER_BOUNDS,
@@ -228,6 +230,7 @@ export {
   type PluginUiSlotType,
   type PluginUiSlotEntityType,
   type PluginReservedCompanySettingsRouteSegment,
+  type PaperclipForkTelemetryEventType,
   type PluginLauncherPlacementZone,
   type PluginLauncherAction,
   type PluginLauncherBounds,
@@ -271,15 +274,8 @@ export type {
   SandboxEnvironmentProvider,
   SshEnvironmentConfig,
   FeedbackVote,
-  FeedbackDataSharingPreference,
   FeedbackTargetType,
   FeedbackVoteValue,
-  FeedbackTrace,
-  FeedbackTraceStatus,
-  FeedbackTraceTargetSummary,
-  FeedbackTraceBundleCaptureStatus,
-  FeedbackTraceBundleFile,
-  FeedbackTraceBundle,
   CompanySkillSourceType,
   CompanySkillTrustLevel,
   CompanySkillCompatibility,
@@ -676,13 +672,34 @@ export {
 } from "./workspace-commands.js";
 
 export {
-  DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   FEEDBACK_TARGET_TYPES,
-  FEEDBACK_DATA_SHARING_PREFERENCES,
-  FEEDBACK_TRACE_STATUSES,
   FEEDBACK_VOTE_VALUES,
-  DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
 } from "./types/feedback.js";
+
+export {
+  AGENT_PLUGIN_CONFIG_KINDS,
+  AGENT_PLUGIN_RESTART_POLICIES,
+  AGENT_PLUGIN_WORKSPACE_SCOPES,
+  isSecretEnvKey,
+  redactPluginEnv,
+} from "./types/agent-plugin-config.js";
+export type {
+  AgentPluginConfigKind,
+  AgentPluginRestartPolicy,
+  AgentPluginWorkspaceScope,
+  AgentPluginConfig,
+} from "./types/agent-plugin-config.js";
+export {
+  agentPluginConfigKindSchema,
+  agentPluginRestartPolicySchema,
+  agentPluginWorkspaceScopeSchema,
+  serverBinarySchema,
+  pluginEnvSchema,
+  createAgentPluginConfigSchema,
+  updateAgentPluginConfigSchema,
+  type CreateAgentPluginConfig,
+  type UpdateAgentPluginConfig,
+} from "./validators/agent-plugin-config.js";
 
 export {
   DAILY_RETENTION_PRESETS,
@@ -731,7 +748,6 @@ export {
   updateCompanySchema,
   updateCompanyBrandingSchema,
   feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   type CreateCompany,

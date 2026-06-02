@@ -39,6 +39,7 @@ import { authRoutes } from "./routes/auth.js";
 import { assetRoutes } from "./routes/assets.js";
 import { accessRoutes } from "./routes/access.js";
 import { pluginRoutes } from "./routes/plugins.js";
+import { agentPluginConfigRoutes } from "./routes/agent-plugin-configs.js";
 import { adapterRoutes } from "./routes/adapters.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
@@ -127,14 +128,6 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
-    feedbackExportService?: {
-      flushPendingFeedbackTraces(input?: {
-        companyId?: string;
-        traceId?: string;
-        limit?: number;
-        now?: Date;
-      }): Promise<unknown>;
-    };
     databaseBackupService?: InstanceDatabaseBackupService;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
@@ -211,10 +204,10 @@ export async function createApp(
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(companySkillRoutes(db));
   api.use(agentRoutes(db, { pluginWorkerManager: workerManager }));
+  api.use("/agents", agentPluginConfigRoutes(db));
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(issueRoutes(db, opts.storageService, {
-    feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
   }));
   api.use(issueTreeControlRoutes(db));
@@ -425,38 +418,6 @@ export async function createApp(
 
   jobCoordinator.start();
   scheduler.start();
-  let feedbackExportShuttingDown = false;
-  let feedbackExportTimer: ReturnType<typeof setInterval> | null = null;
-  const disableFeedbackExportFlushes = () => {
-    feedbackExportShuttingDown = true;
-    if (feedbackExportTimer) {
-      clearInterval(feedbackExportTimer);
-      feedbackExportTimer = null;
-    }
-  };
-  const flushPendingFeedbackExports = async () => {
-    if (feedbackExportShuttingDown) return;
-    try {
-      await opts.feedbackExportService?.flushPendingFeedbackTraces();
-    } catch (err) {
-      if (isDatabaseConnectionUnavailableError(err)) {
-        disableFeedbackExportFlushes();
-        logger.warn({ err }, "Disabling pending feedback export flushes because the database is unavailable");
-        return;
-      }
-      logger.error({ err }, "Failed to flush pending feedback exports");
-    }
-  };
-
-  feedbackExportTimer = opts.feedbackExportService
-    ? setInterval(() => {
-      void flushPendingFeedbackExports();
-    }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
-    : null;
-  feedbackExportTimer?.unref?.();
-  if (opts.feedbackExportService) {
-    void flushPendingFeedbackExports();
-  }
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -494,7 +455,6 @@ export async function createApp(
   const shutdownAppServices = () => {
     if (appServicesShutdown) return;
     appServicesShutdown = true;
-    disableFeedbackExportFlushes();
     devWatcher?.close();
     viteHtmlRenderer?.dispose();
     hostServiceCleanup.disposeAll();
