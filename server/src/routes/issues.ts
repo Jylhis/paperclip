@@ -1720,6 +1720,98 @@ export function issueRoutes(
     return { project, goal: null };
   }
 
+  function shouldScopeHeartbeatContextSummaries(input: { projectId: string | null; crossProduct: boolean }) {
+    return input.projectId !== null && !input.crossProduct;
+  }
+
+  function collectRelationIssueSummaryIds(input: {
+    blockedBy: IssueRelationIssueSummary[];
+    blocks: IssueRelationIssueSummary[];
+  }) {
+    const ids = new Set<string>();
+    const visit = (summary: IssueRelationIssueSummary) => {
+      if (ids.has(summary.id)) return;
+      ids.add(summary.id);
+      for (const terminal of summary.terminalBlockers ?? []) {
+        visit(terminal);
+      }
+    };
+    for (const blockedBySummary of input.blockedBy) {
+      visit(blockedBySummary);
+    }
+    for (const blockingSummary of input.blocks) {
+      visit(blockingSummary);
+    }
+    return ids;
+  }
+
+  function filterHeartbeatContextAncestorsByProject<T extends { projectId: string | null }>(
+    input: {
+      projectId: string;
+      ancestors: T[];
+    },
+  ): T[] {
+    return input.ancestors.filter((ancestor) =>
+      ancestor.projectId === null || ancestor.projectId === input.projectId,
+    );
+  }
+
+  async function filterHeartbeatContextRelationsByProject(input: {
+    issue: { companyId: string; projectId: string };
+    relations: Awaited<ReturnType<typeof svc.getRelationSummaries>>;
+  }): Promise<Awaited<ReturnType<typeof svc.getRelationSummaries>>> {
+    const relationIssueIds = [...collectRelationIssueSummaryIds(input.relations)];
+    if (relationIssueIds.length === 0) {
+      return input.relations;
+    }
+
+    const relationProjectRows = await db
+      .select({
+        id: issueRows.id,
+        projectId: issueRows.projectId,
+      })
+      .from(issueRows)
+      .where(
+        and(
+          eq(issueRows.companyId, input.issue.companyId),
+          inArray(issueRows.id, relationIssueIds),
+        ),
+      )
+      .orderBy(desc(issueRows.createdAt));
+
+    const allowedRelationIssueIds = new Set<string>();
+    for (const row of relationProjectRows) {
+      if (row.projectId === null || row.projectId === input.issue.projectId) {
+        allowedRelationIssueIds.add(row.id);
+      }
+    }
+
+    const filterSummary = (
+      summary: IssueRelationIssueSummary,
+    ): IssueRelationIssueSummary | null => {
+      if (!allowedRelationIssueIds.has(summary.id)) return null;
+      if (!summary.terminalBlockers) {
+        return summary;
+      }
+      const terminalBlockers = summary.terminalBlockers
+        .map(filterSummary)
+        .filter((blocked): blocked is IssueRelationIssueSummary => blocked !== null);
+      return {
+        ...summary,
+        terminalBlockers,
+      };
+    };
+
+    return {
+      blockedBy: input.relations.blockedBy
+        .map(filterSummary)
+        .filter((summary): summary is IssueRelationIssueSummary => summary !== null),
+      blocks: input.relations.blocks
+        .map(filterSummary)
+        .filter((summary): summary is IssueRelationIssueSummary => summary !== null),
+    };
+  }
+
   // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for all /issues/:id routes
   router.param("id", async (req, res, next, rawId) => {
     try {
@@ -2010,6 +2102,8 @@ export function issueRoutes(
     const currentExecutionWorkspacePromise = issue.executionWorkspaceId
       ? executionWorkspacesSvc.getById(issue.executionWorkspaceId)
       : Promise.resolve(null);
+    const shouldScopeProjectContext = shouldScopeHeartbeatContextSummaries(issue);
+    const scopeProjectId = shouldScopeProjectContext ? issue.projectId : null;
     const [
       { project, goal },
       ancestors,
@@ -2047,6 +2141,15 @@ export function issueRoutes(
       relations,
       recoveryActionsByRelationIssue,
     );
+    const scopedAncestors = scopeProjectId
+      ? filterHeartbeatContextAncestorsByProject({ projectId: scopeProjectId, ancestors })
+      : ancestors;
+    const scopedRelations = scopeProjectId
+      ? await filterHeartbeatContextRelationsByProject({
+        issue: { companyId: issue.companyId, projectId: scopeProjectId },
+        relations: relationsWithRecoveryActions,
+      })
+      : relationsWithRecoveryActions;
     const revalidatedActiveRecoveryAction = await revalidateActiveSourceRecoveryForRead({
       issue,
       trigger: "read_projection",
@@ -2070,8 +2173,8 @@ export function issueRoutes(
         projectId: issue.projectId,
         goalId: goal?.id ?? issue.goalId,
         parentId: issue.parentId,
-        blockedBy: relationsWithRecoveryActions.blockedBy,
-        blocks: relationsWithRecoveryActions.blocks,
+        blockedBy: scopedRelations.blockedBy,
+        blocks: scopedRelations.blocks,
         assigneeAgentId: issue.assigneeAgentId,
         assigneeUserId: issue.assigneeUserId,
         crossProduct: issue.crossProduct,
@@ -2079,7 +2182,7 @@ export function issueRoutes(
         originId: issue.originId,
         updatedAt: issue.updatedAt,
       },
-      ancestors: ancestors.map((ancestor) => ({
+      ancestors: scopedAncestors.map((ancestor) => ({
         id: ancestor.id,
         identifier: ancestor.identifier,
         title: ancestor.title,

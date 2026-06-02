@@ -13,10 +13,6 @@ export interface Company {
   spentMonthlyCents: number;
   attachmentMaxBytes: number;
   requireBoardApprovalForNewAgents: boolean;
-  feedbackDataSharingEnabled: boolean;
-  feedbackDataSharingConsentAt: Date | null;
-  feedbackDataSharingConsentByUserId: string | null;
-  feedbackDataSharingTermsVersion: string | null;
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;

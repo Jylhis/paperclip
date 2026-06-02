@@ -6,7 +6,6 @@ import {
 
 const logoAssetIdSchema = z.string().uuid().nullable().optional();
 const brandColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional();
-const feedbackDataSharingTermsVersionSchema = z.string().min(1).nullable().optional();
 const attachmentMaxBytesSchema = z
   .number()
   .int()
@@ -28,10 +27,6 @@ export const updateCompanySchema = createCompanySchema
     status: z.enum(COMPANY_STATUSES).optional(),
     spentMonthlyCents: z.number().int().nonnegative().optional(),
     requireBoardApprovalForNewAgents: z.boolean().optional(),
-    feedbackDataSharingEnabled: z.boolean().optional(),
-    feedbackDataSharingConsentAt: z.coerce.date().nullable().optional(),
-    feedbackDataSharingConsentByUserId: z.string().min(1).nullable().optional(),
-    feedbackDataSharingTermsVersion: feedbackDataSharingTermsVersionSchema,
     brandColor: brandColorSchema,
     logoAssetId: logoAssetIdSchema,
     attachmentMaxBytes: attachmentMaxBytesSchema.optional(),

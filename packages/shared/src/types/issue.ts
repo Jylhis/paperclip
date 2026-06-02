@@ -534,7 +534,7 @@ export interface Issue {
   executionWorkspaceId: string | null;
   executionWorkspacePreference: string | null;
   executionWorkspaceSettings: IssueExecutionWorkspaceSettings | null;
-  crossProduct: boolean;
+  crossProduct?: boolean;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;

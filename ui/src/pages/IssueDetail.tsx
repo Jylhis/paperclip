@@ -169,7 +169,6 @@ type IssueDetailComment = (IssueComment | OptimisticIssueComment) & {
   queueReason?: "hold" | "active_run" | "other";
 };
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
 const ISSUE_COMMENT_PAGE_SIZE = 50;
 const ISSUE_COMMENT_AUTOLOAD_LIMIT = ISSUE_COMMENT_PAGE_SIZE * 3;
 const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
@@ -359,9 +358,6 @@ function mergeOptimisticFeedbackVote(
       authorUserId: currentUserId ?? "current-user",
       vote: nextVote.vote,
       reason: nextVote.reason?.trim() || null,
-      sharedWithLabs: false,
-      sharedAt: null,
-      consentVersion: null,
       redactionSummary: null,
       createdAt: now,
       updatedAt: now,
@@ -638,8 +634,6 @@ type IssueDetailChatTabProps = {
   composerRef: Ref<IssueChatComposerHandle>;
   footer?: ReactNode;
   feedbackVotes?: FeedbackVote[];
-  feedbackDataSharingPreference: "allowed" | "not_allowed" | "prompt";
-  feedbackTermsUrl: string | null;
   agentMap: Map<string, Agent>;
   currentUserId: string | null;
   userLabelMap: ReadonlyMap<string, string> | null;
@@ -655,7 +649,7 @@ type IssueDetailChatTabProps = {
   onVote: (
     commentId: string,
     vote: "up" | "down",
-    options?: { allowSharing?: boolean; reason?: string },
+    options?: { reason?: string },
   ) => Promise<void>;
   onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
   onImageUpload: (file: File) => Promise<string>;
@@ -707,8 +701,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
   composerRef,
   footer,
   feedbackVotes,
-  feedbackDataSharingPreference,
-  feedbackTermsUrl,
   agentMap,
   currentUserId,
   userLabelMap,
@@ -894,8 +886,6 @@ const IssueDetailChatTab = memo(function IssueDetailChatTab({
         comments={commentsWithRunMeta}
         interactions={interactions}
         feedbackVotes={feedbackVotes}
-        feedbackDataSharingPreference={feedbackDataSharingPreference}
-        feedbackTermsUrl={feedbackTermsUrl}
         linkedRuns={timelineRuns}
         timelineEvents={timelineEvents}
         liveRuns={resolvedLiveRuns}
@@ -1448,7 +1438,6 @@ export function IssueDetail() {
     retry: false,
   });
   const keyboardShortcutsEnabled = instanceGeneralSettings?.keyboardShortcuts === true;
-  const feedbackDataSharingPreference = instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const showPlanDecompositionsSection =
     instanceExperimentalSettings?.enableIssuePlanDecompositions === true;
   const { orderedProjects } = useProjectOrder({
@@ -2481,15 +2470,12 @@ export function IssueDetail() {
       targetId: string;
       vote: "up" | "down";
       reason?: string;
-      allowSharing?: boolean;
-      sharingPreferenceAtSubmit: "allowed" | "not_allowed" | "prompt";
     }) =>
       issuesApi.upsertFeedbackVote(issueId!, {
         targetType: variables.targetType,
         targetId: variables.targetId,
         vote: variables.vote,
         ...(variables.reason ? { reason: variables.reason } : {}),
-        ...(variables.allowSharing ? { allowSharing: true } : {}),
       }),
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.issues.feedbackVotes(issueId!) });
@@ -2514,17 +2500,8 @@ export function IssueDetail() {
     },
     onSuccess: (_savedVote, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.feedbackVotes(issueId!) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.instance.generalSettings });
       pushToast({
-        title:
-          variables.sharingPreferenceAtSubmit === "prompt"
-            ? variables.allowSharing
-              ? "Feedback saved. Future votes will share"
-              : "Feedback saved. Future votes will stay local"
-            : variables.allowSharing
-              ? "Feedback saved and sharing enabled"
-              : "Feedback saved",
+        title: variables.vote === "down" ? "Feedback saved with note" : "Feedback saved",
         tone: "success",
       });
     },
@@ -2958,16 +2935,14 @@ export function IssueDetail() {
     if (!shouldPrefetchOlderComments) return;
     void fetchOlderComments();
   }, [fetchOlderComments, shouldPrefetchOlderComments]);
-  const handleCommentVote = useCallback(async (commentId: string, vote: "up" | "down", options?: { allowSharing?: boolean; reason?: string }) => {
+  const handleCommentVote = useCallback(async (commentId: string, vote: "up" | "down", options?: { reason?: string }) => {
     await feedbackVoteMutation.mutateAsync({
       targetType: "issue_comment",
       targetId: commentId,
       vote,
       reason: options?.reason,
-      allowSharing: options?.allowSharing,
-      sharingPreferenceAtSubmit: feedbackDataSharingPreference,
     });
-  }, [feedbackDataSharingPreference, feedbackVoteMutation]);
+  }, [feedbackVoteMutation]);
   const handleChatAdd = useCallback(async (body: string, reopen?: boolean, reassignment?: CommentReassignment) => {
     if (reassignment) {
       await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });
@@ -3735,8 +3710,6 @@ export function IssueDetail() {
         canDeleteDocuments={Boolean(session?.user?.id)}
         canManageDocumentLocks={Boolean(session?.user?.id)}
         feedbackVotes={feedbackVotes}
-        feedbackDataSharingPreference={feedbackDataSharingPreference}
-        feedbackTermsUrl={FEEDBACK_TERMS_URL}
         mentions={mentionOptions}
         imageUploadHandler={async (file) => {
           const attachment = await uploadAttachment.mutateAsync(file);
@@ -3748,8 +3721,6 @@ export function IssueDetail() {
             targetId: revisionId,
             vote,
             reason: options?.reason,
-            allowSharing: options?.allowSharing,
-            sharingPreferenceAtSubmit: feedbackDataSharingPreference,
           });
         }}
         extraActions={!hasAttachments ? attachmentUploadButton : null}
@@ -3957,8 +3928,6 @@ export function IssueDetail() {
                 ) : null
               }
               feedbackVotes={feedbackVotes}
-              feedbackDataSharingPreference={feedbackDataSharingPreference}
-              feedbackTermsUrl={FEEDBACK_TERMS_URL}
               agentMap={agentMap}
               currentUserId={currentUserId}
               userLabelMap={userLabelMap}

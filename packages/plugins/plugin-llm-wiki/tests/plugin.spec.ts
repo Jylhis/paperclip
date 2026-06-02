@@ -561,6 +561,7 @@ function paperclipIssue(overrides: Partial<Issue> = {}): Issue {
   return {
     id: "66666666-6666-4666-8666-666666666666",
     companyId: COMPANY_ID,
+    crossProduct: false,
     projectId: null,
     projectWorkspaceId: null,
     goalId: null,

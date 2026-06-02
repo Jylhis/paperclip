@@ -3,7 +3,6 @@ import { Link, useLocation } from "react-router-dom";
 import type {
   Agent,
   Approval,
-  FeedbackDataSharingPreference,
   FeedbackVote,
   FeedbackVoteValue,
   IssueComment,
@@ -71,8 +70,6 @@ interface CommentThreadProps {
   queuedComments?: CommentWithRunMeta[];
   linkedApprovals?: Approval[];
   feedbackVotes?: FeedbackVote[];
-  feedbackDataSharingPreference?: FeedbackDataSharingPreference;
-  feedbackTermsUrl?: string | null;
   linkedRuns?: LinkedRunItem[];
   timelineEvents?: IssueTimelineEvent[];
   companyId?: string | null;
@@ -86,7 +83,7 @@ interface CommentThreadProps {
   onVote?: (
     commentId: string,
     vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
+    options?: { reason?: string },
   ) => Promise<void>;
   onAdd: (body: string, reopen?: boolean, reassignment?: CommentReassignment) => Promise<void>;
   issueStatus?: string;
@@ -318,8 +315,6 @@ function CommentCard({
   companyId,
   projectId,
   feedbackVote = null,
-  feedbackDataSharingPreference = "prompt",
-  feedbackTermsUrl = null,
   onVote,
   voting = false,
   highlightCommentId,
@@ -330,11 +325,9 @@ function CommentCard({
   companyId?: string | null;
   projectId?: string | null;
   feedbackVote?: FeedbackVoteValue | null;
-  feedbackDataSharingPreference?: FeedbackDataSharingPreference;
-  feedbackTermsUrl?: string | null;
   onVote?: (
     vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
+    options?: { reason?: string },
   ) => Promise<void>;
   voting?: boolean;
   highlightCommentId?: string | null;
@@ -431,8 +424,6 @@ function CommentCard({
         <OutputFeedbackButtons
           activeVote={feedbackVote}
           disabled={voting}
-          sharingPreference={feedbackDataSharingPreference}
-          termsUrl={feedbackTermsUrl}
           onVote={onVote}
           rightSlot={comment.runId && !isPending ? (
             comment.runAgentId ? (
@@ -565,8 +556,6 @@ const TimelineList = memo(function TimelineList({
   onRejectApproval,
   pendingApprovalAction,
   feedbackVoteByTargetId,
-  feedbackDataSharingPreference = "prompt",
-  feedbackTermsUrl = null,
   onVote,
   votingTargetId,
   highlightCommentId,
@@ -583,12 +572,10 @@ const TimelineList = memo(function TimelineList({
     action: "approve" | "reject";
   } | null;
   feedbackVoteByTargetId?: Map<string, FeedbackVoteValue>;
-  feedbackDataSharingPreference?: FeedbackDataSharingPreference;
-  feedbackTermsUrl?: string | null;
   onVote?: (
     commentId: string,
     vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
+    options?: { reason?: string },
   ) => Promise<void>;
   votingTargetId?: string | null;
   highlightCommentId?: string | null;
@@ -708,8 +695,6 @@ const TimelineList = memo(function TimelineList({
             companyId={companyId}
             projectId={projectId}
             feedbackVote={feedbackVoteByTargetId?.get(comment.id) ?? null}
-            feedbackDataSharingPreference={feedbackDataSharingPreference}
-            feedbackTermsUrl={feedbackTermsUrl}
             onVote={onVote ? (vote, options) => onVote(comment.id, vote, options) : undefined}
             voting={votingTargetId === comment.id}
             highlightCommentId={highlightCommentId}
@@ -725,8 +710,6 @@ export function CommentThread({
   queuedComments = [],
   linkedApprovals = [],
   feedbackVotes = [],
-  feedbackDataSharingPreference = "prompt",
-  feedbackTermsUrl = null,
   linkedRuns = [],
   timelineEvents = [],
   companyId,
@@ -928,7 +911,7 @@ export function CommentThread({
   async function handleFeedbackVote(
     commentId: string,
     vote: FeedbackVoteValue,
-    options?: { allowSharing?: boolean; reason?: string },
+    options?: { reason?: string },
   ) {
     if (!onVote) return;
     setVotingTargetId(commentId);
@@ -955,11 +938,9 @@ export function CommentThread({
         onRejectApproval={onRejectApproval}
         pendingApprovalAction={pendingApprovalAction}
         feedbackVoteByTargetId={feedbackVoteByTargetId}
-        feedbackDataSharingPreference={feedbackDataSharingPreference}
         onVote={onVote ? handleFeedbackVote : undefined}
         votingTargetId={votingTargetId}
         highlightCommentId={highlightCommentId}
-        feedbackTermsUrl={feedbackTermsUrl}
       />
 
       {liveRunSlot}
