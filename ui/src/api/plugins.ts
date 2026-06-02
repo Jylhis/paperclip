@@ -216,7 +216,7 @@ export const pluginsApi = {
     api.get<PluginRecord[]>(`/plugins${status ? `?status=${status}` : ""}`),
 
   /**
-   * List bundled plugin packages available from the current repo checkout.
+   * List bundled local plugin packages available from the current repo checkout.
    */
   listBundled: () =>
     api.get<AvailableBundledPlugin[]>("/plugins/examples"),

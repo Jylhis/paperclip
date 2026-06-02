@@ -493,7 +493,7 @@ export function registerPluginCommands(program: Command): void {
   addCommonClientOptions(
     plugin
       .command("examples")
-      .description("List bundled example plugins available for local install")
+      .description("List bundled local plugins available for install")
       .action(async (opts: BaseClientOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -515,7 +515,7 @@ export function registerPluginCommands(program: Command): void {
 
           const rows = examples ?? [];
           if (rows.length === 0) {
-            console.log(pc.dim("No bundled examples available."));
+            console.log(pc.dim("No bundled local plugins available."));
             return;
           }
 

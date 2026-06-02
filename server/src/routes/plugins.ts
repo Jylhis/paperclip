@@ -786,9 +786,9 @@ export function pluginRoutes(
   /**
    * GET /api/plugins/examples
    *
-   * Return plugin packages bundled in this repo, if present.
-   * These can be installed through the normal local-path install flow.
-   */
+ * Return plugin packages bundled in this repo, if present.
+ * These can be installed through the normal local-path install flow.
+ */
   router.get("/plugins/examples", async (req, res) => {
     assertBoardOrgAccess(req);
     res.json(await listBundledPlugins());

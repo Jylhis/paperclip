@@ -441,10 +441,9 @@ Good fits:
 
 - LLM Wiki page navigation in `packages/plugins/plugin-llm-wiki` builds a
   `FileTreeNode[]` from worker query results and renders it through `FileTree`.
-- The example `plugin-file-browser-example` lazily fetches a directory's
-  children through a `loadFileList` action when `onToggleDir` fires, then
-  merges the children into the local tree state — letting the shared component
-  handle rendering and selection.
+- A workspace browser plugin can lazily fetch a directory's children through a
+  worker action when `onToggleDir` fires, then merge the children into local
+  tree state so the shared component handles rendering and selection.
 
 Boundary rules:
 
@@ -508,18 +507,19 @@ flow worker-mediated:
 - The worker is the only side that touches the disk. The browser receives a
   serializable tree and never sees raw absolute paths it can replay.
 
-The example `plugin-file-browser-example` is the reference for this pattern:
-the worker registers `fileList` (data) and `loadFileList` (action) over the
-same handler, and the UI uses the action for on-toggle directory loading so the
-shared `FileTree` stays the rendering surface.
+A workspace browser plugin can use this pattern: the worker registers a root
+listing data source and a lazy child-loading action over the same underlying
+filesystem handler, and the UI uses the action for on-toggle directory loading
+so the shared `FileTree` stays the rendering surface.
 
 ### Mixing surfaces
 
 A single plugin can use more than one of these. The LLM Wiki uses
 `localFolders` for its content root, then renders the resulting page list
-through `FileTree`. The file browser example uses `ctx.projects.listWorkspaces`
-to pick a workspace and renders its on-disk tree through `FileTree` with lazy
-loading. Pick the boundary per data source, not per plugin.
+through `FileTree`. A workspace browser plugin can instead use
+`ctx.projects.listWorkspaces()` to pick a workspace and render its on-disk tree
+through `FileTree` with lazy loading. Pick the boundary per data source, not
+per plugin.
 
 ## Company routes
 
