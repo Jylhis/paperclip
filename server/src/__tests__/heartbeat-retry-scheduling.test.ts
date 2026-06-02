@@ -74,6 +74,8 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
     resultJson?: Record<string, unknown> | null;
     adapterType?: "codex_local" | "claude_local";
     agentName?: string;
+    error?: string;
+    scheduledRetryReason?: string | null;
   }) {
     const adapterType = input.adapterType ?? "codex_local";
     const agentName = input.agentName ?? (adapterType === "claude_local" ? "ClaudeCoder" : "CodexCoder");
@@ -107,11 +109,11 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
       agentId: input.agentId,
       invocationSource: "assignment",
       status: "failed",
-      error: "upstream overload",
+      error: input.error ?? "upstream overload",
       errorCode: input.errorCode,
       finishedAt: input.now,
       scheduledRetryAttempt: input.scheduledRetryAttempt ?? 0,
-      scheduledRetryReason: input.scheduledRetryAttempt ? "transient_failure" : null,
+      scheduledRetryReason: input.scheduledRetryReason ?? (input.scheduledRetryAttempt ? "transient_failure" : null),
       resultJson: input.resultJson ?? {
         ...(input.errorFamily ? { errorFamily: input.errorFamily } : {}),
         ...(input.retryNotBefore
@@ -1336,5 +1338,74 @@ describeEmbeddedPostgres("heartbeat bounded retry scheduling", () => {
     expect((wakeupRequest?.payload as Record<string, unknown> | null)?.transientRetryNotBefore).toBe(
       retryNotBefore.toISOString(),
     );
+  });
+
+  it("schedules a single cooldown retry for provider auth failures", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    const now = new Date("2026-04-22T12:00:00.000Z");
+
+    await seedRetryFixture({
+      runId,
+      companyId,
+      agentId,
+      now,
+      errorCode: "codex_auth_required",
+      error: "401 Unauthorized: Missing bearer or basic authentication in header",
+      resultJson: {
+        stderr: "HTTP error: 401 Unauthorized",
+      },
+    });
+
+    const scheduled = await heartbeat.scheduleBoundedRetry(runId, { now, random: () => 0.5 });
+
+    expect(scheduled.outcome).toBe("scheduled");
+    if (scheduled.outcome !== "scheduled") return;
+    expect(scheduled.attempt).toBe(1);
+    expect(scheduled.maxAttempts).toBe(1);
+    expect(scheduled.dueAt.getTime()).toBe(now.getTime() + 30 * 60_000);
+
+    const retryRun = await db
+      .select({
+        scheduledRetryReason: heartbeatRuns.scheduledRetryReason,
+        contextSnapshot: heartbeatRuns.contextSnapshot,
+      })
+      .from(heartbeatRuns)
+      .where(eq(heartbeatRuns.id, scheduled.run.id))
+      .then((rows) => rows[0] ?? null);
+
+    expect(retryRun?.scheduledRetryReason).toBe("provider_auth_quota_cooldown");
+    expect((retryRun?.contextSnapshot as Record<string, unknown> | null)?.errorFamily).toBe("provider_auth_quota");
+  });
+
+  it("does not queue a second cooldown retry after the guarded provider auth retry was already used", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    const now = new Date("2026-04-22T13:00:00.000Z");
+
+    await seedRetryFixture({
+      runId,
+      companyId,
+      agentId,
+      now,
+      errorCode: "codex_auth_required",
+      error: "401 Unauthorized: Missing bearer or basic authentication in header",
+      scheduledRetryAttempt: 1,
+      scheduledRetryReason: "provider_auth_quota_cooldown",
+      resultJson: {
+        errorFamily: "provider_auth_quota",
+        stderr: "HTTP error: 401 Unauthorized",
+      },
+    });
+
+    const scheduled = await heartbeat.scheduleBoundedRetry(runId, { now, random: () => 0.5 });
+
+    expect(scheduled).toMatchObject({
+      outcome: "retry_exhausted",
+      attempt: 2,
+      maxAttempts: 1,
+    });
   });
 });

@@ -225,6 +225,10 @@ const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_JITTER_RATIO = 0.25;
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON = "transient_failure";
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_WAKE_REASON = "transient_failure_retry";
 const BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS = BOUNDED_TRANSIENT_HEARTBEAT_RETRY_DELAYS_MS.length;
+const PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_REASON = "provider_auth_quota_cooldown";
+const PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_WAKE_REASON = "provider_auth_quota_cooldown";
+const PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_DELAY_MS = 30 * 60 * 1000;
+const PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_MAX_ATTEMPTS = 1;
 export const MAX_TURN_CONTINUATION_RETRY_REASON = "max_turns_continuation";
 export const MAX_TURN_CONTINUATION_WAKE_REASON = "max_turns_continuation_retry";
 const MAX_TURN_CONTINUATION_DEFAULT_MAX_ATTEMPTS = 2;
@@ -232,6 +236,9 @@ const MAX_TURN_CONTINUATION_MAX_ATTEMPTS_CAP = 10;
 const MAX_TURN_CONTINUATION_DEFAULT_DELAY_MS = 1_000;
 const MAX_TURN_CONTINUATION_MAX_DELAY_MS = 5 * 60 * 1000;
 const MAX_TURN_CONTINUATION_LIVE_RUN_STATUSES = ["scheduled_retry", "queued", "running"] as const;
+const PROVIDER_AUTH_ERROR_CODES = new Set(["codex_auth_required", "claude_auth_required"]);
+const PROVIDER_AUTH_QUOTA_ERROR_FAMILY_RE =
+  /(?:\b401\b|unauthorized|authentication\s+(?:required|failed)|not\s+logged\s+in|invalid\s+api\s+key|missing\s+bearer|credit\s+balance\s+is\s+too\s+low|out\s+of\s+usage\s+credits|usage\s+limit\s+reached|usage\s+cap\s+reached|weekly\s+limit\s+reached|resource_exhausted|billing\s+details|rate[-\s]?limit(?:ed)?|too\s+many\s+requests|\b429\b)/i;
 type CodexTransientFallbackMode =
   | "same_session"
   | "safer_invocation"
@@ -293,6 +300,61 @@ function readTransientRecoveryContractFromRun(
         retryNotBefore: readTransientRetryNotBeforeFromRun(run),
       }
     : null;
+}
+
+function readProviderAuthQuotaRecoveryContractFromRun(
+  run: Pick<typeof heartbeatRuns.$inferSelect, "errorCode" | "error" | "resultJson">,
+) {
+  if (readHeartbeatRunErrorFamily(run) === "provider_auth_quota") {
+    return {
+      errorFamily: "provider_auth_quota" as const,
+      retryNotBefore: readTransientRetryNotBeforeFromRun(run),
+    };
+  }
+
+  if (run.errorCode && PROVIDER_AUTH_ERROR_CODES.has(run.errorCode)) {
+    return {
+      errorFamily: "provider_auth_quota" as const,
+      retryNotBefore: readTransientRetryNotBeforeFromRun(run),
+    };
+  }
+
+  const resultJson = parseObject(run.resultJson);
+  const haystack = [
+    readNonEmptyString(run.error) ?? "",
+    readNonEmptyString(resultJson.error) ?? "",
+    readNonEmptyString(resultJson.result) ?? "",
+    readNonEmptyString(resultJson.errorMessage) ?? "",
+    readNonEmptyString(resultJson.stdout) ?? "",
+    readNonEmptyString(resultJson.stderr) ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  if (!haystack || !PROVIDER_AUTH_QUOTA_ERROR_FAMILY_RE.test(haystack)) return null;
+  return {
+    errorFamily: "provider_auth_quota" as const,
+    retryNotBefore: readTransientRetryNotBeforeFromRun(run),
+  };
+}
+
+function readRetryRecoveryContractFromRun(
+  run: Pick<typeof heartbeatRuns.$inferSelect, "errorCode" | "error" | "resultJson">,
+) {
+  return readProviderAuthQuotaRecoveryContractFromRun(run) ?? readTransientRecoveryContractFromRun(run);
+}
+
+function deriveRetryRecoveryMetadataFromAdapterResult(input: {
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  resultJson?: Record<string, unknown> | null;
+}) {
+  if (!input.errorCode && !input.errorMessage && !input.resultJson) return null;
+  return readRetryRecoveryContractFromRun({
+    errorCode: input.errorCode ?? null,
+    error: input.errorMessage ?? null,
+    resultJson: input.resultJson ?? null,
+  });
 }
 
 function mergeAdapterRecoveryMetadata(input: {
@@ -5349,9 +5411,24 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
     },
   ) {
     const now = opts?.now ?? new Date();
-    const retryReason = opts?.retryReason ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON;
-    const wakeReason = opts?.wakeReason ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_WAKE_REASON;
-    const maxAttempts = Math.max(0, Math.floor(opts?.maxAttempts ?? BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS));
+    const retryContract = readRetryRecoveryContractFromRun(run);
+    const retryReason = opts?.retryReason ??
+      (retryContract?.errorFamily === "provider_auth_quota"
+        ? PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_REASON
+        : BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON);
+    const wakeReason = opts?.wakeReason ??
+      (retryContract?.errorFamily === "provider_auth_quota"
+        ? PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_WAKE_REASON
+        : BOUNDED_TRANSIENT_HEARTBEAT_RETRY_WAKE_REASON);
+    const maxAttempts = Math.max(
+      0,
+      Math.floor(
+        opts?.maxAttempts ??
+          (retryContract?.errorFamily === "provider_auth_quota"
+            ? PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_MAX_ATTEMPTS
+            : BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS),
+      ),
+    );
     const nextAttempt = (run.scheduledRetryAttempt ?? 0) + 1;
     const baseSchedule = opts?.delayMs != null
       ? nextAttempt <= maxAttempts
@@ -5364,7 +5441,15 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           }
         : null
       : nextAttempt <= maxAttempts
-        ? computeBoundedTransientHeartbeatRetrySchedule(nextAttempt, now, opts?.random)
+        ? retryContract?.errorFamily === "provider_auth_quota"
+          ? {
+              attempt: nextAttempt,
+              baseDelayMs: PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_DELAY_MS,
+              delayMs: PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_DELAY_MS,
+              dueAt: new Date(now.getTime() + PROVIDER_AUTH_QUOTA_HEARTBEAT_RETRY_DELAY_MS),
+              maxAttempts,
+            }
+          : computeBoundedTransientHeartbeatRetrySchedule(nextAttempt, now, opts?.random)
         : null;
     const transientRecovery =
       retryReason === BOUNDED_TRANSIENT_HEARTBEAT_RETRY_REASON
@@ -5374,7 +5459,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       agent.adapterType === "codex_local" && transientRecovery
         ? resolveCodexTransientFallbackMode(nextAttempt)
         : null;
-    const transientRetryNotBefore = transientRecovery?.retryNotBefore ?? null;
+    const retryNotBefore = retryContract?.retryNotBefore ?? null;
 
     if (!baseSchedule) {
       await appendRunEvent(run, await nextRunEventSeq(run.id), {
@@ -5395,11 +5480,11 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       };
     }
     const schedule =
-      transientRetryNotBefore && transientRetryNotBefore.getTime() > baseSchedule.dueAt.getTime()
+      retryNotBefore && retryNotBefore.getTime() > baseSchedule.dueAt.getTime()
         ? {
             ...baseSchedule,
-            dueAt: transientRetryNotBefore,
-            delayMs: Math.max(0, transientRetryNotBefore.getTime() - now.getTime()),
+            dueAt: retryNotBefore,
+            delayMs: Math.max(0, retryNotBefore.getTime() - now.getTime()),
           }
         : baseSchedule;
 
@@ -5435,10 +5520,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       retryOfRunId: run.id,
       wakeReason,
       retryReason,
-      ...(transientRecovery ? { errorFamily: transientRecovery.errorFamily } : {}),
+      ...(retryContract ? { errorFamily: retryContract.errorFamily } : {}),
       scheduledRetryAttempt: schedule.attempt,
       scheduledRetryAt: schedule.dueAt.toISOString(),
-      ...(transientRetryNotBefore ? { transientRetryNotBefore: transientRetryNotBefore.toISOString() } : {}),
+      ...(retryNotBefore ? { transientRetryNotBefore: retryNotBefore.toISOString() } : {}),
       ...(codexTransientFallbackMode ? { codexTransientFallbackMode } : {}),
     }, "normal_model");
     const maxTurnContinuationIdempotencyKey = retryReason === MAX_TURN_CONTINUATION_RETRY_REASON
@@ -5605,10 +5690,10 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             ...(issueId ? { issueId } : {}),
             retryOfRunId: run.id,
             retryReason,
-            ...(transientRecovery ? { errorFamily: transientRecovery.errorFamily } : {}),
+            ...(retryContract ? { errorFamily: retryContract.errorFamily } : {}),
             scheduledRetryAttempt: schedule.attempt,
             scheduledRetryAt: schedule.dueAt.toISOString(),
-            ...(transientRetryNotBefore ? { transientRetryNotBefore: transientRetryNotBefore.toISOString() } : {}),
+            ...(retryNotBefore ? { transientRetryNotBefore: retryNotBefore.toISOString() } : {}),
             ...(codexTransientFallbackMode ? { codexTransientFallbackMode } : {}),
           }, "normal_model"),
           status: "queued",
@@ -5722,18 +5807,18 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       stream: "system",
       level: "warn",
       message: `Scheduled bounded retry ${schedule.attempt}/${schedule.maxAttempts} for ${schedule.dueAt.toISOString()}`,
-      payload: {
-        retryRunId: retryRun.id,
-        retryReason,
-        ...(transientRecovery ? { errorFamily: transientRecovery.errorFamily } : {}),
-        scheduledRetryAttempt: schedule.attempt,
-        scheduledRetryAt: schedule.dueAt.toISOString(),
-        baseDelayMs: schedule.baseDelayMs,
-        delayMs: schedule.delayMs,
-        ...(transientRetryNotBefore ? { transientRetryNotBefore: transientRetryNotBefore.toISOString() } : {}),
-        ...(codexTransientFallbackMode ? { codexTransientFallbackMode } : {}),
-      },
-    });
+        payload: {
+          retryRunId: retryRun.id,
+          retryReason,
+          ...(retryContract ? { errorFamily: retryContract.errorFamily } : {}),
+          scheduledRetryAttempt: schedule.attempt,
+          scheduledRetryAt: schedule.dueAt.toISOString(),
+          baseDelayMs: schedule.baseDelayMs,
+          delayMs: schedule.delayMs,
+          ...(retryNotBefore ? { transientRetryNotBefore: retryNotBefore.toISOString() } : {}),
+          ...(codexTransientFallbackMode ? { codexTransientFallbackMode } : {}),
+        },
+      });
 
     return {
       outcome: "scheduled" as const,
@@ -8196,14 +8281,20 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               billingType: normalizeLedgerBillingType(adapterResult.billingType),
             } as Record<string, unknown>)
           : null;
+      const retryRecoveryMetadata = deriveRetryRecoveryMetadataFromAdapterResult({
+        errorCode: adapterResult.errorCode ?? null,
+        errorMessage: runErrorMessage,
+        resultJson: adapterResult.resultJson ?? null,
+      });
 
       const persistedResultJson = mergeHeartbeatRunResultJson(
         mergeRunStopMetadataForAgent(agent, outcome, {
           resultJson: mergeModelProfileRunMetadata(
             mergeAdapterRecoveryMetadata({
               resultJson: adapterResult.resultJson ?? null,
-              errorFamily: adapterResult.errorFamily ?? null,
-              retryNotBefore: adapterResult.retryNotBefore ?? null,
+              errorFamily: adapterResult.errorFamily ?? retryRecoveryMetadata?.errorFamily ?? null,
+              retryNotBefore: adapterResult.retryNotBefore
+                ?? (retryRecoveryMetadata?.retryNotBefore ? retryRecoveryMetadata.retryNotBefore.toISOString() : null),
             }),
             modelProfileApplication,
           ),
@@ -8289,7 +8380,7 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
               },
             });
           }
-        } else if (outcome === "failed" && readTransientRecoveryContractFromRun(livenessRun)) {
+        } else if (outcome === "failed" && readRetryRecoveryContractFromRun(livenessRun)) {
           await scheduleBoundedRetryForRun(livenessRun, agent);
         }
         const issueCommentPolicyResult = await finalizeIssueCommentPolicy(livenessRun, agent);
@@ -8532,6 +8623,24 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
       "Paperclip automatically retried continuation for this assigned `in_progress` issue during terminal run " +
       `recovery, but it still has no live execution path.${failureSummary ?? ""} ` +
       "Moving it to `blocked` so it is visible for intervention."
+    );
+  }
+
+  function buildProviderAuthQuotaCooldownRecoveryComment(input: {
+    status: "todo" | "in_progress";
+    latestRun: Pick<typeof heartbeatRuns.$inferSelect, "error" | "errorCode"> | null | undefined;
+  }) {
+    const failureSummary = summarizeRunFailureForIssueComment(input.latestRun);
+    if (input.status === "todo") {
+      return (
+        "Paperclip exhausted the single guarded retry for a clustered provider auth/quota failure on this assigned `todo` issue, " +
+        `so it will not keep auto-retrying.${failureSummary ?? ""} Moving it to \`blocked\` for operator intervention.`
+      );
+    }
+
+    return (
+      "Paperclip exhausted the single guarded retry for a clustered provider auth/quota failure on this assigned `in_progress` issue, " +
+      `so it will not keep auto-retrying.${failureSummary ?? ""} Moving it to \`blocked\` for operator intervention.`
     );
   }
 
@@ -8830,15 +8939,22 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         };
       }
 
+      const providerAuthQuotaRecovery = readProviderAuthQuotaRecoveryContractFromRun(run);
       const shouldBlockImmediately =
         !recoveryAgentInvokable ||
         !recoveryAgent ||
+        providerAuthQuotaRecovery != null ||
         didAutomaticRecoveryFail(run, issue.status === "todo" ? "assignment_recovery" : "issue_continuation_needed");
       if (shouldBlockImmediately) {
-        const comment = buildImmediateExecutionPathRecoveryComment({
-          status: issue.status as "todo" | "in_progress",
-          latestRun: run,
-        });
+        const comment = providerAuthQuotaRecovery
+          ? buildProviderAuthQuotaCooldownRecoveryComment({
+            status: issue.status as "todo" | "in_progress",
+            latestRun: run,
+          })
+          : buildImmediateExecutionPathRecoveryComment({
+            status: issue.status as "todo" | "in_progress",
+            latestRun: run,
+          });
         return {
           kind: "blocked" as const,
           issue,
