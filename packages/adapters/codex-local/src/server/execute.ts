@@ -41,10 +41,11 @@ import {
 import {
   parseCodexJsonl,
   extractCodexRetryNotBefore,
+  isCodexAuthError,
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
 } from "./parse.js";
-import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir } from "./codex-home.js";
+import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir, writeApiKeyAuthJson } from "./codex-home.js";
 import { resolveCodexDesiredSkillNames } from "./skills.js";
 import { buildCodexExecArgs } from "./codex-args.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
@@ -348,6 +349,40 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const defaultCodexHome = resolveManagedCodexHomeDir(process.env, agent.companyId);
   const effectiveCodexHome = configuredCodexHome ?? preparedManagedCodexHome ?? defaultCodexHome;
   await fs.mkdir(effectiveCodexHome, { recursive: true });
+  // With a custom CODEX_HOME we skip prepareManagedCodexHome, so a configured
+  // OPENAI_API_KEY would otherwise never reach auth.json (Codex >= 0.122 reads
+  // credentials only from there, not the env var). Write it explicitly to keep
+  // custom homes consistent with the managed path and avoid silent auth failures.
+  if (configuredOpenAiApiKey && configuredCodexHome) {
+    await writeApiKeyAuthJson(effectiveCodexHome, configuredOpenAiApiKey);
+    await onLog(
+      "stdout",
+      `[paperclip] Wrote API-key auth.json into custom Codex home "${effectiveCodexHome}" from configured OPENAI_API_KEY.\n`,
+    );
+  }
+  // Fail fast with an actionable message when Codex has no usable credentials.
+  // Codex (>= 0.122) ignores the OPENAI_API_KEY env var and authenticates only
+  // from `$CODEX_HOME/auth.json`. Without a configured key (which we write to
+  // auth.json) or a pre-seeded auth.json (e.g. from `codex login`), Codex spawns
+  // and fails with a cryptic "401 Unauthorized: Missing bearer or basic
+  // authentication" against api.openai.com. Surface the real cause instead.
+  if (!configuredOpenAiApiKey && !(await pathExists(path.join(effectiveCodexHome, "auth.json")))) {
+    const authMessage =
+      "Codex has no credentials: no OPENAI_API_KEY is configured for this agent and " +
+      `no auth.json was found in CODEX_HOME ("${effectiveCodexHome}"). ` +
+      "Set OPENAI_API_KEY in this agent's adapter config (Paperclip writes it to " +
+      "$CODEX_HOME/auth.json) or run `codex login` to seed credentials. Note that " +
+      "Codex >= 0.122 ignores the OPENAI_API_KEY environment variable.";
+    await onLog("stderr", `[paperclip] ${authMessage}\n`);
+    return {
+      exitCode: 1,
+      signal: null,
+      timedOut: false,
+      errorCode: "codex_auth_required",
+      errorMessage: authMessage,
+      billingType: "subscription",
+    };
+  }
   // Inject skills into the same CODEX_HOME that Codex will actually run with
   // (managed home in the default case, or an explicit override from adapter config).
   const codexSkillsDir = resolveCodexSkillsDir(effectiveCodexHome);
@@ -789,6 +824,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         stderr: attempt.proc.stderr,
         errorMessage: fallbackErrorMessage,
       });
+    const authError =
+      (attempt.proc.exitCode ?? 0) !== 0 &&
+      !transientUpstream &&
+      isCodexAuthError({
+        stdout: attempt.proc.stdout,
+        stderr: attempt.proc.stderr,
+        errorMessage: fallbackErrorMessage,
+      });
+    let outcomeErrorCode: string | null = null;
+    if (transientUpstream) {
+      outcomeErrorCode = "codex_transient_upstream";
+    } else if (authError) {
+      outcomeErrorCode = "codex_auth_required";
+    }
 
     return {
       exitCode: attempt.proc.exitCode,
@@ -798,10 +847,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         (attempt.proc.exitCode ?? 0) === 0
           ? null
           : fallbackErrorMessage,
-      errorCode:
-        transientUpstream
-          ? "codex_transient_upstream"
-          : null,
+      errorCode: outcomeErrorCode,
       errorFamily: transientUpstream ? "transient_upstream" : null,
       retryNotBefore: transientRetryNotBefore ? transientRetryNotBefore.toISOString() : null,
       usage: attempt.parsed.usage,

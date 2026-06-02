@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractCodexRetryNotBefore,
+  isCodexAuthError,
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
   parseCodexJsonl,
@@ -136,5 +137,44 @@ describe("isCodexTransientUpstreamError", () => {
         ].join("\n"),
       }),
     ).toBe(false);
+  });
+});
+
+describe("isCodexAuthError", () => {
+  it("classifies the codex 401 missing-bearer signature as an auth error", () => {
+    expect(
+      isCodexAuthError({
+        errorMessage:
+          "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header",
+      }),
+    ).toBe(true);
+  });
+
+  it("detects websocket 401 Unauthorized from stderr", () => {
+    expect(
+      isCodexAuthError({
+        stderr:
+          "ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: HTTP error: 401 Unauthorized",
+      }),
+    ).toBe(true);
+  });
+
+  it("detects invalid/missing api key and not-logged-in messages", () => {
+    expect(isCodexAuthError({ errorMessage: "Incorrect API key provided" })).toBe(true);
+    expect(isCodexAuthError({ stdout: "not logged in" })).toBe(true);
+  });
+
+  it("does not classify unrelated failures or empty input as auth errors", () => {
+    expect(isCodexAuthError({ errorMessage: "Codex exited with code 1" })).toBe(false);
+    expect(isCodexAuthError({})).toBe(false);
+  });
+
+  it("does not match a bare 401 outside an HTTP/status context", () => {
+    expect(isCodexAuthError({ errorMessage: "Syntax error on line 401" })).toBe(false);
+    expect(isCodexAuthError({ stdout: "Processed 401 files successfully" })).toBe(false);
+  });
+
+  it("still classifies a 401 in an HTTP/status context without the word Unauthorized", () => {
+    expect(isCodexAuthError({ stderr: "request failed with status 401" })).toBe(true);
   });
 });
