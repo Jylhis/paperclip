@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActivityEvent } from "@paperclipai/shared";
+import type { ActivityEvent, Agent } from "@paperclipai/shared";
 import { ActivityRow } from "./ActivityRow";
 import { JYLHIS_DESIGN_CONTRACT_VERSION } from "../lib/jylhis-design";
 
@@ -44,6 +44,38 @@ function makeEvent(overrides: Partial<ActivityEvent> = {}): ActivityEvent {
   } as ActivityEvent;
 }
 
+function makeAgent(overrides: Partial<Agent> = {}): Agent {
+  const now = new Date("2026-06-01T12:00:00.000Z");
+  return {
+    id: "agent-1",
+    companyId: "company-1",
+    name: "CodexEngineer",
+    urlKey: "codexengineer",
+    role: "engineer",
+    title: "Software Engineer",
+    icon: null,
+    status: "active",
+    reportsTo: null,
+    capabilities: null,
+    adapterType: "codex_local",
+    adapterConfig: {},
+    runtimeConfig: {},
+    defaultEnvironmentId: null,
+    budgetMonthlyCents: 0,
+    spentMonthlyCents: 0,
+    pauseReason: null,
+    pausedAt: null,
+    permissions: {
+      canCreateAgents: false,
+    },
+    lastHeartbeatAt: null,
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+}
+
 describe("ActivityRow", () => {
   let container: HTMLDivElement;
 
@@ -60,7 +92,7 @@ describe("ActivityRow", () => {
     const root = render(
       <ActivityRow
         event={makeEvent()}
-        agentMap={new Map([["agent-1", { id: "agent-1", name: "CodexEngineer" }]])}
+        agentMap={new Map([["agent-1", makeAgent()]])}
         entityNameMap={new Map([["issue:issue-1", "JYL-49"]])}
         entityTitleMap={new Map([["issue:issue-1", "Integrate design tokens"]])}
       />,
