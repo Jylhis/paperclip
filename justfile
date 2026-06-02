@@ -105,6 +105,10 @@ nix-build-mcp:
 nix-build-paperclipai:
     nix build -L .#paperclipai
 
+# Build the Linux desktop launcher.
+nix-build-desktop:
+    nix build -L .#paperclip-desktop
+
 # ---- NixOS VM tests ------------------------------------------------------
 
 # Run every NixOS VM test in sequence.

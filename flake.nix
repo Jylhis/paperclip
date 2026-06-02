@@ -64,6 +64,7 @@
         paperclip-agent-clis = pkgs.callPackage ./nix/agent-clis.nix {
           inherit (pkgs.stdenv.hostPlatform) system;
         };
+        paperclip-desktop = pkgs.callPackage ./nix/desktop.nix { };
         default = paperclip;
       });
     in

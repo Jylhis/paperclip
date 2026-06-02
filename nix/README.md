@@ -29,6 +29,7 @@ for the caveats around the darwin build.
 | `packages.<sys>.paperclip-mcp-server`   | `@paperclipai/mcp-server` standalone with `bin/paperclip-mcp-server` |
 | `packages.<sys>.paperclipai`            | Standalone `paperclipai` CLI (no server bundle)         |
 | `packages.<sys>.paperclip-ui`           | Prebuilt board UI static assets under `share/paperclip-ui/` |
+| `packages.<sys>.paperclip-desktop`      | Linux desktop launcher: chromeless window onto a Paperclip instance (Linux only) |
 | `packages.<sys>.paperclip-pnpm-deps`    | Fixed-output PNPM store fetched from `pnpm-lock.yaml`   |
 | `packages.<sys>.default`                | Alias for `paperclip` (Linux only)                      |
 | `overlays.default`                      | Adds all of the above to `pkgs`                         |
@@ -58,6 +59,7 @@ Linux-only — importing the module on darwin is harmless as long as
 | `paperclip-mcp-server`       | ✅           | ✅            | ✅             | ✅            |
 | `paperclipai`                | ✅           | ✅            | ✅             | ✅            |
 | `paperclip-ui`               | ✅           | ✅            | ✅             | ✅            |
+| `paperclip-desktop`          | ✅           | ✅            | ❌             | ❌            |
 | `paperclip-pnpm-deps`        | ✅           | ✅            | ✅             | ✅            |
 | `devShells.default`          | ✅           | ✅            | ✅             | ✅            |
 | `vmTests.*`                  | ✅           | ✅            | ❌             | ❌            |
@@ -68,6 +70,10 @@ ship per-arch tarballs only for `linux-x64` / `linux-arm64`. `vmTests.*`
 runs `nixosTest`, which only works on Linux. The lighter outputs
 (`paperclip-mcp-server`, `paperclipai`, `paperclip-ui`) are pure JS
 bundles with no native build steps, so they cover darwin too.
+`paperclip-desktop` is Linux-only because it ships a GUI launcher and a
+freedesktop `.desktop` entry (the window itself is `chromium --app`); a
+macOS counterpart would use WKWebView/Electron and reuse the same
+`.desktop` / icon / URL-config scaffolding.
 
 ## Consume from another flake
 
@@ -191,6 +197,29 @@ services.paperclip = {
 };
 ```
 
+## Desktop launcher (Linux)
+
+`packages.<sys>.paperclip-desktop` opens a Paperclip instance in a
+dedicated, chromeless application window (`chromium --app`, with a
+private profile under `$XDG_DATA_HOME/paperclip-desktop`). It is **not**
+an offline app — it needs a running server (a local `nix run
+.#paperclip`, or a remote stack). The target URL is resolved high→low:
+CLI argument, then `PAPERCLIP_URL`, then the default
+`http://127.0.0.1:3100` (which matches the `services.paperclip` default
+`listen.host`/`listen.port`).
+
+```sh
+nix run .#paperclip-desktop                      # default 127.0.0.1:3100
+nix run .#paperclip-desktop https://desk.example.com
+PAPERCLIP_URL=https://desk.example.com \
+  nix run .#paperclip-desktop                    # remote stack via env
+nix profile install github:Jylhis/paperclip#paperclip-desktop
+```
+
+Installing via `nix profile` / home-manager / `environment.systemPackages`
+also drops a "Paperclip" application-menu entry and icon (the profile's
+`share/applications` and `share/icons` land on `XDG_DATA_DIRS`).
+
 ## Build locally
 
 ```sh
@@ -199,6 +228,7 @@ nix build .#paperclip-agent-clis      # Linux only
 nix build .#paperclip-mcp-server      # any system
 nix build .#paperclipai               # any system
 nix build .#paperclip-ui              # any system
+nix build .#paperclip-desktop         # Linux desktop launcher (Linux only)
 nix build .#paperclip-pnpm-deps       # prefetched PNPM store
 nix run .#install-deps                # local node_modules, offline via Nix store
 nix flake check                       # eval-only sanity check (fast)
@@ -235,6 +265,7 @@ nix/
   paperclipai.nix          # standalone CLI
   mcp-server.nix           # @paperclipai/mcp-server
   ui.nix                   # @paperclipai/ui static assets
+  desktop.nix              # Linux desktop launcher (.desktop + icon + chromium --app)
   agent-clis.nix           # claude-code + codex + opencode bundle
   overlay.nix              # final: prev: { paperclip = ...; ... }
   shell.nix                # flake devShell

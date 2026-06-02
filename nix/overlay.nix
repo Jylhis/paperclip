@@ -6,4 +6,5 @@ final: prev: {
   paperclip-mcp-server = prev.callPackage ./mcp-server.nix { };
   paperclipai = prev.callPackage ./paperclipai.nix { };
   paperclip-ui = prev.callPackage ./ui.nix { };
+  paperclip-desktop = prev.callPackage ./desktop.nix { };
 }
