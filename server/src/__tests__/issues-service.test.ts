@@ -17,10 +17,12 @@ import {
   issueComments,
   issueInboxArchives,
   issueDocuments,
+  issueLabels,
   issuePlanDecompositions,
   issueRelations,
   issueThreadInteractions,
   issues,
+  labels,
   projectWorkspaces,
   projects,
   workspaceOperations,
@@ -2816,8 +2818,168 @@ describeEmbeddedPostgres("issueService blockers and dependency wake readiness", 
       assigneeAgentId,
       childIssueIds: [childA, childB],
       childIssueSummaries: [
-        expect.objectContaining({ id: childA, title: "Child A", status: "done" }),
-        expect.objectContaining({ id: childB, title: "Child B", status: "cancelled" }),
+        expect.objectContaining({ id: childA, title: "Child A", status: "done", projectId: null }),
+        expect.objectContaining({ id: childB, title: "Child B", status: "cancelled", projectId: null }),
+      ],
+      childIssueSummaryTruncated: false,
+    });
+  });
+
+  it("filters sibling-project child summaries from parent wake context by default", async () => {
+    const companyId = randomUUID();
+    const assigneeAgentId = randomUUID();
+    const projectA = randomUUID();
+    const projectB = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: assigneeAgentId,
+      companyId,
+      name: "CodexCoder",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(projects).values([
+      { id: projectA, companyId, name: "Product A", status: "in_progress" },
+      { id: projectB, companyId, name: "Product B", status: "in_progress" },
+    ]);
+
+    const parentId = randomUUID();
+    const childA = randomUUID();
+    const childB = randomUUID();
+    await db.insert(issues).values([
+      {
+        id: parentId,
+        companyId,
+        projectId: projectA,
+        title: "Parent issue",
+        status: "todo",
+        priority: "medium",
+        assigneeAgentId,
+      },
+      {
+        id: childA,
+        companyId,
+        projectId: projectA,
+        parentId,
+        title: "Product A child",
+        status: "done",
+        priority: "medium",
+      },
+      {
+        id: childB,
+        companyId,
+        projectId: projectB,
+        parentId,
+        title: "Product B child",
+        status: "done",
+        priority: "medium",
+      },
+    ]);
+
+    const wakeable = await svc.getWakeableParentAfterChildCompletion(parentId);
+    expect(wakeable).toMatchObject({
+      id: parentId,
+      assigneeAgentId,
+      childIssueIds: [childA],
+      childIssueSummaries: [
+        expect.objectContaining({ id: childA, title: "Product A child", projectId: projectA }),
+      ],
+      childIssueSummaryTruncated: false,
+    });
+    expect(wakeable?.childIssueIds).not.toContain(childB);
+    expect(wakeable?.childIssueSummaries.map((child) => child.id)).not.toContain(childB);
+  });
+
+  it("allows cross-project child summaries for coordinator issues only when explicitly opted in", async () => {
+    const companyId = randomUUID();
+    const assigneeAgentId = randomUUID();
+    const projectA = randomUUID();
+    const projectB = randomUUID();
+    const crossProjectLabelId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: assigneeAgentId,
+      companyId,
+      name: "CodexCoder",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(projects).values([
+      { id: projectA, companyId, name: "Product A", status: "in_progress" },
+      { id: projectB, companyId, name: "Product B", status: "in_progress" },
+    ]);
+
+    const parentId = randomUUID();
+    const childA = randomUUID();
+    const childB = randomUUID();
+    await db.insert(issues).values([
+      {
+        id: parentId,
+        companyId,
+        projectId: projectA,
+        title: "Coordinator issue",
+        status: "todo",
+        priority: "medium",
+        assigneeAgentId,
+        assigneeAdapterOverrides: { includeCrossProjectContext: true },
+      },
+      {
+        id: childA,
+        companyId,
+        projectId: projectA,
+        parentId,
+        title: "Product A child",
+        status: "done",
+        priority: "medium",
+      },
+      {
+        id: childB,
+        companyId,
+        projectId: projectB,
+        parentId,
+        title: "Product B child",
+        status: "done",
+        priority: "medium",
+      },
+    ]);
+    await db.insert(labels).values({
+      id: crossProjectLabelId,
+      companyId,
+      name: "cross-project",
+      color: "#ff9900",
+    });
+    await db.insert(issueLabels).values({
+      issueId: parentId,
+      labelId: crossProjectLabelId,
+      companyId,
+    });
+
+    const wakeable = await svc.getWakeableParentAfterChildCompletion(parentId);
+    expect(wakeable).toMatchObject({
+      id: parentId,
+      assigneeAgentId,
+      childIssueIds: [childA, childB],
+      childIssueSummaries: [
+        expect.objectContaining({ id: childA, title: "Product A child", projectId: projectA }),
+        expect.objectContaining({ id: childB, title: "Product B child", projectId: projectB }),
       ],
       childIssueSummaryTruncated: false,
     });

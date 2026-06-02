@@ -273,4 +273,73 @@ describe("issue dependency wakeups in issue routes", () => {
       );
     });
   });
+
+  it("omits completed child identifiers from the wake payload when that child is outside the visible project scope", async () => {
+    mockIssueService.getById.mockResolvedValue({
+      id: "child-2",
+      companyId: "company-1",
+      identifier: "PAP-102",
+      title: "Sibling product child",
+      description: null,
+      status: "in_progress",
+      priority: "medium",
+      parentId: "parent-2",
+      assigneeAgentId: "agent-1",
+      assigneeUserId: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      executionWorkspaceId: null,
+      labels: [],
+      labelIds: [],
+    });
+    mockIssueService.update.mockResolvedValue({
+      id: "child-2",
+      companyId: "company-1",
+      identifier: "PAP-102",
+      title: "Sibling product child",
+      description: null,
+      status: "done",
+      priority: "medium",
+      parentId: "parent-2",
+      assigneeAgentId: "agent-1",
+      assigneeUserId: null,
+      createdByAgentId: null,
+      createdByUserId: null,
+      executionWorkspaceId: null,
+      labels: [],
+      labelIds: [],
+    });
+    mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue({
+      id: "parent-2",
+      assigneeAgentId: "agent-9",
+      childIssueIds: ["child-1"],
+      childIssueSummaries: [
+        {
+          id: "child-1",
+          identifier: "PAP-101",
+          title: "Visible child",
+          status: "done",
+          priority: "medium",
+          projectId: "project-1",
+          assigneeAgentId: "agent-1",
+          assigneeUserId: null,
+          updatedAt: new Date("2026-04-18T12:00:00.000Z"),
+          summary: "Visible child finished.",
+        },
+      ],
+      childIssueSummaryTruncated: false,
+    });
+
+    const res = await request(await createApp()).patch("/api/issues/child-2").send({ status: "done" });
+    expect(res.status).toBe(200);
+    await vi.waitFor(() => {
+      expect(mockWakeup).toHaveBeenCalledWith(
+        "agent-9",
+        expect.objectContaining({
+          payload: expect.not.objectContaining({ completedChildIssueId: "child-2" }),
+          contextSnapshot: expect.not.objectContaining({ completedChildIssueId: "child-2" }),
+        }),
+      );
+    });
+  });
 });
