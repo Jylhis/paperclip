@@ -7,6 +7,7 @@ import { and, asc, desc, eq, getTableColumns, gt, inArray, isNull, lt, lte, notI
 import type { Db } from "@paperclipai/db";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
+  AGENT_PLUGIN_SPECS_CONTEXT_KEY,
   ISSUE_CONTINUATION_SUMMARY_DOCUMENT_KEY,
   MODEL_PROFILE_KEYS,
   isEnvironmentDriverSupportedForAdapter,
@@ -21,6 +22,11 @@ import {
   type RoutineRevisionSnapshotV1,
   type RunLivenessState,
 } from "@paperclipai/shared";
+import {
+  getEnabledPluginSpecsForAgent,
+  startPluginsForRun,
+  stopPluginsForRun,
+} from "./agent-plugin-runtime.js";
 import {
   agents,
   agentRuntimeState,
@@ -8035,6 +8041,20 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
           );
         }
       }
+      // Load enabled MCP/LSP plugin specs and inject into context for adapters.
+      const agentPluginSpecs = await getEnabledPluginSpecsForAgent(db, agent.id, agent.companyId).catch(() => []);
+      if (agentPluginSpecs.length > 0) {
+        context[AGENT_PLUGIN_SPECS_CONTEXT_KEY] = agentPluginSpecs;
+        await startPluginsForRun(db, {
+          runId: run.id,
+          agentId: agent.id,
+          companyId: agent.companyId,
+          specs: agentPluginSpecs,
+        }).catch((err: unknown) => {
+          logger.warn({ err, runId: run.id, agentId: agent.id }, "failed to start agent plugin processes");
+        });
+      }
+
       const onAdapterMeta = async (meta: AdapterInvocationMeta) => {
         if (meta.env && secretKeys.size > 0) {
           for (const key of secretKeys) {
@@ -8141,8 +8161,12 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
             "failed to record workspace_finalize=failed operation; dependents may remain gated",
           );
         }
+        // Best-effort plugin teardown on adapter failure path.
+        await stopPluginsForRun(db, { runId: run.id, agentId: agent.id, companyId: agent.companyId }).catch(() => {});
         throw adapterErr;
       }
+      // Tear down MCP/LSP plugin processes now that the adapter has finished.
+      await stopPluginsForRun(db, { runId: run.id, agentId: agent.id, companyId: agent.companyId }).catch(() => {});
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
             db,

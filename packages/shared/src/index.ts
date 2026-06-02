@@ -680,6 +680,7 @@ export {
   AGENT_PLUGIN_CONFIG_KINDS,
   AGENT_PLUGIN_RESTART_POLICIES,
   AGENT_PLUGIN_WORKSPACE_SCOPES,
+  AGENT_PLUGIN_SPECS_CONTEXT_KEY,
   isSecretEnvKey,
   redactPluginEnv,
 } from "./types/agent-plugin-config.js";
@@ -688,6 +689,8 @@ export type {
   AgentPluginRestartPolicy,
   AgentPluginWorkspaceScope,
   AgentPluginConfig,
+  AgentPluginProcessSpec,
+  AgentPluginHealth,
 } from "./types/agent-plugin-config.js";
 export {
   agentPluginConfigKindSchema,

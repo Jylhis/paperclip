@@ -41,3 +41,29 @@ export interface AgentPluginConfig {
   createdAt: Date;
   updatedAt: Date;
 }
+
+/**
+ * A sanitized descriptor passed to adapters at execution dispatch time.
+ * Contains unredacted env so adapters can actually launch the process.
+ * Never persisted — only lives in memory during a run.
+ */
+export interface AgentPluginProcessSpec {
+  configId: string;
+  kind: AgentPluginConfigKind;
+  name: string;
+  serverBinary: string;
+  args: string[];
+  env: Record<string, string>;
+  cwd: string | null;
+  timeoutSec: number;
+  restartPolicy: AgentPluginRestartPolicy;
+  workspaceScope: AgentPluginWorkspaceScope;
+}
+
+export type AgentPluginHealth = "starting" | "running" | "degraded" | "stopped" | "failed";
+
+/**
+ * Well-known key under which enabled plugin specs are injected into adapter execution context.
+ * Adapters read `ctx.context[AGENT_PLUGIN_SPECS_CONTEXT_KEY]` as `AgentPluginProcessSpec[]`.
+ */
+export const AGENT_PLUGIN_SPECS_CONTEXT_KEY = "_paperclipAgentPluginSpecs" as const;

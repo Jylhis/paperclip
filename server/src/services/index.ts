@@ -1,5 +1,12 @@
 export { companyService } from "./companies.js";
 export { agentPluginConfigService } from "./agent-plugin-configs.js";
+export {
+  getEnabledPluginSpecsForAgent,
+  startPluginsForRun,
+  stopPluginsForRun,
+  listPluginHandlesForRun,
+  type AgentPluginProcessHandle,
+} from "./agent-plugin-runtime.js";
 export { companySearchService } from "./company-search.js";
 export { feedbackService } from "./feedback.js";
 export { companySkillService } from "./company-skills.js";
