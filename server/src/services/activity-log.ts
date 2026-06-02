@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
 import { activityLog } from "@paperclipai/db";
-import { PLUGIN_EVENT_TYPES, type PluginEventType } from "@paperclipai/shared";
+import {
+  PAPERCLIP_FORK_TELEMETRY_EVENT_VERSION,
+  PAPERCLIP_FORK_TELEMETRY_NAMESPACE,
+  PLUGIN_EVENT_TYPES,
+  type PluginEventType,
+} from "@paperclipai/shared";
 import type { PluginEvent } from "@paperclipai/plugin-sdk";
 import { publishLiveEvent } from "./live-events.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
@@ -41,6 +46,31 @@ function eventTypeForActivityAction(action: string): PluginEventType | null {
   return ACTIVITY_ACTION_TO_PLUGIN_EVENT[action.replaceAll(".", "_")] ?? null;
 }
 
+function normalizeTelemetrySegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/_{2,}/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/^\d+/g, "n$&");
+}
+
+function buildPaperclipForkEventType(
+  entityType: string,
+  action: string,
+  result?: string | null,
+): PluginEventType {
+  const normalizedEntityType = normalizeTelemetrySegment(entityType) || "unknown";
+  const normalizedAction = normalizeTelemetrySegment(action) || "unknown";
+  const normalizedResult = result ? normalizeTelemetrySegment(result) : "";
+  const forkEventType =
+    normalizedResult.length > 0
+      ? `${PAPERCLIP_FORK_TELEMETRY_NAMESPACE}.${normalizedEntityType}.${normalizedAction}.${normalizedResult}`
+      : `${PAPERCLIP_FORK_TELEMETRY_NAMESPACE}.${normalizedEntityType}.${normalizedAction}`;
+  return forkEventType as PluginEventType;
+}
+
 export function publishPluginDomainEvent(event: PluginEvent): void {
   if (!_pluginEventBus) return;
   void _pluginEventBus.emit(event).then(({ errors }) => {
@@ -57,7 +87,10 @@ export interface LogActivityInput {
   action: string;
   entityType: string;
   entityId: string;
+  requestId?: string | null;
   agentId?: string | null;
+  elapsedMs?: number | null;
+  result?: string | null;
   runId?: string | null;
   details?: Record<string, unknown> | null;
 }
@@ -115,5 +148,29 @@ export async function logActivity(db: Db, input: LogActivityInput) {
       },
     };
     publishPluginDomainEvent(event);
+
+    const forkEvent: PluginEvent = {
+      eventId: randomUUID(),
+      eventType: buildPaperclipForkEventType(input.entityType, input.action, input.result),
+      occurredAt: new Date().toISOString(),
+      actorId: input.actorId,
+      actorType: input.actorType,
+      entityId: input.entityId,
+      entityType: input.entityType,
+      companyId: input.companyId,
+      payload: {
+        ...redactedDetails,
+        event_version: PAPERCLIP_FORK_TELEMETRY_EVENT_VERSION,
+        company_id: input.companyId,
+        actor_id: input.actorId,
+        actor_type: input.actorType,
+        entity_id: input.entityId,
+        request_id: input.requestId ?? null,
+        elapsed_ms: input.elapsedMs ?? null,
+        agent_id: input.agentId ?? null,
+        run_id: input.runId ?? null,
+      },
+    };
+    publishPluginDomainEvent(forkEvent);
   }
 }

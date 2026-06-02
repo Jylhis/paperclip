@@ -1050,6 +1050,23 @@ export type PluginWebhookDeliveryStatus = (typeof PLUGIN_WEBHOOK_DELIVERY_STATUS
  *
  * @see PLUGIN_SPEC.md §16 — Event System
  */
+export const PAPERCLIP_FORK_TELEMETRY_NAMESPACE = "jylhis.paperclip_fork" as const;
+export const PAPERCLIP_FORK_TELEMETRY_EVENT_VERSION = "v1" as const;
+
+/**
+ * Event types emitted by the Paperclip fork user-action telemetry stream.
+ *
+ * Naming convention: `jylhis.paperclip_fork.<entity>.<action>[.<result>]`
+ * where `<action>` and optional `<result>` are free-form snake_case tokens.
+ *
+ * The event payload for these events is intentionally shared-structured in the
+ * fork host and always contains `event_version`, `company_id`, `actor_id`,
+ * `actor_type`, `entity_id`, `request_id`, and `elapsed_ms` when present.
+ */
+export type PaperclipForkTelemetryEventType =
+  | `${typeof PAPERCLIP_FORK_TELEMETRY_NAMESPACE}.${string}.${string}`
+  | `${typeof PAPERCLIP_FORK_TELEMETRY_NAMESPACE}.${string}.${string}.${string}`;
+
 export const PLUGIN_EVENT_TYPES = [
   "company.created",
   "company.updated",
@@ -1084,7 +1101,8 @@ export const PLUGIN_EVENT_TYPES = [
   "cost_event.created",
   "activity.logged",
 ] as const;
-export type PluginEventType = (typeof PLUGIN_EVENT_TYPES)[number];
+export type PluginEventType =
+  (typeof PLUGIN_EVENT_TYPES)[number] | PaperclipForkTelemetryEventType | `plugin.${string}`;
 
 /**
  * Error codes returned by the plugin bridge when a UI → worker call fails.

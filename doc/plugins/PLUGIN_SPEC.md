@@ -925,6 +925,66 @@ Each event must include:
 - primary entity metadata
 - typed payload
 
+Jylhis fork telemetry also emits a dedicated stream for user-action traces:
+
+- namespace: `jylhis.paperclip_fork`
+- shape: `jylhis.paperclip_fork.<entity>.<action>[.<result>]`
+- shared constants:
+  - `PAPERCLIP_FORK_TELEMETRY_NAMESPACE`
+  - `PAPERCLIP_FORK_TELEMETRY_EVENT_VERSION`
+
+The fork payload must include a consistent base shape:
+
+- `event_version` (currently `"v1"`)
+- `company_id`
+- `actor_id`
+- `actor_type`
+- `entity_id`
+- `request_id` (or `null` if unavailable)
+- `elapsed_ms` (or `null` if unavailable)
+
+Example payload for a fork event:
+
+```json
+{
+  "eventType": "jylhis.paperclip_fork.issue.issue_updated",
+  "payload": {
+    "event_version": "v1",
+    "company_id": "2a1f0a1f-1234-4de4-9f6f-abcdef123456",
+    "actor_id": "agent-7777",
+    "actor_type": "agent",
+    "entity_id": "issue-1001",
+    "request_id": "req-123",
+    "elapsed_ms": 184,
+    "agent_id": "agent-7777"
+  }
+}
+```
+
+Example with an optional action result:
+
+```json
+{
+  "eventType": "jylhis.paperclip_fork.issue.comment_added.failed",
+  "payload": {
+    "event_version": "v1",
+    "company_id": "2a1f0a1f-1234-4de4-9f6f-abcdef123456",
+    "actor_id": "user-555",
+    "actor_type": "user",
+    "entity_id": "issue-1001",
+    "request_id": "req-456",
+    "elapsed_ms": 312,
+    "result": "failed"
+  }
+}
+```
+
+The existing core namespace remains unchanged for plugin consumer subscriptions:
+
+- `company.created`
+- `issue.updated`
+- `activity.logged`
+
 ### 16.1 Event Filtering
 
 Plugins may provide an optional filter when subscribing to events. The filter is evaluated by the host before dispatching to the worker, so filtered-out events never cross the process boundary.
