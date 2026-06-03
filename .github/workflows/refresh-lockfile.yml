@@ -4,11 +4,17 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "doc/**"
+      - "docs/**"
+      - "**/*.md"
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
 
 concurrency:
-  group: refresh-lockfile-master
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   refresh:

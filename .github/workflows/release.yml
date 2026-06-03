@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "doc/**"
+      - "docs/**"
+      - "**/*.md"
+      - "README.md"
+      - "LICENSE"
   workflow_dispatch:
     inputs:
       source_ref:
@@ -22,8 +28,8 @@ on:
         default: false
 
 concurrency:
-  group: release-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify_canary:

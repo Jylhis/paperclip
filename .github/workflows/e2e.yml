@@ -8,6 +8,10 @@ on:
         type: boolean
         default: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest

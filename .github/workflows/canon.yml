@@ -4,12 +4,26 @@ on:
   pull_request:
     branches:
       - master
+    paths:
+      - .github/workflows/canon.yml
+      - AGENTS.md
+      - ENGINEERING_PRINCIPLES.md
+      - WAY_OF_WORKING.md
+      - README.md
+      - LICENSE
   push:
     branches:
       - master
+    paths:
+      - .github/workflows/canon.yml
+      - AGENTS.md
+      - ENGINEERING_PRINCIPLES.md
+      - WAY_OF_WORKING.md
+      - README.md
+      - LICENSE
 
 concurrency:
-  group: canon-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Jylhis-fork canon lint. Enforces presence of fork-identity docs and the

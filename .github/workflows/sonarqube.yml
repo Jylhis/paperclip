@@ -3,15 +3,35 @@ on:
   push:
     branches:
       - master
+    paths-ignore:
+      - "doc/**"
+      - "docs/**"
+      - "**/*.md"
+      - "README.md"
+      - "LICENSE"
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "doc/**"
+      - "docs/**"
+      - "**/*.md"
+      - "README.md"
+      - "LICENSE"
+  schedule:
+    # Daily full-matrix coverage audit. Increase cadence only with a documented
+    # reason in this workflow because coverage fan-out is the expensive lane.
+    - cron: "17 5 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # Test coverage is expensive, so it only runs on push to master. Pull requests
   # are still analyzed (issues, hadolint, actionlint) but without fresh coverage.
   coverage:
     name: Coverage (${{ matrix.name }})
-    if: github.event_name == 'push'
+    if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

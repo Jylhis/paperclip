@@ -4,9 +4,20 @@ on:
   pull_request:
     branches:
       - master
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+    paths-ignore:
+      - "doc/**"
+      - "docs/**"
+      - "**/*.md"
+      - "README.md"
+      - "LICENSE"
 
 concurrency:
-  group: pr-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -51,6 +62,12 @@ jobs:
       - name: Test no-git-push check
         run: node --test ./scripts/check-no-git-push.test.mjs
 
+      - name: Validate workflow guardrails
+        run: node ./scripts/check-workflow-guardrails.mjs
+
+      - name: Test workflow guardrails check
+        run: node --test ./scripts/check-workflow-guardrails.test.mjs
+
       - name: Validate release package manifest
         run: node ./scripts/release-package-map.mjs check
 
@@ -70,6 +87,7 @@ jobs:
 
   typecheck_release_registry:
     name: Typecheck + Release Registry
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -100,6 +118,7 @@ jobs:
 
   general_tests:
     name: General tests (${{ matrix.group_label }})
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -138,7 +157,7 @@ jobs:
   verify:
     # Preserve the legacy required-check name while the underlying work runs in parallel.
     name: verify
-    if: ${{ always() }}
+    if: ${{ always() && github.event.pull_request.draft == false }}
     needs: [typecheck_release_registry, general_tests, build]
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -156,6 +175,7 @@ jobs:
 
   build:
     name: Build
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -183,6 +203,7 @@ jobs:
 
   verify_serialized_server:
     name: Verify serialized server suites (${{ matrix.shard_label }})
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -226,6 +247,7 @@ jobs:
 
   canary_dry_run:
     name: Canary Dry Run
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -257,6 +279,7 @@ jobs:
           ./scripts/release.sh canary --skip-verify --dry-run
 
   e2e:
+    if: github.event.pull_request.draft == false
     needs: [policy]
     runs-on: ubuntu-latest
     timeout-minutes: 30
