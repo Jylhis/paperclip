@@ -116,8 +116,8 @@ function stripSqlForKeywordScan(input: string): string {
   return input
     .replace(/'([^']|'')*'/g, "''")
     .replace(/"([^"]|"")*"/g, "\"\"")
-    .replace(/--.*$/gm, "")
-    .replace(/\/\*[\s\S]*?\*\//g, "");
+    .replace(/--.*$/gm, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ");
 }
 
 function normaliseSql(input: string): string {
@@ -212,7 +212,7 @@ export function validatePluginMigrationStatement(
     throw new Error("Plugin migrations may contain DDL or namespace-scoped backfill statements only");
   }
 
-  const refs = extractQualifiedRefs(statement);
+  const refs = extractQualifiedRefs(stripSqlForKeywordScan(statement));
   if (refs.length === 0 && !normalized.startsWith("comment ")) {
     throw new Error("Plugin migration objects must use fully qualified schema names");
   }
@@ -263,7 +263,7 @@ export function validatePluginRuntimeQuery(
   }
 
   const allowedCoreReadTables = new Set(coreReadTables);
-  for (const ref of extractQualifiedRefs(statement)) {
+  for (const ref of extractQualifiedRefs(stripSqlForKeywordScan(statement))) {
     if (ref.schema === namespace) continue;
     if (ref.schema === "public") {
       assertAllowedPublicRead(ref, allowedCoreReadTables);
@@ -288,7 +288,7 @@ export function validatePluginRuntimeExecute(query: string, namespace: string): 
     throw new Error("ctx.db.execute cannot contain DDL keywords");
   }
 
-  const refs = extractQualifiedRefs(statement);
+  const refs = extractQualifiedRefs(stripSqlForKeywordScan(statement));
   const target = refs.find((ref) => ["into", "update", "from"].includes(ref.keyword));
   if (!target || target.schema !== namespace) {
     throw new Error(`ctx.db.execute target must be inside plugin namespace "${namespace}"`);

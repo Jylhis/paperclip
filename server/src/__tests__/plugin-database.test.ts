@@ -129,6 +129,25 @@ describe("plugin database SQL validation", () => {
     ).toThrow(/namespace/i);
   });
 
+
+  it("rejects comment-obfuscated cross-namespace mutations", () => {
+    expect(() =>
+      validatePluginMigrationStatement(
+        "WITH seed AS (INSERT INTO plugin_test.audit (id) VALUES ('00000000-0000-0000-0000-000000000000') RETURNING id) UPDATE/**/public.issues SET title = 'bad' WHERE id IN (SELECT id FROM seed)",
+        "plugin_test",
+        ["issues"],
+      )
+    ).toThrow(/public/i);
+
+    expect(() =>
+      validatePluginMigrationStatement(
+        "WITH wiped AS (DELETE/**/FROM/**/public.issues RETURNING id) INSERT INTO plugin_test.audit (id) SELECT id FROM wiped",
+        "plugin_test",
+        ["issues"],
+      )
+    ).toThrow(/delete data/i);
+  });
+
   it("targets anonymous DO blocks without rejecting do-prefixed aliases", () => {
     expect(() =>
       validatePluginRuntimeQuery(
