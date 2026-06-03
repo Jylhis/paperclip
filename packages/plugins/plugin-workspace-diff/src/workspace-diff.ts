@@ -68,6 +68,13 @@ async function runGit(cwd: string, args: string[], maxBuffer = GIT_LIST_MAX_BUFF
       cwd,
       timeout: GIT_TIMEOUT_MS,
       maxBuffer,
+      env: {
+        ...process.env,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_ATTR_NOSYSTEM: "1",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_CONFIG_GLOBAL: "/dev/null",
+      },
     });
   } catch (error) {
     const stderr = typeof (error as { stderr?: unknown }).stderr === "string"
@@ -213,6 +220,7 @@ async function readDiffNameStatus(cwd: string, scopeArgs: string[], paths: strin
     "--name-status",
     "-z",
     "--no-ext-diff",
+    "--no-textconv",
     "--find-renames",
     ...scopeArgs,
     "--",
@@ -294,6 +302,7 @@ async function readNumstat(cwd: string, scopeArgs: string[], filePath: string) {
     "diff",
     "--numstat",
     "--no-ext-diff",
+    "--no-textconv",
     "--find-renames",
     ...scopeArgs,
     "--",
@@ -424,6 +433,7 @@ async function buildTrackedPatch(input: {
   const patchOutput = await readPatchOutput(input.cwd, [
     "diff",
     "--no-ext-diff",
+    "--no-textconv",
     "--find-renames",
     "--unified=3",
     ...input.scopeArgs,

@@ -181,6 +181,23 @@ describe("plugin workspace diff service", () => {
     expect(serialized).not.toContain(secretContent.trim());
   }, 20_000);
 
+
+
+  it("does not execute repo-configured textconv commands", async () => {
+    const repoRoot = await createTempRepo();
+    const markerPath = path.join(repoRoot, "textconv-marker.txt");
+    await fs.writeFile(path.join(repoRoot, ".gitattributes"), "*.evil diff=pwn\n", "utf8");
+    await runGit(repoRoot, ["config", "diff.pwn.textconv", `sh -c 'echo TEXTCONV_RAN >> "${markerPath}"; cat "$1"' --`]);
+    await fs.writeFile(path.join(repoRoot, "demo.evil"), "safe\n", "utf8");
+    await runGit(repoRoot, ["add", ".gitattributes", "demo.evil"]);
+    await runGit(repoRoot, ["commit", "-m", "Add evil file"]);
+    await fs.writeFile(path.join(repoRoot, "demo.evil"), "changed\n", "utf8");
+
+    await workspaceDiffService().getDiff(createWorkspace(repoRoot), workingTreeQuery());
+
+    await expect(fs.stat(markerPath)).rejects.toThrow();
+  }, 20_000);
+
   it("surfaces missing cwd, non-git, invalid base refs, and unsafe path filters as plugin errors", async () => {
     const svc = workspaceDiffService();
     await expect(svc.getDiff(createWorkspace(null), workingTreeQuery()))
