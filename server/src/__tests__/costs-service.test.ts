@@ -635,6 +635,58 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     });
   });
 
+  it("handles cyclic parent links in issue tree summaries without unbounded recursion", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const cyclicIssueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Cost Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(issues).values({
+      id: cyclicIssueId,
+      companyId,
+      parentId: cyclicIssueId,
+      title: "Self cycle",
+      status: "in_progress",
+      priority: "medium",
+      issueNumber: 1,
+      identifier: "TST-1",
+    });
+    await db.insert(costEvents).values({
+      companyId,
+      agentId,
+      issueId: cyclicIssueId,
+      provider: "openai",
+      biller: "openai",
+      billingType: "metered_api",
+      model: "gpt-5",
+      inputTokens: 10,
+      cachedInputTokens: 1,
+      outputTokens: 2,
+      costCents: 100,
+      occurredAt: new Date("2026-04-10T00:00:00.000Z"),
+    });
+
+    const summary = await costs.issueTreeSummary(companyId, cyclicIssueId);
+    expect(summary.issueCount).toBe(1);
+    expect(summary.costCents).toBe(100);
+  });
+
   it("aggregates run wall-clock duration across the recursive issue tree", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();
