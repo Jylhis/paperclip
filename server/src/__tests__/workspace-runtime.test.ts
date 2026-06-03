@@ -322,6 +322,54 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
 });
 
 describe("realizeExecutionWorkspace", () => {
+  it("records a pre-execution barrier for project-primary workspaces", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-project-primary-"));
+    const { recorder, operations } = createWorkspaceOperationRecorderDouble();
+
+    const workspace = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: cwd,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: null,
+      },
+      config: {
+        workspaceStrategy: {
+          type: "project_primary",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-462",
+        title: "Project primary barrier",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+      recorder,
+    });
+
+    expect(workspace.strategy).toBe("project_primary");
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      phase: "workspace_provision",
+      command: null,
+      cwd,
+      metadata: {
+        strategy: "project_primary",
+        executionBarrier: true,
+      },
+      result: {
+        status: "succeeded",
+        exitCode: 0,
+      },
+    });
+  });
+
   it("defaults new git worktrees to freshly fetched origin/master", async () => {
     const sourceRepo = await createTempRepo("master");
     const remoteDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-remote-"));
@@ -1658,6 +1706,143 @@ describe("realizeExecutionWorkspace", () => {
     expect(provisionOperation?.result.stdout).toContain("[output truncated to last");
     expect(provisionOperation?.result.stdout?.length ?? 0).toBeLessThan(300000);
   }, 10_000);
+
+  it("records a pre-execution barrier for persisted project-primary workspaces", async () => {
+    const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-persisted-primary-"));
+    const { recorder, operations } = createWorkspaceOperationRecorderDouble();
+
+    const workspace = await ensurePersistedExecutionWorkspaceAvailable({
+      base: {
+        baseCwd: cwd,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: null,
+      },
+      workspace: {
+        mode: "shared_workspace",
+        strategyType: "project_primary",
+        cwd,
+        providerRef: null,
+        projectId: "project-1",
+        projectWorkspaceId: "workspace-1",
+        repoUrl: null,
+        baseRef: null,
+        branchName: null,
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-463",
+        title: "Persisted primary barrier",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+      recorder,
+    });
+
+    expect(workspace?.strategy).toBe("project_primary");
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      phase: "workspace_provision",
+      command: null,
+      cwd,
+      metadata: {
+        strategy: "project_primary",
+        reusedPersisted: true,
+        executionBarrier: true,
+      },
+      result: {
+        status: "succeeded",
+        exitCode: 0,
+      },
+    });
+  });
+
+  it("records a pre-execution barrier when reusing an existing persisted git worktree", async () => {
+    const repoRoot = await createTempRepo();
+    const initial = await realizeExecutionWorkspace({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      config: {
+        workspaceStrategy: {
+          type: "git_worktree",
+          branchTemplate: "{{issue.identifier}}-{{slug}}",
+        },
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-464",
+        title: "Persisted git barrier",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+    });
+    const { recorder, operations } = createWorkspaceOperationRecorderDouble();
+
+    const workspace = await ensurePersistedExecutionWorkspaceAvailable({
+      base: {
+        baseCwd: repoRoot,
+        source: "project_primary",
+        projectId: "project-1",
+        workspaceId: "workspace-1",
+        repoUrl: null,
+        repoRef: "HEAD",
+      },
+      workspace: {
+        mode: "isolated_workspace",
+        strategyType: "git_worktree",
+        cwd: initial.cwd,
+        providerRef: initial.worktreePath,
+        projectId: "project-1",
+        projectWorkspaceId: "workspace-1",
+        repoUrl: null,
+        baseRef: "HEAD",
+        branchName: initial.branchName,
+      },
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-464",
+        title: "Persisted git barrier",
+      },
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+      recorder,
+    });
+
+    expect(workspace?.strategy).toBe("git_worktree");
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      phase: "worktree_prepare",
+      command: null,
+      metadata: {
+        worktreePath: initial.worktreePath,
+        branchName: initial.branchName,
+        created: false,
+        reusedPersisted: true,
+        executionBarrier: true,
+      },
+      result: {
+        status: "succeeded",
+        exitCode: 0,
+      },
+    });
+  });
 
   it("reuses an existing branch without resetting it when recreating a missing worktree", async () => {
     const repoRoot = await createTempRepo();

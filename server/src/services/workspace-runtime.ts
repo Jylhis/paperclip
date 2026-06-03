@@ -1098,6 +1098,24 @@ export async function realizeExecutionWorkspace(input: {
   const rawStrategy = parseObject(input.config.workspaceStrategy);
   const strategyType = asString(rawStrategy.type, "project_primary");
   if (strategyType !== "git_worktree") {
+    if (input.recorder) {
+      await input.recorder.recordOperation({
+        phase: "workspace_provision",
+        cwd: input.base.baseCwd,
+        metadata: {
+          strategy: "project_primary",
+          source: input.base.source,
+          projectId: input.base.projectId,
+          workspaceId: input.base.workspaceId,
+          executionBarrier: true,
+        },
+        run: async () => ({
+          status: "succeeded",
+          exitCode: 0,
+          system: `Prepared project primary workspace at ${input.base.baseCwd}\n`,
+        }),
+      });
+    }
     return {
       ...input.base,
       strategy: "project_primary",
@@ -1331,6 +1349,25 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   const provisionCommand = asString(input.workspace.config?.provisionCommand, "").trim();
 
   if (strategy !== "git_worktree") {
+    if (input.recorder) {
+      await input.recorder.recordOperation({
+        phase: "workspace_provision",
+        cwd,
+        metadata: {
+          strategy: "project_primary",
+          source: realized.source,
+          projectId: realized.projectId,
+          workspaceId: realized.workspaceId,
+          reusedPersisted: true,
+          executionBarrier: true,
+        },
+        run: async () => ({
+          status: "succeeded",
+          exitCode: 0,
+          system: `Prepared persisted project primary workspace at ${cwd}\n`,
+        }),
+      });
+    }
     return realized;
   }
   const repoRoot = await runGit(["rev-parse", "--show-toplevel"], input.base.baseCwd);
@@ -1343,6 +1380,28 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
       baseRef: input.workspace.baseRef ?? input.base.repoRef ?? null,
       recordedBaseRefSha,
     });
+    if (input.recorder) {
+      await input.recorder.recordOperation({
+        phase: "worktree_prepare",
+        cwd: repoRoot,
+        metadata: {
+          repoRoot,
+          worktreePath: realized.worktreePath ?? cwd,
+          branchName: realized.branchName,
+          baseRef: input.workspace.baseRef ?? input.base.repoRef ?? null,
+          currentBaseRefSha: baseDrift.currentBaseRefSha,
+          branchBaseRefSha: baseDrift.branchBaseRefSha,
+          created: false,
+          reusedPersisted: true,
+          executionBarrier: true,
+        },
+        run: async () => ({
+          status: "succeeded",
+          exitCode: 0,
+          system: `Prepared persisted git worktree at ${realized.worktreePath ?? cwd}\n`,
+        }),
+      });
+    }
     realized.warnings = baseDrift.warnings;
     realized.baseRefSha = recordedBaseRefSha ?? baseDrift.branchBaseRefSha ?? baseDrift.currentBaseRefSha;
     if (provisionCommand) {
