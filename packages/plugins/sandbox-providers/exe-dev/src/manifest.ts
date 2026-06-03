@@ -35,7 +35,7 @@ const manifest: PaperclipPluginManifestV1 = {
           apiUrl: {
             type: "string",
             description:
-              "Optional exe.dev HTTPS API base URL or /exec endpoint. Defaults to https://exe.dev/exec.",
+              "Optional exe.dev HTTPS API base URL or /exec endpoint on exe.dev. Defaults to https://exe.dev/exec.",
           },
           namePrefix: {
             type: "string",

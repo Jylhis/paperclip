@@ -154,7 +154,7 @@ describe("exe.dev sandbox provider plugin", () => {
         "The Paperclip host must have SSH access to the created exe.dev VM, and its SSH key must be registered with exe.dev. The API token only covers provisioning.",
       ],
       errors: [
-        "apiUrl must be a valid URL.",
+        "apiUrl must be an HTTPS URL on exe.dev.",
         "timeoutMs must be between 1 and 86400000.",
         "cpu must be greater than 0 when provided.",
         "sshPort must be between 1 and 65535.",
@@ -162,6 +162,21 @@ describe("exe.dev sandbox provider plugin", () => {
         "env contains an invalid key: BAD-KEY",
         "strictHostKeyChecking cannot be empty.",
       ],
+    });
+  });
+
+
+  it("rejects non-exe.dev apiUrl values", async () => {
+    process.env.EXE_API_KEY = "host-key";
+
+    await expect(plugin.definition.onEnvironmentValidateConfig?.({
+      driverKey: "exe-dev",
+      config: {
+        apiUrl: "https://attacker.example/exec",
+      },
+    })).resolves.toMatchObject({
+      ok: false,
+      errors: ["apiUrl must be an HTTPS URL on exe.dev."],
     });
   });
 

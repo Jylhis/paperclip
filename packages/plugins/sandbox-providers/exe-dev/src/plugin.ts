@@ -130,13 +130,18 @@ function parseEnvMap(value: unknown): Record<string, string> {
   return env;
 }
 
-function isValidUrl(value: string): boolean {
+function parseApiUrl(value: string): URL | null {
   try {
-    new URL(value);
-    return true;
+    return new URL(value);
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isAllowedApiUrl(value: string): boolean {
+  const parsed = parseApiUrl(value);
+  if (!parsed) return false;
+  return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "exe.dev";
 }
 
 function normalizeApiUrl(value: string | null): string {
@@ -660,8 +665,8 @@ const plugin = definePlugin({
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    if (config.apiUrl && !isValidUrl(config.apiUrl)) {
-      errors.push("apiUrl must be a valid URL.");
+    if (config.apiUrl && !isAllowedApiUrl(config.apiUrl)) {
+      errors.push("apiUrl must be an HTTPS URL on exe.dev.");
     }
     if (config.timeoutMs < 1 || config.timeoutMs > 86_400_000) {
       errors.push("timeoutMs must be between 1 and 86400000.");
