@@ -572,6 +572,7 @@ describe("acpx_local runtime skill isolation", () => {
     expect(Array.isArray(additionalDirectories)).toBe(true);
     expect(additionalDirectories).toContain(stateDir);
     expect(additionalDirectories).toContain(path.join(root, "agent-home"));
+    expect(additionalDirectories).not.toContain(path.dirname(path.dirname(stateDir)));
 
     const note = (meta[0]?.commandNotes as string[] | undefined)?.find((entry) =>
       entry.includes("Paperclip-managed Claude settings"),
@@ -622,6 +623,41 @@ describe("acpx_local runtime skill isolation", () => {
     expect(written.permissions?.allow).toContain("Bash(curl:*)");
     expect(written.permissions?.additionalDirectories).toContain("/Users/example/custom");
     expect(written.permissions?.additionalDirectories).toContain(stateDir);
+  });
+
+  it("does not add the shared company root to Claude additionalDirectories", async () => {
+    const root = await makeTempRoot();
+    const paperclipHome = path.join(root, "paperclip-home");
+    const paperclipInstanceId = "test-instance";
+    const companyRoot = path.join(paperclipHome, "instances", paperclipInstanceId, "companies", "company-1");
+    const stateDir = path.join(companyRoot, "acpx-local", "agents", "agent-1");
+    const siblingStateDir = path.join(companyRoot, "acpx-local", "agents", "agent-2");
+    const cwd = path.join(root, "worktree");
+    await fs.mkdir(cwd, { recursive: true });
+
+    const previousPaperclipHome = process.env.PAPERCLIP_HOME;
+    const previousPaperclipInstanceId = process.env.PAPERCLIP_INSTANCE_ID;
+    try {
+      process.env.PAPERCLIP_HOME = paperclipHome;
+      process.env.PAPERCLIP_INSTANCE_ID = paperclipInstanceId;
+
+      await runExecutor(
+        { agent: "claude", stateDir, cwd },
+        { context: { paperclipWorkspace: { cwd, agentHome: path.join(stateDir, "home") } } },
+      );
+    } finally {
+      if (previousPaperclipHome === undefined) delete process.env.PAPERCLIP_HOME;
+      else process.env.PAPERCLIP_HOME = previousPaperclipHome;
+      if (previousPaperclipInstanceId === undefined) delete process.env.PAPERCLIP_INSTANCE_ID;
+      else process.env.PAPERCLIP_INSTANCE_ID = previousPaperclipInstanceId;
+    }
+
+    const written = JSON.parse(
+      await fs.readFile(path.join(cwd, ".claude", "settings.local.json"), "utf8"),
+    ) as { permissions?: { additionalDirectories?: string[] } };
+    expect(written.permissions?.additionalDirectories).toContain(stateDir);
+    expect(written.permissions?.additionalDirectories).not.toContain(companyRoot);
+    expect(written.permissions?.additionalDirectories).not.toContain(siblingStateDir);
   });
 
   it("overrides a user-supplied dontAsk defaultMode so ACPX can route Bash through canUseTool", async () => {

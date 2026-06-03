@@ -583,21 +583,17 @@ function uniqueSorted(values: Array<string | null | undefined>): string[] {
 // `.claude/settings.local.json` we override the user's potentially-restrictive
 // `~/.claude/settings.json` (e.g. `defaultMode: "dontAsk"`, which silently
 // denies every non-allowlisted tool and never reaches `canUseTool`), and we
-// widen the SDK's Read sandbox to include the Paperclip state dirs the agent
+// widen the SDK's Read sandbox only to the Paperclip state paths this agent
 // needs to talk to its own control plane.
 async function writePaperclipClaudeSettings(input: {
   cwd: string;
   stateDir: string;
   agentHome: string;
-  companyId: string;
 }): Promise<PaperclipClaudeSettingsResult> {
   const filePath = path.join(input.cwd, ".claude", "settings.local.json");
-  const instanceRoot = defaultPaperclipInstanceDir();
-  const companyRoot = path.join(instanceRoot, "companies", input.companyId);
   const paperclipAdditionalDirectories = uniqueSorted([
     input.stateDir,
     input.agentHome,
-    companyRoot,
   ]);
   const paperclipAllow = uniqueSorted([
     "Bash(curl:*)",
@@ -852,7 +848,6 @@ async function buildRuntime(input: {
       cwd,
       stateDir,
       agentHome,
-      companyId: agent.companyId,
     });
     skillCommandNotes.push(
       `Wrote Paperclip-managed Claude settings to ${paperclipClaudeSettings.filePath} (defaultMode=${paperclipClaudeSettings.defaultMode}${
