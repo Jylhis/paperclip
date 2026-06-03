@@ -25,6 +25,7 @@ const FUZZY_PAIR_LONG_MAX_EDITS = 2;
 const FUZZY_PAIR_MEDIUM_LENGTH = 5;
 const FUZZY_PAIR_MEDIUM_MAX_EDITS = 1;
 const FUZZY_PAIR_SHORT_MAX_EDITS = 0;
+const FUZZY_LEVENSHTEIN_MAX_INPUT_LENGTH = 255;
 const FUZZY_IDENTIFIER_SIMILARITY_THRESHOLD = 0.45;
 const SNIPPET_MAX_CHARS = 240;
 export const COMPANY_SEARCH_BRANCH_FETCH_LIMIT = COMPANY_SEARCH_MAX_OFFSET + COMPANY_SEARCH_MAX_LIMIT + 1;
@@ -405,6 +406,8 @@ export function companySearchService(db: Db) {
                 SELECT 1
                 FROM regexp_split_to_table(lower(${issues.title}), '[^a-z0-9]+') AS title_word(value)
                 WHERE length(title_word.value) >= ${fuzzyMinTitleWordLengthExpr}
+                  AND length(title_word.value) <= ${FUZZY_LEVENSHTEIN_MAX_INPUT_LENGTH}
+                  AND length(qt.value) <= ${FUZZY_LEVENSHTEIN_MAX_INPUT_LENGTH}
                   AND levenshtein_less_equal(qt.value, title_word.value, ${fuzzyMaxEditsExpr}) <= ${fuzzyMaxEditsExpr}
               )
             )

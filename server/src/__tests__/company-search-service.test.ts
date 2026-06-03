@@ -410,6 +410,25 @@ describeEmbeddedPostgres("companySearchService", () => {
     }
   });
 
+
+
+  it("ignores overlong title words in fuzzy matching instead of erroring", async () => {
+    const companyId = await createCompany();
+    const longWordIssueId = await createIssue(companyId, {
+      identifier: "TST-30",
+      title: "z".repeat(256),
+    });
+    const expectedIssueId = await createIssue(companyId, {
+      identifier: "TST-31",
+      title: "Search onboarding",
+    });
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "serach", scope: "issues" }));
+
+    expect(result.results.map((row) => row.id)).toContain(expectedIssueId);
+    expect(result.results.map((row) => row.id)).not.toContain(longWordIssueId);
+  });
+
   it("uses pg_trgm for conservative fuzzy title matches", async () => {
     const companyId = await createCompany();
     const issueId = await createIssue(companyId, {
