@@ -1015,6 +1015,35 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     expect(afterUpdate.map((i) => i.id)).toContain(issueId);
   });
 
+  it("removes inbox archive rows before deleting an issue", async () => {
+    const companyId = randomUUID();
+    const issueId = randomUUID();
+    const archiverUserId = "archiver-user";
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Issue that should remain deletable",
+      status: "todo",
+      priority: "medium",
+    });
+
+    await svc.archiveInbox(companyId, issueId, archiverUserId, new Date("2026-03-26T12:00:00.000Z"));
+
+    const removed = await svc.remove(issueId);
+    expect(removed?.id).toBe(issueId);
+
+    const archiveRows = await db.select().from(issueInboxArchives).where(eq(issueInboxArchives.issueId, issueId));
+    expect(archiveRows).toHaveLength(0);
+  });
+
   it("sorts and exposes last activity from comments and non-local issue activity logs", async () => {
     const companyId = randomUUID();
     const olderIssueId = randomUUID();
