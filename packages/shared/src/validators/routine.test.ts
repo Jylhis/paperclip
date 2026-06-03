@@ -77,6 +77,15 @@ describe("routine validators", () => {
     })).toThrow();
   });
 
+
+
+  it("rejects routine updates with oversized descriptions", () => {
+    const tooLongDescription = "a".repeat(20_001);
+    expect(() => updateRoutineSchema.parse({
+      description: tooLongDescription,
+    })).toThrow();
+  });
+
   it("accepts optional base revision ids on routine updates", () => {
     expect(updateRoutineSchema.parse({
       title: "Daily triage",
