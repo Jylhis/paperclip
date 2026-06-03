@@ -24,10 +24,6 @@ let
   # `?host=` is ignored, and `postgres://user@/db` fails `new URL()`. So
   # for the NixOS-managed local Postgres we go TCP + password and build
   # the full URL at runtime from `passwordFile` (kept out of the store).
-  # Eval-time DATABASE_URL is only set when the caller supplies an
-  # external URL (database.createLocally = false).
-  evalTimeDatabaseUrl = if !cfg.database.createLocally then cfg.database.url else null;
-
   # Extract the hostname from `publicUrl` for the synthesised proxy vhost.
   # Returns null when `publicUrl` is unset (the assertions block proxy.* in
   # that case) or when the URL is malformed (assertion message points at it).
@@ -46,17 +42,27 @@ let
 
   runtimeEnvDir = "/run/paperclip";
   runtimeDbEnvFile = "${runtimeEnvDir}/db-env";
+  externalDatabaseUrl = lib.escapeShellArg cfg.database.url;
+  externalMigrationUrl =
+    if cfg.database.migrationUrl == null then null else lib.escapeShellArg cfg.database.migrationUrl;
 
   buildDbEnvScript = pkgs.writeShellScript "paperclip-build-db-env" ''
     set -euo pipefail
-    pass=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.passwordFile}")
-    # URL-encode the password so special characters don't break the URL.
-    encoded=$(${pkgs.coreutils}/bin/printf '%s' "$pass" | ${pkgs.jq}/bin/jq -sRr @uri)
     umask 077
-    ${pkgs.coreutils}/bin/printf \
-      'DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' \
-      '${cfg.user}' "$encoded" '${cfg.database.name}' \
-      > "${runtimeDbEnvFile}"
+    ${if cfg.database.createLocally then ''
+      pass=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.passwordFile}")
+      # URL-encode the password so special characters don't break the URL.
+      encoded=$(${pkgs.coreutils}/bin/printf '%s' "$pass" | ${pkgs.jq}/bin/jq -sRr @uri)
+      ${pkgs.coreutils}/bin/printf \
+        'DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' \
+        '${cfg.user}' "$encoded" '${cfg.database.name}' \
+        > "${runtimeDbEnvFile}"
+    '' else ''
+      ${pkgs.coreutils}/bin/printf 'DATABASE_URL=%s\n' ${externalDatabaseUrl} > "${runtimeDbEnvFile}"
+      ${if externalMigrationUrl != null then ''
+        ${pkgs.coreutils}/bin/printf 'DATABASE_MIGRATION_URL=%s\n' ${externalMigrationUrl} >> "${runtimeDbEnvFile}"
+      '' else ""}
+    ''}
   '';
 
   # ExecStart wrapper that sources runtimeDbEnvFile inline before
@@ -158,10 +164,6 @@ let
       PAPERCLIP_STORAGE_S3_ENDPOINT = cfg.storage.s3.endpoint;
     }
   )
-  // optionalAttrs (evalTimeDatabaseUrl != null) { DATABASE_URL = evalTimeDatabaseUrl; }
-  // optionalAttrs (cfg.database.migrationUrl != null) {
-    DATABASE_MIGRATION_URL = cfg.database.migrationUrl;
-  }
   // optionalAttrs cfg.grafanaCloud.enable (
     {
       # Token files are loaded by the server at runtime — only paths are baked
@@ -575,11 +577,12 @@ in
             provisions the database/role, and applies the password from
             `database.passwordFile` on every boot. Requires
             `database.passwordFile`.
-          - `false`: caller-supplied database. The module wires
-            `database.url` (and optionally `database.migrationUrl`) into
-            the unit environment as `DATABASE_URL` /
-            `DATABASE_MIGRATION_URL`. Use this for hosted databases
-            (e.g. Supabase) or a separately managed PostgreSQL.
+          - `false`: caller-supplied database. The module writes
+            `database.url` (and optionally `database.migrationUrl`) to
+            `/run/paperclip/db-env`, then sources that file at service
+            start as `DATABASE_URL` / `DATABASE_MIGRATION_URL`. Use
+            this for hosted databases (e.g. Supabase) or a separately
+            managed PostgreSQL.
 
           Both shapes resolve to the server's internal
           `mode = "postgres"` runtime mode (see
@@ -607,7 +610,7 @@ in
           `createLocally = false`; rejected when `createLocally = true`
           (the URL is built at boot from `passwordFile` instead).
 
-          Exported as `DATABASE_URL` in the unit environment. The
+          Exported as `DATABASE_URL` at service start. The
           server's runtime resolver treats this as
           `mode = "postgres"`.
         '';
@@ -1159,15 +1162,12 @@ in
         # restart from systemd instead of a silent kernel OOM-kill.
         // optionalAttrs (cfg.memoryHigh != null) { MemoryHigh = cfg.memoryHigh; }
         // optionalAttrs (cfg.memoryMax != null) { MemoryMax = cfg.memoryMax; }
-        // optionalAttrs cfg.database.createLocally {
-          # Build DATABASE_URL from `passwordFile` into a runtime env
-          # file at /run/paperclip/db-env; `paperclipExecStart` sources
-          # it inline so we are not subject to systemd's
-          # EnvironmentFile/ExecStartPre ordering. The script runs as
-          # the unit's User so it can write into the RuntimeDirectory
-          # without elevated privileges.
-          ExecStartPre = [ buildDbEnvScript ];
-        }
+        # Build DB env vars into /run/paperclip/db-env; `paperclipExecStart`
+        # sources it inline so we are not subject to systemd's
+        # EnvironmentFile/ExecStartPre ordering. The script runs as the
+        # unit's User so it can write into the RuntimeDirectory without
+        # elevated privileges.
+        ExecStartPre = [ buildDbEnvScript ];
         // (
           let
             envFiles =

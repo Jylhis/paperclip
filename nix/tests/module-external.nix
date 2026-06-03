@@ -76,11 +76,18 @@ pkgs.testers.runNixOSTest {
     machine.wait_for_open_port(3100)
     machine.succeed("curl -fsS http://127.0.0.1:3100/health")
 
-    # Confirm the unit picked up BOTH connection URLs.
+    # Confirm secrets are NOT leaked through systemd unit Environment.
     env = machine.succeed("systemctl show paperclip.service -p Environment --value")
-    assert "DATABASE_URL=" in env, f"DATABASE_URL missing from unit env: {env!r}"
-    assert "DATABASE_MIGRATION_URL=" in env, (
-        f"DATABASE_MIGRATION_URL missing from unit env: {env!r}"
+    assert "DATABASE_URL=" not in env, f"DATABASE_URL leaked into unit env: {env!r}"
+    assert "DATABASE_MIGRATION_URL=" not in env, (
+        f"DATABASE_MIGRATION_URL leaked into unit env: {env!r}"
+    )
+
+    # But both values must still be available at runtime via /run db-env.
+    db_env = machine.succeed("cat /run/paperclip/db-env")
+    assert "DATABASE_URL=" in db_env, f"DATABASE_URL missing from runtime env file: {db_env!r}"
+    assert "DATABASE_MIGRATION_URL=" in db_env, (
+        f"DATABASE_MIGRATION_URL missing from runtime env file: {db_env!r}"
     )
 
     # Negative-check: the embedded password-applier oneshot should NOT
