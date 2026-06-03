@@ -654,6 +654,116 @@ describe("feedbackService.saveIssueVote", () => {
     expect(String(instructions?.entryBody)).not.toContain("secret-value");
   });
 
+  it("does not export run artifacts when a target stores another agent's run id", async () => {
+    const companyId = randomUUID();
+    const attackerAgentId = randomUUID();
+    const victimAgentId = randomUUID();
+    const issueId = randomUUID();
+    const commentId = randomUUID();
+    const victimRunId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `S${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(agents).values([
+      {
+        id: attackerAgentId,
+        companyId,
+        name: "Attacker",
+        role: "engineer",
+        status: "active",
+        adapterType: "codex_local",
+        adapterConfig: {},
+        runtimeConfig: {},
+        permissions: {},
+      },
+      {
+        id: victimAgentId,
+        companyId,
+        name: "Victim",
+        role: "engineer",
+        status: "active",
+        adapterType: "codex_local",
+        adapterConfig: {},
+        runtimeConfig: {},
+        permissions: {},
+      },
+    ]);
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Spoofed run feedback",
+      status: "todo",
+      priority: "medium",
+      createdByUserId: "user-1",
+    });
+
+    await db.insert(heartbeatRuns).values({
+      id: victimRunId,
+      companyId,
+      agentId: victimAgentId,
+      invocationSource: "manual",
+      status: "succeeded",
+      startedAt: new Date("2026-04-02T10:00:00.000Z"),
+      finishedAt: new Date("2026-04-02T10:05:00.000Z"),
+      resultJson: { secret: "VICTIM_SECRET_PROMPT=do-not-export" },
+    });
+
+    await db.insert(issueComments).values({
+      id: commentId,
+      companyId,
+      issueId,
+      authorAgentId: attackerAgentId,
+      createdByRunId: victimRunId,
+      body: "Attacker-authored comment with spoofed provenance",
+    });
+
+    const uploadTraceBundle = vi.fn().mockResolvedValue({ objectKey: "feedback-traces/spoofed.json" });
+    const flushingSvc = feedbackService(db, {
+      shareClient: {
+        uploadTraceBundle,
+      },
+    });
+
+    await flushingSvc.saveIssueVote({
+      issueId,
+      targetType: "issue_comment",
+      targetId: commentId,
+      vote: "up",
+      authorUserId: "user-1",
+      allowSharing: true,
+    });
+
+    const traces = await flushingSvc.listFeedbackTraces({
+      companyId,
+      issueId,
+      includePayload: true,
+    });
+    const payloadBundle = traces[0]?.payloadSnapshot?.bundle as Record<string, unknown> | null;
+    const agentContext = payloadBundle?.agentContext as Record<string, unknown> | null;
+    const runtime = agentContext?.runtime as Record<string, unknown> | null;
+
+    expect(runtime?.sourceRun).toBeNull();
+
+    await flushingSvc.flushPendingFeedbackTraces();
+
+    expect(uploadTraceBundle).toHaveBeenCalledTimes(1);
+    const traceBundle = uploadTraceBundle.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    const files = Array.isArray(traceBundle?.files) ? (traceBundle.files as Array<Record<string, unknown>>) : [];
+    const filePaths = files.map((file) => String(file.path));
+
+    expect(traceBundle?.paperclipRun).toBeNull();
+    expect(traceBundle?.captureStatus).toBe("unavailable");
+    expect(traceBundle?.notes).toContain("source_run_provenance_mismatch");
+    expect(filePaths).not.toContain("paperclip/run.json");
+    expect(JSON.stringify(traceBundle)).not.toContain("VICTIM_SECRET_PROMPT");
+  });
+
   it("keeps earlier local votes local when a later vote enables sharing", async () => {
     const { companyId, issueId, commentId: firstCommentId } = await seedIssueWithAgentComment();
     const secondCommentId = randomUUID();

@@ -1124,7 +1124,7 @@ async function buildAgentContext(
     state.omittedFields.add("bundle.agentContext.skills");
   }
 
-  const run = createdByRunId
+  const sourceRun = createdByRunId
     ? await db
       .select({
         id: heartbeatRuns.id,
@@ -1143,6 +1143,12 @@ async function buildAgentContext(
       .where(eq(heartbeatRuns.id, createdByRunId))
       .then((rows) => rows[0] ?? null)
     : null;
+  const run = sourceRun && sourceRun.companyId === companyId && sourceRun.agentId === authorAgentId
+    ? sourceRun
+    : null;
+  if (createdByRunId && !run) {
+    state.notes.add("source_run_provenance_mismatch");
+  }
   const runCosts = run
     ? await db
       .select({
@@ -1450,6 +1456,7 @@ async function buildFeedbackTraceBundleFromRow(
   const state = createFeedbackRedactionState();
   const files: FeedbackTraceBundleFile[] = [];
   const sourceRunId = resolveSourceRunId(payloadSnapshot);
+  const targetAuthorAgentId = asString(asRecord(payloadSnapshot?.target)?.authorAgentId);
 
   let paperclipRun: Record<string, unknown> | null = null;
   let rawAdapterTrace: Record<string, unknown> | null = null;
@@ -1494,6 +1501,8 @@ async function buildFeedbackTraceBundleFromRow(
 
     if (!run || run.companyId !== row.companyId) {
       appendNote(notes, "source_run_unavailable");
+    } else if (!targetAuthorAgentId || run.agentId !== targetAuthorAgentId) {
+      appendNote(notes, "source_run_provenance_mismatch");
     } else {
       adapterType = run.adapterType;
       const events = await db
