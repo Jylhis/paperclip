@@ -22,7 +22,6 @@ import path from "node:path";
 import os from "node:os";
 import { parseCodexJsonl } from "./parse.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
-import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
 import { buildCodexExecArgs } from "./codex-args.js";
 import { prepareManagedCodexHome } from "./codex-home.js";
 
@@ -239,25 +238,12 @@ export async function testEnvironment(
       detail: `Detected in ${source}.`,
     });
   } else if (!targetIsRemote) {
-    // Local-only auth file check. On remote targets, the probe will surface
-    // any missing-auth errors directly from the remote `codex` invocation.
-    const codexHome = isNonEmpty(env.CODEX_HOME) ? env.CODEX_HOME : undefined;
-    const codexAuth = await readCodexAuthInfo(codexHome).catch(() => null);
-    if (codexAuth) {
-      checks.push({
-        code: "codex_native_auth_present",
-        level: "info",
-        message: "Codex is authenticated via its own auth configuration.",
-        detail: codexAuth.email ? `Logged in as ${codexAuth.email}.` : `Credentials found in ${path.join(codexHome ?? codexHomeDir(), "auth.json")}.`,
-      });
-    } else {
-      checks.push({
-        code: "codex_openai_api_key_missing",
-        level: "warn",
-        message: "OPENAI_API_KEY is not set. Codex runs may fail until authentication is configured.",
-        hint: "Set OPENAI_API_KEY in adapter env, shell environment, or run `codex auth` to log in.",
-      });
-    }
+    checks.push({
+      code: "codex_openai_api_key_missing",
+      level: "warn",
+      message: "OPENAI_API_KEY is not set. Codex runs may fail until authentication is configured.",
+      hint: "Set OPENAI_API_KEY in adapter env, shell environment, or run `codex auth` to log in.",
+    });
   }
 
   const canRunProbe =
