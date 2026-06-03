@@ -144,6 +144,7 @@ export function costRoutes(
       res.status(404).json({ error: "Issue not found" });
       return;
     }
+    assertBoard(req);
     assertCompanyAccess(req, issue.companyId);
     const excludeRoot = req.query.excludeRoot === "true" || req.query.excludeRoot === "1";
     const summary = await costs.issueTreeSummary(issue.companyId, issue.id, { excludeRoot });

@@ -259,6 +259,20 @@ describe("cost routes", () => {
     });
   });
 
+  it("rejects agent actors for issue subtree cost summaries", async () => {
+    const app = await createAppWithActor({
+      type: "agent",
+      companyId: "company-1",
+      agentId: "agent-1",
+      runId: null,
+    });
+    const res = await request(app).get("/api/issues/pc1a2-1/cost-summary");
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: "Board access required" });
+    expect(mockCostService.issueTreeSummary).not.toHaveBeenCalled();
+  });
+
   it("returns 400 for invalid finance event list limits", async () => {
     const { parseCostLimit } = await loadCostParsers();
     expect(() => parseCostLimit({ limit: "0" })).toThrow(/invalid 'limit'/i);
