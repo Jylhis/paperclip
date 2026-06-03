@@ -38,6 +38,8 @@ export function companyRoutes(db: Db, storage?: StorageService) {
   const feedback = feedbackService(db);
   const importJobs = new Map<string, ImportJobRecord>();
   const importJobTerminalRetentionMs = 5 * 60 * 1000;
+  const maxImportJobs = 200;
+  const maxRunningImportJobsPerTenant = 2;
 
   function parseBooleanQuery(value: unknown) {
     return value === true || value === "true" || value === "1";
@@ -199,11 +201,21 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (req.header("x-paperclip-cloud-async-import") === "1") {
       assertCloudTenantCaller(req);
       cleanupTerminalImportJobs(importJobs, importJobTerminalRetentionMs);
-      const job = createImportJob(cloudTenantRequestKey(req));
+      if (importJobs.size >= maxImportJobs) {
+        res.status(429).json({ error: "Import job queue is full" });
+        return;
+      }
+      const tenantKey = cloudTenantRequestKey(req);
+      const runningForTenant = countRunningImportJobs(importJobs, tenantKey);
+      if (runningForTenant >= maxRunningImportJobsPerTenant) {
+        res.status(429).json({ error: "Too many running import jobs for tenant" });
+        return;
+      }
+      const importBody = companyPortabilityImportSchema.parse(rawImportBody);
+      assertImportTargetAccess(req, importBody.target);
+      const job = createImportJob(tenantKey);
       importJobs.set(job.id, job);
       const operation = async () => {
-        const importBody = companyPortabilityImportSchema.parse(rawImportBody);
-        assertImportTargetAccess(req, importBody.target);
         const activity = importedCompanyActivityContext(actor, importBody.include ?? null);
         const result = await portability.importBundle(importBody, boardUserId);
         await logImportedCompanyActivity(db, activity, result);
@@ -600,6 +612,16 @@ function cleanupTerminalImportJobs(importJobs: Map<string, ImportJobRecord>, ter
       importJobs.delete(jobId);
     }
   }
+}
+
+function countRunningImportJobs(importJobs: Map<string, ImportJobRecord>, cloudTenantKey: string) {
+  let running = 0;
+  for (const job of importJobs.values()) {
+    if (job.cloudTenantKey === cloudTenantKey && job.status === "running") {
+      running += 1;
+    }
+  }
+  return running;
 }
 
 function errorMessage(error: unknown) {

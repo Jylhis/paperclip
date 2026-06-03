@@ -549,7 +549,7 @@ describe.sequential("company portability routes", () => {
     expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it.sequential("accepts trusted Cloud async import jobs before validating the full import payload", async () => {
+  it.sequential("rejects trusted Cloud async import jobs with invalid payloads before enqueueing", async () => {
     const app = await createApp(cloudTenantActor());
 
     const accepted = await request(app)
@@ -558,17 +558,44 @@ describe.sequential("company portability routes", () => {
       .set(cloudHeaders)
       .send({ target: { mode: "existing_company", companyId } });
 
-    expect(accepted.status).toBe(202);
-    expect(accepted.body.job.status).toBe("running");
-    expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
-
-    const failed = await waitForImportJobStatus(app, accepted.body.statusUrl, "failed");
-
-    expect(failed.status).toBe(200);
-    expect(failed.body.job.status).toBe("failed");
-    expect(failed.body.job.error.message).toEqual(expect.any(String));
+    expect(accepted.status).toBe(400);
+    expect(accepted.body.error).toEqual(expect.any(String));
     expect(mockCompanyPortabilityService.importBundle).not.toHaveBeenCalled();
     expect(mockLogActivity).not.toHaveBeenCalled();
+  });
+
+  it.sequential("enforces per-tenant running async import limits", async () => {
+    let resolveFirst: (value: ReturnType<typeof createImportResult>) => void = () => undefined;
+    const firstPending = new Promise<ReturnType<typeof createImportResult>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    let resolveSecond: (value: ReturnType<typeof createImportResult>) => void = () => undefined;
+    const secondPending = new Promise<ReturnType<typeof createImportResult>>((resolve) => {
+      resolveSecond = resolve;
+    });
+    mockCompanyPortabilityService.importBundle
+      .mockReturnValueOnce(firstPending)
+      .mockReturnValueOnce(secondPending)
+      .mockResolvedValue(createImportResult("updated"));
+    const app = await createApp(cloudTenantActor());
+
+    const first = await request(app).post("/api/companies/import").set("x-paperclip-cloud-async-import", "1").set(cloudHeaders)
+      .send(importRequest);
+    const second = await request(app).post("/api/companies/import").set("x-paperclip-cloud-async-import", "1").set(cloudHeaders)
+      .send(importRequest);
+    const third = await request(app).post("/api/companies/import").set("x-paperclip-cloud-async-import", "1").set(cloudHeaders)
+      .send(importRequest);
+
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+    expect(third.status).toBe(429);
+    expect(third.body.error).toContain("Too many running import jobs");
+    expect(mockCompanyPortabilityService.importBundle).toHaveBeenCalledTimes(2);
+
+    resolveFirst(createImportResult("updated"));
+    resolveSecond(createImportResult("updated"));
+    await waitForImportJobStatus(app, first.body.statusUrl, "succeeded");
+    await waitForImportJobStatus(app, second.body.statusUrl, "succeeded");
   });
 
   it.sequential("keeps global import apply synchronous when Cloud async opt-in is absent", async () => {
