@@ -573,6 +573,34 @@ describe("agent issue mutation checkout ownership", () => {
     expect(mockIssueService.removeAttachment).not.toHaveBeenCalled();
   });
 
+  it("fails closed for run-scoped agents when run context cannot be resolved", async () => {
+    const app = await createApp(
+      {
+        type: "agent",
+        agentId: ownerAgentId,
+        companyId,
+        source: "agent_jwt",
+        runId: "bogus-run-id",
+      },
+      {
+        transaction: async (callback: (tx: Record<string, never>) => Promise<unknown>) => callback({}),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn(() => ({
+              then: async (resolve: (rows: unknown[]) => unknown) => resolve([]),
+            })),
+          })),
+        })),
+      },
+    );
+
+    const res = await request(app).put(`/api/issues/${issueId}/documents/plan`).send({ format: "markdown", body: "# blocked" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.error).toContain("Run-scoped agent authentication could not be resolved");
+    expect(mockDocumentService.upsertIssueDocument).not.toHaveBeenCalled();
+  });
+
   it.each([
     [
       "issue create",

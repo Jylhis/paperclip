@@ -1415,6 +1415,10 @@ export function issueRoutes(
     return run;
   }
 
+  function isRunScopedAgentActor(req: Request) {
+    return req.actor.type === "agent" && req.actor.source === "agent_jwt";
+  }
+
   async function assertCheapRecoveryIssueAssigneeProfileAllowed(
     req: Request,
     res: Response,
@@ -1423,6 +1427,16 @@ export function issueRoutes(
   ) {
     if (!requestsCheapIssueAssigneeModelProfile(input)) return true;
     const run = await loadActorRunContext(req, issue.companyId);
+    if (!run && isRunScopedAgentActor(req)) {
+      res.status(403).json({
+        error: "Run-scoped agent authentication could not be resolved for cheap recovery checks",
+        details: {
+          issueId: issue.id ?? null,
+          runId: req.actor.runId ?? null,
+        },
+      });
+      return false;
+    }
     if (!run || !isStatusOnlyCheapRecoveryContext(run.contextSnapshot)) return true;
 
     res.status(403).json({
@@ -1444,6 +1458,16 @@ export function issueRoutes(
     issue: { id: string; companyId: string },
   ) {
     const run = await loadActorRunContext(req, issue.companyId);
+    if (!run && isRunScopedAgentActor(req)) {
+      res.status(403).json({
+        error: "Run-scoped agent authentication could not be resolved for deliverable mutation checks",
+        details: {
+          issueId: issue.id,
+          runId: req.actor.runId ?? null,
+        },
+      });
+      return false;
+    }
     if (!run) return true;
     if (!isStatusOnlyCheapRecoveryContext(run.contextSnapshot)) return true;
 
