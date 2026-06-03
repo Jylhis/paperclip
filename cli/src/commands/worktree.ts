@@ -2766,7 +2766,7 @@ async function applyMergePlan(input: {
       const conflictingKeyDocument = await tx
         .select({ documentId: issueDocuments.documentId })
         .from(issueDocuments)
-        .where(and(eq(issueDocuments.issueId, documentPlan.source.issueId), eq(issueDocuments.key, documentPlan.source.key)))
+        .where(and(eq(issueDocuments.companyId, companyId), eq(issueDocuments.issueId, documentPlan.source.issueId), eq(issueDocuments.key, documentPlan.source.key)))
         .then((rows) => rows[0] ?? null);
       if (
         conflictingKeyDocument
@@ -2776,10 +2776,16 @@ async function applyMergePlan(input: {
       }
 
       const existingDocument = await tx
-        .select({ id: documents.id })
+        .select({ id: documents.id, companyId: documents.companyId })
         .from(documents)
         .where(eq(documents.id, documentPlan.source.documentId))
         .then((rows) => rows[0] ?? null);
+
+      if (existingDocument && existingDocument.companyId !== companyId) {
+        throw new Error(
+          `Cannot merge document ${documentPlan.source.documentId}: id already exists in another company.`,
+        );
+      }
 
       if (!existingDocument) {
         await tx.insert(documents).values({
@@ -2811,7 +2817,7 @@ async function applyMergePlan(input: {
         const existingLink = await tx
           .select({ id: issueDocuments.id })
           .from(issueDocuments)
-          .where(eq(issueDocuments.documentId, documentPlan.source.documentId))
+          .where(and(eq(issueDocuments.companyId, companyId), eq(issueDocuments.documentId, documentPlan.source.documentId)))
           .then((rows) => rows[0] ?? null);
         if (!existingLink) {
           await tx.insert(issueDocuments).values({
@@ -2831,7 +2837,7 @@ async function applyMergePlan(input: {
               key: documentPlan.source.key,
               updatedAt: documentPlan.source.linkUpdatedAt,
             })
-            .where(eq(issueDocuments.documentId, documentPlan.source.documentId));
+            .where(and(eq(issueDocuments.companyId, companyId), eq(issueDocuments.documentId, documentPlan.source.documentId)));
         }
 
         await tx
@@ -2846,7 +2852,7 @@ async function applyMergePlan(input: {
             updatedByUserId: documentPlan.source.updatedByUserId,
             updatedAt: documentPlan.source.documentUpdatedAt,
           })
-          .where(eq(documents.id, documentPlan.source.documentId));
+          .where(and(eq(documents.companyId, companyId), eq(documents.id, documentPlan.source.documentId)));
         mergedDocuments += 1;
       }
 
@@ -2855,7 +2861,7 @@ async function applyMergePlan(input: {
           await tx
             .select({ id: documentRevisions.id })
             .from(documentRevisions)
-            .where(eq(documentRevisions.documentId, documentPlan.source.documentId))
+            .where(and(eq(documentRevisions.companyId, companyId), eq(documentRevisions.documentId, documentPlan.source.documentId)))
         ).map((row) => row.id),
       );
       for (const revisionPlan of documentPlan.revisionsToInsert) {
