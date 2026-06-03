@@ -57,11 +57,17 @@ if (!cred) {
   process.exit(1);
 }
 
-// Resolve URL — if it starts with / treat as path relative to apiBase
-const url = rawUrl.startsWith("http") ? rawUrl : `${cred.apiBase}${rawUrl}`;
+// Derive trusted origin from stored apiBase
+const baseUrl = new URL(cred.apiBase);
+const origin = baseUrl.origin;
 
-// Validate URL before launching browser
-const origin = new URL(url).origin;
+// Resolve URL and enforce trusted origin for absolute URLs
+const url = rawUrl.startsWith("http") ? rawUrl : new URL(rawUrl, baseUrl).toString();
+const resolvedUrl = new URL(url);
+if (resolvedUrl.origin !== origin) {
+  console.error(`Refusing to send board token to untrusted origin: ${resolvedUrl.origin}`);
+  process.exit(1);
+}
 
 // --- Screenshot ----------------------------------------------------------
 (async () => {
