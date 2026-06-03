@@ -940,59 +940,6 @@ function stripPortableProjectExecutionWorkspaceRefs(policy: Record<string, unkno
   return isPlainRecord(cleaned) ? cleaned : null;
 }
 
-async function readGitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], { cwd });
-  const trimmed = stdout.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-async function inferPortableWorkspaceGitMetadata(workspace: NonNullable<ProjectLike["workspaces"]>[number]) {
-  const cwd = asString(workspace.cwd);
-  if (!cwd) {
-    return {
-      repoUrl: null,
-      repoRef: null,
-      defaultRef: null,
-    };
-  }
-
-  let repoUrl: string | null = null;
-  try {
-    repoUrl = await readGitOutput(cwd, ["remote", "get-url", "origin"]);
-  } catch {
-    try {
-      const firstRemote = await readGitOutput(cwd, ["remote"]);
-      const remoteName = firstRemote?.split("\n").map((entry) => entry.trim()).find(Boolean) ?? null;
-      if (remoteName) {
-        repoUrl = await readGitOutput(cwd, ["remote", "get-url", remoteName]);
-      }
-    } catch {
-      repoUrl = null;
-    }
-  }
-
-  let repoRef: string | null = null;
-  try {
-    repoRef = await readGitOutput(cwd, ["branch", "--show-current"]);
-  } catch {
-    repoRef = null;
-  }
-
-  let defaultRef: string | null = null;
-  try {
-    const remoteHead = await readGitOutput(cwd, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]);
-    defaultRef = remoteHead?.startsWith("origin/") ? remoteHead.slice("origin/".length) : remoteHead;
-  } catch {
-    defaultRef = null;
-  }
-
-  return {
-    repoUrl,
-    repoRef,
-    defaultRef,
-  };
-}
-
 async function buildPortableProjectWorkspaces(
   projectSlug: string,
   workspaces: ProjectLike["workspaces"] | undefined,
@@ -1006,17 +953,13 @@ async function buildPortableProjectWorkspaces(
   const usedKeys = new Set<string>();
 
   for (const workspace of workspaces ?? []) {
-    const inferredGitMetadata =
-      !asString(workspace.repoUrl) || !asString(workspace.repoRef) || !asString(workspace.defaultRef)
-        ? await inferPortableWorkspaceGitMetadata(workspace)
-        : { repoUrl: null, repoRef: null, defaultRef: null };
-    const repoUrl = asString(workspace.repoUrl) ?? inferredGitMetadata.repoUrl;
+    const repoUrl = asString(workspace.repoUrl);
     if (!repoUrl) {
       warnings.push(`Project ${projectSlug} workspace ${workspace.name} was omitted from export because it does not have a portable repoUrl.`);
       continue;
     }
-    const repoRef = asString(workspace.repoRef) ?? inferredGitMetadata.repoRef;
-    const defaultRef = asString(workspace.defaultRef) ?? inferredGitMetadata.defaultRef ?? repoRef;
+    const repoRef = asString(workspace.repoRef);
+    const defaultRef = asString(workspace.defaultRef) ?? repoRef;
     const workspaceSignature = JSON.stringify({
       name: workspace.name,
       repoUrl,
