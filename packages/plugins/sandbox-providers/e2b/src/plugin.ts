@@ -1,5 +1,4 @@
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import {
   CommandExitError,
   Sandbox,
@@ -410,35 +409,31 @@ const plugin = definePlugin({
     });
     const timeoutMs = params.timeoutMs ?? config.timeoutMs;
 
-    // For commands with stdin, stage the payload to a temp file inside the
-    // sandbox and shell-redirect it. Streaming stdin via `sendStdin` raced
-    // with fast-failing commands (the process exits before the RPC lands),
-    // and the previous code awaited a foreground `run` before sending stdin
-    // at all, so the data was never delivered. The staged-file approach
-    // keeps execution synchronous, avoids the race, and is unaffected by
-    // whether the command exits in microseconds or minutes.
-    let stagedStdinPath: string | null = null;
-    if (params.stdin != null) {
-      stagedStdinPath = `/tmp/paperclip-stdin-${randomUUID()}`;
-      try {
-        await sandbox.files.write(stagedStdinPath, params.stdin);
-      } catch (error) {
-        // Best-effort cleanup in case the write partially succeeded; ignore
-        // remove failures so the original error is what propagates.
-        await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
-        throw error;
-      }
-    }
-
-    const command = stagedStdinPath
-      ? `${baseCommand} < ${shellQuote(stagedStdinPath)}`
-      : baseCommand;
-
     try {
       // Env is interpolated into the script via `exec env KEY=val …` after
       // profile sourcing so user-configured env wins over anything profiles
       // export. No need to pass `envs:` separately.
-      const result = await sandbox.commands.run(command, {
+      if (params.stdin != null) {
+        const handle = await sandbox.commands.run(baseCommand, {
+          background: true,
+          cwd: params.cwd,
+          timeoutMs,
+        }) as Awaited<ReturnType<Sandbox["commands"]["run"]>> & {
+          pid: number;
+          wait: () => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+        };
+        await sandbox.commands.sendStdin(handle.pid, params.stdin);
+        await sandbox.commands.closeStdin(handle.pid);
+        const result = await handle.wait();
+        return {
+          exitCode: result.exitCode,
+          timedOut: false,
+          stdout: result.stdout,
+          stderr: result.stderr,
+        };
+      }
+
+      const result = await sandbox.commands.run(baseCommand, {
         cwd: params.cwd,
         timeoutMs,
       }) as Awaited<ReturnType<Sandbox["commands"]["run"]>> & {
@@ -465,10 +460,6 @@ const plugin = definePlugin({
         return buildTimeoutExecuteResult(error);
       }
       throw error;
-    } finally {
-      if (stagedStdinPath) {
-        await sandbox.files.remove(stagedStdinPath).catch(() => undefined);
-      }
     }
   },
 });

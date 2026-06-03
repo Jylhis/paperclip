@@ -302,19 +302,17 @@ describe("E2B sandbox provider plugin", () => {
     });
 
     expect(mockConnect).toHaveBeenCalledWith("sandbox-123", expect.objectContaining({ apiKey: "resolved-key" }));
-    expect(sandbox.files.write).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/paperclip-stdin-/), "input");
     const stdinCall = sandbox.commands.run.mock.calls.find(([cmd]: [string]) => cmd.includes("'printf'"));
     expect(stdinCall).toBeDefined();
     if (!stdinCall) throw new Error("stdinCall not found");
     expect(stdinCall[0]).toMatch(/\.profile/);
-    expect(stdinCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello' < '\/tmp\/paperclip-stdin-/);
+    expect(stdinCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello'/);
     expect(stdinCall[1]).toEqual(expect.objectContaining({ cwd: "/workspace", timeoutMs: 1000 }));
     expect(stdinCall[1]).not.toHaveProperty("envs");
-    expect(stdinCall[1]).not.toHaveProperty("background");
-    expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
-    expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
-    expect(sandbox.handle.wait).not.toHaveBeenCalled();
-    expect(sandbox.files.remove).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/paperclip-stdin-/));
+    expect(stdinCall[1]).toEqual(expect.objectContaining({ background: true, cwd: "/workspace", timeoutMs: 1000 }));
+    expect(sandbox.commands.sendStdin).toHaveBeenCalledWith(42, "input");
+    expect(sandbox.commands.closeStdin).toHaveBeenCalledWith(42);
+    expect(sandbox.handle.wait).toHaveBeenCalled();
     expect(result).toEqual({
       exitCode: 0,
       timedOut: false,
@@ -432,10 +430,10 @@ describe("E2B sandbox provider plugin", () => {
     expect(result?.exitCode).toBe(0);
   });
 
-  it("cleans up staged stdin even when writing it fails", async () => {
+  it("propagates stdin send failures", async () => {
     const sandbox = createMockSandbox();
-    const failure = new Error("write failed");
-    sandbox.files.write.mockRejectedValueOnce(failure);
+    const failure = new Error("send failed");
+    sandbox.commands.sendStdin.mockRejectedValueOnce(failure);
     mockConnect.mockResolvedValue(sandbox);
 
     await expect(plugin.definition.onEnvironmentExecute?.({
@@ -455,10 +453,9 @@ describe("E2B sandbox provider plugin", () => {
       env: { FOO: "bar" },
       stdin: "input",
       timeoutMs: 1000,
-    })).rejects.toThrow("write failed");
+    })).rejects.toThrow("send failed");
 
-    expect(sandbox.files.remove).toHaveBeenCalledWith(expect.stringMatching(/^\/tmp\/paperclip-stdin-/));
-    expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
+    expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
     expect(sandbox.handle.wait).not.toHaveBeenCalled();
   });
 
