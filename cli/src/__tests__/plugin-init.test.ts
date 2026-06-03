@@ -127,15 +127,15 @@ describe("plugin init", () => {
 });
 
 describe("plugin install", () => {
-  it("resolves an existing relative local path to an absolute local install request", () => {
+  it("treats bare package-like names as npm installs even when a same-named local path exists", () => {
     const cwd = makeTempDir();
     const pluginDir = path.join(cwd, "demo-plugin");
     fs.mkdirSync(pluginDir);
 
     expect(buildPluginInstallRequest("demo-plugin", {}, { cwd })).toEqual({
-      packageName: pluginDir,
+      packageName: "demo-plugin",
       version: undefined,
-      isLocalPath: true,
+      isLocalPath: false,
     });
   });
 

@@ -1,5 +1,4 @@
 import path from "node:path";
-import { existsSync } from "node:fs";
 import { Command, Option } from "commander";
 import {
   scaffoldPluginProject,
@@ -91,16 +90,6 @@ function hasLocalPathSyntax(packageArg: string): boolean {
   );
 }
 
-function isExistingRelativePath(
-  packageArg: string,
-  cwd: string,
-  pathExists: (targetPath: string) => boolean,
-): boolean {
-  if (packageArg.trim() === "") return false;
-  if (hasLocalPathSyntax(packageArg)) return false;
-  return pathExists(path.resolve(cwd, packageArg));
-}
-
 /**
  * Resolve a local path argument to an absolute path so the server can find the
  * plugin on disk regardless of where the user ran the CLI.
@@ -115,14 +104,10 @@ function resolvePackageArg(packageArg: string, isLocal: boolean, cwd = process.c
 export function buildPluginInstallRequest(
   packageArg: string,
   opts: Pick<PluginInstallOptions, "local" | "version"> = {},
-  deps: { cwd?: string; existsSync?: (targetPath: string) => boolean } = {},
+  deps: { cwd?: string } = {},
 ): PluginInstallRequest {
   const cwd = deps.cwd ?? process.cwd();
-  const pathExists = deps.existsSync ?? existsSync;
-  const isLocal =
-    opts.local ||
-    hasLocalPathSyntax(packageArg) ||
-    (opts.version ? false : isExistingRelativePath(packageArg, cwd, pathExists));
+  const isLocal = opts.local || hasLocalPathSyntax(packageArg);
 
   if (isLocal && opts.version) {
     throw new Error("--version is only supported for npm package installs, not local plugin paths.");
