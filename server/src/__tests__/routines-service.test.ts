@@ -1510,4 +1510,38 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     expect(run.source).toBe("webhook");
     expect(run.status).toBe("issue_created");
   });
+
+  it("rotates the public webhook URL for none signing mode", async () => {
+    const { routine, svc } = await seedFixture();
+    const { trigger: created } = await svc.createTrigger(
+      routine.id,
+      {
+        kind: "webhook",
+        signingMode: "none",
+      },
+      {},
+    );
+
+    const rotated = await svc.rotateTriggerSecret(created.id, {});
+    expect(rotated.trigger.publicId).toBeTruthy();
+    expect(rotated.trigger.publicId).not.toBe(created.publicId);
+    expect(rotated.secretMaterial.webhookUrl).toContain(rotated.trigger.publicId!);
+
+    await expect(
+      svc.firePublicTrigger(created.publicId!, {
+        payload: { stale: true },
+      }),
+    ).rejects.toMatchObject({
+      status: 404,
+    });
+
+    await expect(
+      svc.firePublicTrigger(rotated.trigger.publicId!, {
+        payload: { current: true },
+      }),
+    ).resolves.toMatchObject({
+      source: "webhook",
+      status: "issue_created",
+    });
+  });
 });

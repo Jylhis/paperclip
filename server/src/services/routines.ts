@@ -1885,12 +1885,14 @@ export function routineService(
 
       const secretValue = crypto.randomBytes(24).toString("hex");
       await secretsSvc.rotate(existing.secretId, { value: secretValue }, actor);
+      const nextPublicId = existing.signingMode === "none" ? crypto.randomBytes(12).toString("hex") : existing.publicId;
       const { trigger, revision } = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${existing.routineId} for update`);
         const [updated] = await txDb
           .update(routineTriggers)
           .set({
+            publicId: nextPublicId,
             lastRotatedAt: new Date(),
             updatedByAgentId: actor.agentId ?? null,
             updatedByUserId: actor.userId ?? null,
@@ -1913,7 +1915,7 @@ export function routineService(
       return {
         trigger: trigger as RoutineTrigger,
         secretMaterial: {
-          webhookUrl: `${process.env.PAPERCLIP_API_URL}/api/routine-triggers/public/${existing.publicId}/fire`,
+          webhookUrl: `${process.env.PAPERCLIP_API_URL}/api/routine-triggers/public/${nextPublicId}/fire`,
           webhookSecret: secretValue,
         },
         revision,
