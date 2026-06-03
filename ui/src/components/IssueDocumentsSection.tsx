@@ -849,7 +849,8 @@ export function IssueDocumentsSection({
           const displayedRevisionNumber = selectedHistoricalRevision?.revisionNumber ?? currentRevision.revisionNumber;
           const displayedUpdatedAt = selectedHistoricalRevision?.createdAt ?? currentRevision.createdAt;
           const showTitle = !isPlanKey(doc.key) && !!displayedTitle.trim() && !titlesMatchKey(displayedTitle, doc.key);
-          const canVoteOnDocument = Boolean(doc.latestRevisionId && doc.updatedByAgentId && !doc.updatedByUserId && onVote);
+          const currentRevisionId = currentRevision.id;
+          const canVoteOnDocument = Boolean(currentRevisionId && currentRevision.createdByAgentId && !currentRevision.createdByUserId && onVote);
           const lockActionPending = setDocumentLock.isPending && setDocumentLock.variables?.key === doc.key;
 
           return (
@@ -1208,13 +1209,13 @@ export function IssueDocumentsSection({
                           : ""}
                     </span>
                   </div>
-                  {canVoteOnDocument && doc.latestRevisionId ? (
+                  {canVoteOnDocument && currentRevisionId ? (
                     <OutputFeedbackButtons
-                      activeVote={feedbackVoteByTargetId.get(doc.latestRevisionId) ?? null}
+                      activeVote={feedbackVoteByTargetId.get(currentRevisionId) ?? null}
                       sharingPreference={feedbackDataSharingPreference}
                       termsUrl={feedbackTermsUrl}
                       onVote={(vote: FeedbackVoteValue, options?: { allowSharing?: boolean; reason?: string }) =>
-                        onVote?.(doc.latestRevisionId!, vote, options) ?? Promise.resolve()
+                        onVote?.(currentRevisionId, vote, options) ?? Promise.resolve()
                       }
                     />
                   ) : null}
