@@ -263,6 +263,73 @@ describe("ensureServerWorkspaceLinksCurrent", () => {
     await ensureServerWorkspaceLinksCurrent(path.join(repoRoot, "server"));
   });
 
+  it("does not relink invalid workspace package names outside server node_modules", async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-links-invalid-"));
+    const victimDir = path.join(repoRoot, "victim");
+    const maliciousPackageDir = path.join(repoRoot, "packages", "evil");
+    const markerPath = path.join(victimDir, "marker.txt");
+
+    await fs.mkdir(path.join(repoRoot, "server"), { recursive: true });
+    await fs.mkdir(maliciousPackageDir, { recursive: true });
+    await fs.mkdir(victimDir, { recursive: true });
+    await fs.writeFile(markerPath, "keep me", "utf8");
+    await fs.writeFile(path.join(repoRoot, ".git"), "gitdir: /tmp/paperclip-main/.git/worktrees/runtime-links-invalid\n", "utf8");
+    await fs.writeFile(path.join(repoRoot, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n  - server\n", "utf8");
+    await fs.writeFile(
+      path.join(repoRoot, "server", "package.json"),
+      JSON.stringify({
+        name: "@paperclipai/server",
+        dependencies: {
+          "../../../victim": "workspace:*",
+        },
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(maliciousPackageDir, "package.json"),
+      JSON.stringify({ name: "../../../victim" }),
+      "utf8",
+    );
+
+    await ensureServerWorkspaceLinksCurrent(path.join(repoRoot, "server"));
+
+    await expect(fs.readFile(markerPath, "utf8")).resolves.toBe("keep me");
+    expect((await fs.lstat(victimDir)).isDirectory()).toBe(true);
+  });
+
+  it("refuses to relink through symlinked node_modules parent directories", async () => {
+    const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-links-symlink-parent-"));
+    const externalRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-links-external-parent-"));
+    const expectedPackageDir = path.join(repoRoot, "packages", "db");
+    const markerPath = path.join(externalRoot, "db", "marker.txt");
+
+    await fs.mkdir(path.join(repoRoot, "server", "node_modules"), { recursive: true });
+    await fs.mkdir(expectedPackageDir, { recursive: true });
+    await fs.mkdir(path.join(externalRoot, "db"), { recursive: true });
+    await fs.writeFile(markerPath, "keep me", "utf8");
+    await fs.symlink(externalRoot, path.join(repoRoot, "server", "node_modules", "@paperclipai"));
+    await fs.writeFile(path.join(repoRoot, ".git"), "gitdir: /tmp/paperclip-main/.git/worktrees/runtime-links-symlink-parent\n", "utf8");
+    await fs.writeFile(path.join(repoRoot, "pnpm-workspace.yaml"), "packages:\n  - packages/*\n  - server\n", "utf8");
+    await fs.writeFile(
+      path.join(repoRoot, "server", "package.json"),
+      JSON.stringify({
+        name: "@paperclipai/server",
+        dependencies: {
+          "@paperclipai/db": "workspace:*",
+        },
+      }),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(expectedPackageDir, "package.json"),
+      JSON.stringify({ name: "@paperclipai/db" }),
+      "utf8",
+    );
+
+    await expect(ensureServerWorkspaceLinksCurrent(path.join(repoRoot, "server"))).rejects.toThrow("unsafe parent path");
+    await expect(fs.readFile(markerPath, "utf8")).resolves.toBe("keep me");
+  });
+
   it("skips relinking outside linked git worktrees", async () => {
     const repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-links-non-worktree-"));
     const staleRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-links-non-worktree-stale-"));
