@@ -180,6 +180,27 @@ export type PlannedProjectImport = {
   workspaces: ProjectWorkspaceRow[];
 };
 
+function stripImportedProjectWorkspaceCommands(policy: ProjectRow["executionWorkspacePolicy"]): ProjectRow["executionWorkspacePolicy"] {
+  if (!policy || typeof policy !== "object") return policy;
+  const nextPolicy = { ...policy } as Record<string, unknown>;
+  const rawStrategy = nextPolicy.workspaceStrategy;
+  if (rawStrategy && typeof rawStrategy === "object") {
+    const nextStrategy = { ...(rawStrategy as Record<string, unknown>) };
+    delete nextStrategy.provisionCommand;
+    delete nextStrategy.teardownCommand;
+    nextPolicy.workspaceStrategy = nextStrategy;
+  }
+  return nextPolicy as ProjectRow["executionWorkspacePolicy"];
+}
+
+function stripImportedWorkspaceCommands(workspace: ProjectWorkspaceRow): ProjectWorkspaceRow {
+  return {
+    ...workspace,
+    setupCommand: null,
+    cleanupCommand: null,
+  };
+}
+
 export type WorktreeMergePlan = {
   companyId: string;
   companyName: string;
@@ -393,7 +414,10 @@ export function buildWorktreeMergePlan(input: {
     const sourceProject = sourceProjectsById.get(projectId);
     if (!sourceProject) continue;
     projectImports.push({
-      source: sourceProject,
+      source: {
+        ...sourceProject,
+        executionWorkspacePolicy: stripImportedProjectWorkspaceCommands(sourceProject.executionWorkspacePolicy),
+      },
       targetLeadAgentId:
         sourceProject.leadAgentId && targetAgentIds.has(sourceProject.leadAgentId)
           ? sourceProject.leadAgentId
@@ -402,13 +426,15 @@ export function buildWorktreeMergePlan(input: {
         sourceProject.goalId && targetGoalIds.has(sourceProject.goalId)
           ? sourceProject.goalId
           : null,
-      workspaces: [...(sourceProjectWorkspacesByProjectId.get(projectId) ?? [])].sort((left, right) => {
-        const primaryDelta = Number(right.isPrimary) - Number(left.isPrimary);
-        if (primaryDelta !== 0) return primaryDelta;
-        const createdDelta = left.createdAt.getTime() - right.createdAt.getTime();
-        if (createdDelta !== 0) return createdDelta;
-        return left.id.localeCompare(right.id);
-      }),
+      workspaces: [...(sourceProjectWorkspacesByProjectId.get(projectId) ?? [])]
+        .map((workspace) => stripImportedWorkspaceCommands(workspace))
+        .sort((left, right) => {
+          const primaryDelta = Number(right.isPrimary) - Number(left.isPrimary);
+          if (primaryDelta !== 0) return primaryDelta;
+          const createdDelta = left.createdAt.getTime() - right.createdAt.getTime();
+          if (createdDelta !== 0) return createdDelta;
+          return left.id.localeCompare(right.id);
+        }),
     });
   }
   const importedProjectWorkspaceIds = new Set(

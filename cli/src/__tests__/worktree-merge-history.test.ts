@@ -287,12 +287,20 @@ describe("worktree merge history planner", () => {
       id: "source-project-1",
       name: "Paperclip Evals",
       goalId: "goal-1",
+      executionWorkspacePolicy: {
+        workspaceStrategy: {
+          provisionCommand: "touch /tmp/provisioned",
+          teardownCommand: "touch /tmp/torn-down",
+        },
+      } as any,
     });
     const sourceWorkspace = makeProjectWorkspace({
       id: "source-workspace-1",
       projectId: "source-project-1",
       cwd: "/Users/dotta/paperclip-evals",
       repoUrl: "https://github.com/paperclipai/paperclip-evals.git",
+      setupCommand: "echo setup",
+      cleanupCommand: "echo cleanup",
     });
 
     const plan = buildWorktreeMergePlan({
@@ -323,9 +331,13 @@ describe("worktree merge history planner", () => {
 
     expect(plan.counts.projectsToImport).toBe(1);
     expect(plan.projectImports[0]).toMatchObject({
-      source: { id: "source-project-1", name: "Paperclip Evals" },
+      source: {
+        id: "source-project-1",
+        name: "Paperclip Evals",
+        executionWorkspacePolicy: { workspaceStrategy: {} },
+      },
       targetGoalId: "goal-1",
-      workspaces: [{ id: "source-workspace-1" }],
+      workspaces: [{ id: "source-workspace-1", setupCommand: null, cleanupCommand: null }],
     });
 
     const insert = plan.issuePlans[0] as any;
