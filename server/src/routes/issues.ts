@@ -3178,6 +3178,7 @@ export function issueRoutes(
       return;
     }
     assertCompanyAccess(req, issue.companyId);
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
     assertCanManageIssueMonitor(req, issue.assigneeAgentId, true);
 
     const actor = getActorInfo(req);

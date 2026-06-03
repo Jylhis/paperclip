@@ -459,6 +459,42 @@ describe("issue execution policy routes", () => {
     );
   });
 
+  it("requires agent run ownership for manual monitor trigger on in-progress issues", async () => {
+    const issue = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      companyId: "company-1",
+      status: "in_progress",
+      assigneeAgentId: "33333333-3333-4333-8333-333333333333",
+      assigneeUserId: null,
+      createdByUserId: "local-board",
+      identifier: "PAP-1001",
+      title: "Manual monitor trigger",
+      executionPolicy: normalizeIssueExecutionPolicy({
+        monitor: {
+          nextCheckAt: "2026-04-11T12:30:00.000Z",
+          notes: "Check deployment",
+          scheduledBy: "board",
+        },
+      }),
+      executionState: null,
+    };
+    mockIssueService.getById.mockResolvedValue(issue);
+
+    const res = await request(await createApp({
+      type: "agent",
+      agentId: "33333333-3333-4333-8333-333333333333",
+      companyId: "company-1",
+      runId: null,
+    }))
+      .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/monitor/check-now")
+      .send({});
+
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({ error: "Agent run id required" });
+    expect(mockHeartbeatService.triggerIssueMonitor).not.toHaveBeenCalled();
+    expect(mockIssueService.assertCheckoutOwner).not.toHaveBeenCalled();
+  });
+
   it("lets a board user create a child issue with a scheduled monitor", async () => {
     mockIssueService.getById.mockResolvedValue({
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
