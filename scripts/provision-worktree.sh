@@ -43,14 +43,6 @@ run_isolated_worktree_init() {
     return 0
   fi
 
-  if command -v pnpm >/dev/null 2>&1 && pnpm paperclipai --help >/dev/null 2>&1; then
-    (
-      cd "$worktree_cwd"
-      pnpm paperclipai worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
-    )
-    return 0
-  fi
-
   if command -v paperclipai >/dev/null 2>&1; then
     (
       cd "$worktree_cwd"
@@ -59,14 +51,18 @@ run_isolated_worktree_init() {
     return 0
   fi
 
+  if command -v pnpm >/dev/null 2>&1 && ( cd "$base_cwd" && pnpm paperclipai --help >/dev/null 2>&1 ); then
+    (
+      cd "$base_cwd"
+      pnpm paperclipai worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
+    )
+    return 0
+  fi
+
   return 127
 }
 
 paperclipai_command_available() {
-  if command -v pnpm >/dev/null 2>&1 && pnpm paperclipai --help >/dev/null 2>&1; then
-    return 0
-  fi
-
   local base_cli_tsx_path="$base_cwd/cli/node_modules/tsx/dist/cli.mjs"
   local base_cli_entry_path="$base_cwd/cli/src/index.ts"
   if command -v node >/dev/null 2>&1 && [[ -f "$base_cli_tsx_path" ]] && [[ -f "$base_cli_entry_path" ]]; then
@@ -74,6 +70,10 @@ paperclipai_command_available() {
   fi
 
   if command -v paperclipai >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if command -v pnpm >/dev/null 2>&1 && ( cd "$base_cwd" && pnpm paperclipai --help >/dev/null 2>&1 ); then
     return 0
   fi
 
