@@ -1,4 +1,4 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import { documentRevisions, documents, issueDocuments, issues } from "@paperclipai/db";
 import { isSystemIssueDocumentKey, issueDocumentKeySchema } from "@paperclipai/shared";
@@ -369,7 +369,7 @@ export function documentService(db: Db) {
               })
               .returning();
 
-            await tx
+            const updatedDocuments = await tx
               .update(documents)
               .set({
                 title: input.title ?? null,
@@ -381,7 +381,15 @@ export function documentService(db: Db) {
                 updatedByUserId: input.createdByUserId ?? null,
                 updatedAt: now,
               })
-              .where(eq(documents.id, existing.id));
+              .where(and(eq(documents.id, existing.id), isNull(documents.lockedAt)))
+              .returning({ id: documents.id });
+
+            if (updatedDocuments.length === 0) {
+              throw conflict("Document is locked", {
+                key: existing.key,
+                documentId: existing.id,
+              });
+            }
 
             await tx
               .update(issueDocuments)
