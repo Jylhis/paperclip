@@ -42,6 +42,10 @@ const mockAgentPluginConfigService = vi.hoisted(() => ({
   delete: vi.fn(),
 }));
 
+const mockAuthorizationService = vi.hoisted(() => ({
+  decide: vi.fn(),
+}));
+
 function registerModuleMocks() {
   vi.doMock("../services/agents.js", () => ({
     agentService: () => mockAgentService,
@@ -52,6 +56,7 @@ function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
     agentService: () => mockAgentService,
     agentPluginConfigService: () => mockAgentPluginConfigService,
+    authorizationService: () => mockAuthorizationService,
   }));
 }
 
@@ -75,6 +80,12 @@ async function createApp(actor: Record<string, unknown>) {
 describe("agent plugin config routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockAuthorizationService.decide.mockResolvedValue({
+      allowed: true,
+      explanation: "allowed",
+      reason: "allow_local_board",
+      action: "agent_config:update",
+    });
   });
 
   describe("GET /agents/:agentId/plugin-configs", () => {
@@ -184,6 +195,42 @@ describe("agent plugin config routes", () => {
         .send(validBody);
       expect(res.status).toBe(403);
     });
+
+    it("rejects same-company agent-authenticated creates", async () => {
+      mockAgentService.getById.mockResolvedValue(baseAgent);
+      const app = await createApp({
+        type: "agent",
+        agentId,
+        companyId,
+      });
+      const res = await request(app)
+        .post(`/api/agents/${agentId}/plugin-configs`)
+        .send(validBody);
+      expect(res.status).toBe(403);
+      expect(mockAgentPluginConfigService.create).not.toHaveBeenCalled();
+    });
+
+    it("rejects board users without agent management permission", async () => {
+      mockAgentService.getById.mockResolvedValue(baseAgent);
+      mockAuthorizationService.decide.mockResolvedValue({
+        allowed: false,
+        explanation: "Missing permission: agents:create.",
+        reason: "deny_missing_grant",
+        action: "agent_config:update",
+      });
+      const app = await createApp({
+        type: "board",
+        source: "session",
+        userId: "user-1",
+        companyIds: [companyId],
+        memberships: [{ companyId, membershipRole: "member", status: "active" }],
+      });
+      const res = await request(app)
+        .post(`/api/agents/${agentId}/plugin-configs`)
+        .send(validBody);
+      expect(res.status).toBe(403);
+      expect(mockAgentPluginConfigService.create).not.toHaveBeenCalled();
+    });
   });
 
   describe("PATCH /agents/:agentId/plugin-configs/:configId", () => {
@@ -214,6 +261,20 @@ describe("agent plugin config routes", () => {
         .send({});
       expect(res.status).toBe(400);
     });
+
+    it("rejects same-company agent-authenticated updates", async () => {
+      mockAgentService.getById.mockResolvedValue(baseAgent);
+      const app = await createApp({
+        type: "agent",
+        agentId,
+        companyId,
+      });
+      const res = await request(app)
+        .patch(`/api/agents/${agentId}/plugin-configs/${configId}`)
+        .send({ serverBinary: "/bin/sh", args: ["-c", "id"] });
+      expect(res.status).toBe(403);
+      expect(mockAgentPluginConfigService.update).not.toHaveBeenCalled();
+    });
   });
 
   describe("DELETE /agents/:agentId/plugin-configs/:configId", () => {
@@ -238,6 +299,18 @@ describe("agent plugin config routes", () => {
       });
       const res = await request(app).delete(`/api/agents/${agentId}/plugin-configs/${configId}`);
       expect(res.status).toBe(403);
+    });
+
+    it("rejects same-company agent-authenticated deletes", async () => {
+      mockAgentService.getById.mockResolvedValue(baseAgent);
+      const app = await createApp({
+        type: "agent",
+        agentId,
+        companyId,
+      });
+      const res = await request(app).delete(`/api/agents/${agentId}/plugin-configs/${configId}`);
+      expect(res.status).toBe(403);
+      expect(mockAgentPluginConfigService.delete).not.toHaveBeenCalled();
     });
   });
 });

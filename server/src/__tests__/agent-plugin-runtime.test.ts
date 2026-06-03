@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentPluginProcessSpec } from "@paperclipai/shared";
 
 const agentId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -48,6 +48,31 @@ function makeLogActivityMock() {
 vi.mock("../services/activity-log.js", () => ({
   logActivity: makeLogActivityMock(),
 }));
+
+describe("buildPluginProcessEnv", () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = {
+      PATH: "/usr/bin:/bin",
+      PAPERCLIP_SECRET_TOKEN: "server-secret",
+      NODE_OPTIONS: "--require /tmp/evil.js",
+    };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it("does not inherit server environment secrets by default", async () => {
+    const { buildPluginProcessEnv } = await import("../services/agent-plugin-runtime.js");
+    const env = buildPluginProcessEnv({ PLUGIN_ONLY: "value" });
+    expect(env).toEqual({ PATH: "/usr/bin:/bin", PLUGIN_ONLY: "value" });
+    expect(env.PAPERCLIP_SECRET_TOKEN).toBeUndefined();
+    expect(env.NODE_OPTIONS).toBeUndefined();
+  });
+});
 
 describe("getEnabledPluginSpecsForAgent", () => {
   beforeEach(() => {

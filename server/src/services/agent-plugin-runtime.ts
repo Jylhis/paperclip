@@ -28,6 +28,7 @@ import { logActivity } from "./activity-log.js";
 
 const SIGKILL_GRACE_MS = 500;
 const MAX_STDERR_BYTES = 64 * 1024;
+const DEFAULT_PLUGIN_ENV_KEYS = ["PATH"] as const;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -94,6 +95,15 @@ async function loadEnabledSpecs(
 // Process launch
 // ---------------------------------------------------------------------------
 
+export function buildPluginProcessEnv(specEnv: Record<string, string>): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of DEFAULT_PLUGIN_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return { ...env, ...specEnv };
+}
+
 function spawnPlugin(spec: AgentPluginProcessSpec): RunningProcess {
   const log = logger.child({
     service: "agent-plugin-runtime",
@@ -102,12 +112,7 @@ function spawnPlugin(spec: AgentPluginProcessSpec): RunningProcess {
     kind: spec.kind,
   });
 
-  const env: Record<string, string> = {
-    ...Object.fromEntries(
-      Object.entries(process.env).filter(([, v]) => v !== undefined) as [string, string][],
-    ),
-    ...spec.env,
-  };
+  const env = buildPluginProcessEnv(spec.env);
 
   const child = spawn(spec.serverBinary, spec.args, {
     shell: false,
