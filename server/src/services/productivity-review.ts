@@ -317,6 +317,9 @@ export function productivityReviewService(db: Db, deps?: { enqueueWakeup?: Enque
         and(
           eq(issueComments.companyId, companyId),
           eq(issueComments.issueId, reviewIssueId),
+          eq(issueComments.authorType, "system"),
+          isNull(issueComments.authorUserId),
+          isNull(issueComments.authorAgentId),
           sql`${issueComments.body} like ${`${PRODUCTIVITY_REVIEW_REFRESH_COMMENT_PREFIX}%`}`,
         ),
       )

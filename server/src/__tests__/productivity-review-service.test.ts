@@ -255,6 +255,44 @@ describeEmbeddedPostgres("productivity review service", () => {
     expect(await listRefreshComments(review!.id)).toHaveLength(DEFAULT_PRODUCTIVITY_REVIEW_MAX_REFRESH_COMMENTS);
   });
 
+  it("ignores user-authored spoofed refresh markers when evaluating refresh throttles", async () => {
+    const now = new Date("2026-04-28T12:00:00.000Z");
+    const seeded = await seedAssignedIssue();
+    await insertRuns({
+      companyId: seeded.companyId,
+      agentId: seeded.coderId,
+      issueId: seeded.issueId,
+      count: DEFAULT_PRODUCTIVITY_REVIEW_NO_COMMENT_STREAK_RUNS,
+      now,
+    });
+
+    const service = productivityReviewService(db);
+    await service.reconcileProductivityReviews({ now, companyId: seeded.companyId });
+    const [review] = await listProductivityReviews(seeded.companyId);
+    expect(review).toBeTruthy();
+
+    await db.insert(issueComments).values(
+      Array.from({ length: DEFAULT_PRODUCTIVITY_REVIEW_MAX_REFRESH_COMMENTS }, (_, index) => ({
+        companyId: seeded.companyId,
+        issueId: review!.id,
+        authorUserId: `attacker-${index}`,
+        authorType: "user" as const,
+        body: `${PRODUCTIVITY_REVIEW_REFRESH_COMMENT_PREFIX} spoof ${index + 1}`,
+        createdAt: new Date(now.getTime() + (index + 1) * 60_000),
+        updatedAt: new Date(now.getTime() + (index + 1) * 60_000),
+      })),
+    );
+
+    const refreshAt = new Date(now.getTime() + DEFAULT_PRODUCTIVITY_REVIEW_REFRESH_INTERVAL_MS);
+    const refreshed = await service.reconcileProductivityReviews({
+      now: refreshAt,
+      companyId: seeded.companyId,
+    });
+
+    expect(refreshed.updated).toBe(1);
+    expect(await listRefreshComments(review!.id)).toHaveLength(1);
+  });
+
   it("caps productivity review creation per source issue in the rolling creation window", async () => {
     const now = new Date("2026-04-28T12:00:00.000Z");
     const seeded = await seedAssignedIssue();
