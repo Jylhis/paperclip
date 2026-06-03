@@ -1345,22 +1345,10 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
     });
     realized.warnings = baseDrift.warnings;
     realized.baseRefSha = recordedBaseRefSha ?? baseDrift.branchBaseRefSha ?? baseDrift.currentBaseRefSha;
-    if (provisionCommand) {
-      await provisionExecutionWorktree({
-        strategy: {
-          type: "git_worktree",
-          provisionCommand,
-        },
-        base: input.base,
-        repoRoot,
-        worktreePath: realized.worktreePath ?? cwd,
-        branchName: realized.branchName ?? "",
-        issue: input.issue,
-        agent: input.agent,
-        created: false,
-        recorder: input.recorder ?? null,
-      });
-    }
+    // Existing persisted worktrees are mutable agent workspaces. Do not rerun
+    // host-executed provision commands here; scripts referenced by the command
+    // may have been changed by prior agent work. Missing worktrees are still
+    // provisioned after they are restored from the trusted repository state.
     return realized;
   }
 

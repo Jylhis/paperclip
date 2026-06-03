@@ -1800,20 +1800,18 @@ describe("realizeExecutionWorkspace", () => {
     expect(actualHead).toBe(expectedHead);
   }, 15_000);
 
-  it("reprovisions an existing persisted git worktree before manual control starts it", async () => {
+  it("does not reprovision an existing persisted git worktree before manual control starts it", async () => {
     const repoRoot = await createTempRepo();
     await fs.mkdir(path.join(repoRoot, "scripts"), { recursive: true });
     await fs.writeFile(
-      path.join(repoRoot, "scripts", "restore.sh"),
+      path.join(repoRoot, "scripts", "restore.js"),
       [
-        "#!/usr/bin/env bash",
-        "set -euo pipefail",
-        "printf 'reprovisioned\\n' > .paperclip-restored-state",
+        "import fs from 'node:fs';",
+        "fs.writeFileSync('.paperclip-restored-state', 'initial provision\\n');",
       ].join("\n"),
       "utf8",
     );
-    await fs.chmod(path.join(repoRoot, "scripts", "restore.sh"), 0o755);
-    await runGit(repoRoot, ["add", "scripts/restore.sh"]);
+    await runGit(repoRoot, ["add", "scripts/restore.js"]);
     await runGit(repoRoot, ["commit", "-m", "Add reprovision script"]);
 
     const initial = await realizeExecutionWorkspace({
@@ -1829,7 +1827,7 @@ describe("realizeExecutionWorkspace", () => {
         workspaceStrategy: {
           type: "git_worktree",
           branchTemplate: "{{issue.identifier}}-{{slug}}",
-          provisionCommand: "bash ./scripts/restore.sh",
+          provisionCommand: "node ./scripts/restore.js",
         },
       },
       issue: {
@@ -1844,7 +1842,19 @@ describe("realizeExecutionWorkspace", () => {
       },
     });
 
+    await expect(fs.readFile(path.join(initial.cwd, ".paperclip-restored-state"), "utf8")).resolves.toBe(
+      "initial provision\n",
+    );
     await fs.rm(path.join(initial.cwd, ".paperclip-restored-state"), { force: true });
+    await fs.writeFile(
+      path.join(initial.cwd, "scripts", "restore.js"),
+      [
+        "import fs from 'node:fs';",
+        "fs.writeFileSync('.paperclip-restored-state', 'mutable reprovision\\n');",
+        "fs.writeFileSync('.paperclip-reprovision-marker', 'executed mutable worktree script\\n');",
+      ].join("\n"),
+      "utf8",
+    );
 
     await ensurePersistedExecutionWorkspaceAvailable({
       base: {
@@ -1866,7 +1876,7 @@ describe("realizeExecutionWorkspace", () => {
         baseRef: "HEAD",
         branchName: initial.branchName,
         config: {
-          provisionCommand: "bash ./scripts/restore.sh",
+          provisionCommand: "node ./scripts/restore.js",
         },
       },
       issue: {
@@ -1881,7 +1891,8 @@ describe("realizeExecutionWorkspace", () => {
       },
     });
 
-    await expect(fs.readFile(path.join(initial.cwd, ".paperclip-restored-state"), "utf8")).resolves.toBe("reprovisioned\n");
+    await expect(fs.stat(path.join(initial.cwd, ".paperclip-restored-state"))).rejects.toThrow();
+    await expect(fs.stat(path.join(initial.cwd, ".paperclip-reprovision-marker"))).rejects.toThrow();
   }, 15_000);
 
   it("auto-detects the default branch when baseRef is not configured", async () => {
