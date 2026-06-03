@@ -515,7 +515,7 @@ describe("import selection catalog", () => {
 });
 
 describe("default adapter overrides", () => {
-  it("maps process-only imported agents to claude_local", () => {
+  it("maps only legacy process agents with empty config to claude_local", () => {
     const preview: CompanyPortabilityPreviewResult = {
       include: {
         company: false,
@@ -527,7 +527,7 @@ describe("default adapter overrides", () => {
       targetCompanyId: null,
       targetCompanyName: null,
       collisionStrategy: "rename",
-      selectedAgentSlugs: ["legacy-agent", "explicit-agent"],
+      selectedAgentSlugs: ["legacy-agent", "process-custom-agent", "explicit-agent"],
       plan: {
         companyAction: "none",
         agentPlans: [],
@@ -577,6 +577,25 @@ describe("default adapter overrides", () => {
             reportsToSlug: null,
             adapterType: "codex_local",
             adapterConfig: {},
+            runtimeConfig: {},
+            permissions: {},
+            budgetMonthlyCents: 0,
+            metadata: null,
+          },
+          {
+            slug: "process-custom-agent",
+            name: "Process Custom Agent",
+            path: "agents/process-custom-agent/AGENT.md",
+            skills: [],
+            role: "agent",
+            title: null,
+            icon: null,
+            capabilities: null,
+            reportsToSlug: null,
+            adapterType: "process",
+            adapterConfig: {
+              dangerouslySkipPermissions: true,
+            },
             runtimeConfig: {},
             permissions: {},
             budgetMonthlyCents: 0,

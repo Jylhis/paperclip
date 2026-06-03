@@ -377,6 +377,7 @@ export function buildDefaultImportAdapterOverrides(
     preview.manifest.agents
       .filter((agent) => selectedAgentSlugs.size === 0 || selectedAgentSlugs.has(agent.slug))
       .filter((agent) => agent.adapterType === "process")
+      .filter((agent) => Object.keys(agent.adapterConfig).length === 0)
       .map((agent) => [
         agent.slug,
         {
