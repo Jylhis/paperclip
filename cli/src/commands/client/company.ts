@@ -578,6 +578,15 @@ function actionChip(action: string): string {
   }
 }
 
+
+function sanitizeTerminalText(value: string): string {
+  return value.replace(/[\x00-\x1f\x7f-\x9f]/g, (char) => {
+    const codePoint = char.codePointAt(0);
+    if (codePoint === undefined) return "";
+    return `\\u${codePoint.toString(16).padStart(4, "0")}`;
+  });
+}
+
 function appendPreviewExamples(
   lines: string[],
   title: string,
@@ -588,8 +597,8 @@ function appendPreviewExamples(
   lines.push(pc.bold(title));
   const shown = entries.slice(0, IMPORT_PREVIEW_SAMPLE_LIMIT);
   for (const entry of shown) {
-    const reason = entry.reason?.trim() ? pc.dim(` (${entry.reason.trim()})`) : "";
-    lines.push(`- ${actionChip(entry.action)} ${entry.label}${reason}`);
+    const reason = entry.reason?.trim() ? pc.dim(` (${sanitizeTerminalText(entry.reason.trim())})`) : "";
+    lines.push(`- ${actionChip(entry.action)} ${sanitizeTerminalText(entry.label)}${reason}`);
   }
   if (entries.length > shown.length) {
     lines.push(pc.dim(`- +${entries.length - shown.length} more`));
@@ -601,7 +610,7 @@ function appendMessageBlock(lines: string[], title: string, messages: string[]):
   lines.push("");
   lines.push(pc.bold(title));
   for (const message of messages) {
-    lines.push(`- ${message}`);
+    lines.push(`- ${sanitizeTerminalText(message)}`);
   }
 }
 
@@ -614,13 +623,13 @@ export function renderCompanyImportPreview(
   },
 ): string {
   const lines: string[] = [
-    `${pc.bold("Source")}  ${meta.sourceLabel}`,
-    `${pc.bold("Target")}  ${meta.targetLabel}`,
+    `${pc.bold("Source")}  ${sanitizeTerminalText(meta.sourceLabel)}`,
+    `${pc.bold("Target")}  ${sanitizeTerminalText(meta.targetLabel)}`,
     `${pc.bold("Include")} ${summarizeInclude(preview.include)}`,
     `${pc.bold("Mode")}    ${preview.collisionStrategy} collisions`,
     "",
     pc.bold("Package"),
-    `- company: ${preview.manifest.company?.name ?? preview.manifest.source?.companyName ?? "not included"}`,
+    `- company: ${sanitizeTerminalText(preview.manifest.company?.name ?? preview.manifest.source?.companyName ?? "not included")}`,
     `- agents: ${preview.manifest.agents.length}`,
     `- projects: ${preview.manifest.projects.length}`,
     `- tasks: ${preview.manifest.issues.length}`,
@@ -682,14 +691,14 @@ export function renderCompanyImportResult(
   meta: { targetLabel: string; companyUrl?: string; infoMessages?: string[] },
 ): string {
   const lines: string[] = [
-    `${pc.bold("Target")}  ${meta.targetLabel}`,
-    `${pc.bold("Company")} ${result.company.name} (${actionChip(result.company.action)})`,
+    `${pc.bold("Target")}  ${sanitizeTerminalText(meta.targetLabel)}`,
+    `${pc.bold("Company")} ${sanitizeTerminalText(result.company.name)} (${actionChip(result.company.action)})`,
     `${pc.bold("Agents")}  ${summarizeImportAgentResults(result.agents)}`,
     `${pc.bold("Projects")} ${summarizeImportProjectResults(result.projects)}`,
   ];
 
   if (meta.companyUrl) {
-    lines.splice(1, 0, `${pc.bold("URL")}     ${meta.companyUrl}`);
+    lines.splice(1, 0, `${pc.bold("URL")}     ${sanitizeTerminalText(meta.companyUrl)}`);
   }
 
   appendPreviewExamples(

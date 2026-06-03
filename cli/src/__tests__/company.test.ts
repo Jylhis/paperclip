@@ -339,6 +339,45 @@ describe("renderCompanyImportResult", () => {
   });
 });
 
+
+  it("escapes terminal control sequences from preview and result fields", () => {
+    const esc = "";
+    const preview = renderCompanyImportPreview(
+      {
+        include: { company: true, agents: true, projects: true, issues: true, skills: false },
+        targetCompanyId: "c1",
+        targetCompanyName: "target",
+        collisionStrategy: "rename",
+        selectedAgentSlugs: ["ceo"],
+        plan: {
+          companyAction: "create",
+          agentPlans: [{ slug: `${esc}[2J`, action: "create", plannedName: `${esc}]52;c;abc`, existingAgentId: null, reason: `${esc}[H` }],
+          projectPlans: [],
+          issuePlans: [],
+        },
+        manifest: {
+          schemaVersion: 1,
+          generatedAt: "2026-01-01T00:00:00.000Z",
+          source: { companyId: "s", companyName: `src${esc}[K` },
+          includes: { company: true, agents: true, projects: true, issues: true, skills: false },
+          company: { path: "COMPANY.md", name: `name${esc}[31m`, description: null, attachmentMaxBytes: null, brandColor: null, logoPath: null, requireBoardApprovalForNewAgents: false, feedbackDataSharingEnabled: false, feedbackDataSharingConsentAt: null, feedbackDataSharingConsentByUserId: null, feedbackDataSharingTermsVersion: null },
+          sidebar: { agents: [], projects: [] }, agents: [], projects: [], issues: [], skills: [], envInputs: [],
+        },
+        files: {}, envInputs: [], warnings: [`warn${esc}[0m`], errors: [`err${esc}[0m`],
+      },
+      { sourceLabel: `src${esc}[2J`, targetLabel: `target${esc}[2J` },
+    );
+
+    const result = renderCompanyImportResult(
+      { company: { id: "c1", name: `co${esc}[2J`, action: "created" }, agents: [{ slug: `a${esc}[2J`, id: "a1", action: "created", name: `n${esc}[2J`, reason: `r${esc}[2J` }], projects: [], envInputs: [], warnings: [`w${esc}[2J`] },
+      { targetLabel: `t${esc}[2J`, companyUrl: `https://x/${esc}[2J` },
+    );
+
+    expect(preview).not.toContain(esc);
+    expect(result).not.toContain(esc);
+    expect(preview).toContain("\\u001b");
+    expect(result).toContain("\\u001b");
+  });
 describe("import selection catalog", () => {
   it("defaults to everything and keeps project selection separate from task selection", () => {
     const preview: CompanyPortabilityPreviewResult = {
