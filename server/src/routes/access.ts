@@ -635,6 +635,10 @@ function summarizeOpenClawGatewayDefaultsForLog(defaultsPayload: unknown) {
   };
 }
 
+export function isAllowedExternalInviteAdapterType(adapterType: string | null): boolean {
+  return adapterType === "openclaw_gateway";
+}
+
 export function normalizeAgentDefaultsForJoin(input: {
   adapterType: string | null;
   defaultsPayload: unknown;
@@ -3256,6 +3260,14 @@ export function accessRoutes(
       }
 
       const adapterType = req.body.adapterType ?? null;
+      if (
+        requestType === "agent" &&
+        !isAllowedExternalInviteAdapterType(adapterType)
+      ) {
+        throw badRequest(
+          "Agent invite joins currently support only adapterType=openclaw_gateway"
+        );
+      }
       if (
         inviteAlreadyAccepted &&
         !canReplayOpenClawGatewayInviteAccept({

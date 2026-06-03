@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildJoinDefaultsPayloadForAccept,
   normalizeAgentDefaultsForJoin,
+  isAllowedExternalInviteAdapterType,
 } from "../routes/access.js";
 
 describe("buildJoinDefaultsPayloadForAccept (openclaw_gateway)", () => {
@@ -115,5 +116,16 @@ describe("normalizeAgentDefaultsForJoin (openclaw_gateway)", () => {
     expect(normalized.fatalErrors).toEqual([]);
     expect(normalized.normalized?.disableDeviceAuth).toBe(true);
     expect(normalized.normalized?.devicePrivateKeyPem).toBeUndefined();
+  });
+});
+
+describe("isAllowedExternalInviteAdapterType", () => {
+  it("allows openclaw_gateway", () => {
+    expect(isAllowedExternalInviteAdapterType("openclaw_gateway")).toBe(true);
+  });
+
+  it("rejects host-local adapters for invite joins", () => {
+    expect(isAllowedExternalInviteAdapterType("process")).toBe(false);
+    expect(isAllowedExternalInviteAdapterType("codex_local")).toBe(false);
   });
 });
