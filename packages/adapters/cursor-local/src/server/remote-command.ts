@@ -56,6 +56,10 @@ function candidateSandboxPathEntries(homeDir: string): string[] {
   return CURSOR_SANDBOX_BIN_DIRS.map((relativeDir) => path.posix.join(homeDir, relativeDir));
 }
 
+function shellSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\"'\"'`)}'`;
+}
+
 type SandboxCursorRuntimeInfo = {
   remoteSystemHomeDir: string | null;
   preferredCommandPath: string | null;
@@ -107,11 +111,11 @@ async function readSandboxCursorRuntimeInfo(input: {
     const preferredProbeBranches = [
       ...fixedCandidatePaths.map(
         (fixedPath) =>
-          `[ -x ${JSON.stringify(fixedPath)} ] && printf ${JSON.stringify(`${preferredMarker}%s\\n`)} ${JSON.stringify(fixedPath)}`,
+          `[ -x ${shellSingleQuote(fixedPath)} ] && printf ${shellSingleQuote(`${preferredMarker}%s\\n`)} ${shellSingleQuote(fixedPath)}`,
       ),
       ...preferredBasenames.map(
         (basename) =>
-          `resolved="$(command -v ${JSON.stringify(basename)} 2>/dev/null)" && [ -n "$resolved" ] && printf ${JSON.stringify(`${preferredMarker}%s\\n`)} "$resolved"`,
+          `resolved="$(command -v ${shellSingleQuote(basename)} 2>/dev/null)" && [ -n "$resolved" ] && printf ${shellSingleQuote(`${preferredMarker}%s\\n`)} "$resolved"`,
       ),
     ];
     const result = await runAdapterExecutionTargetShellCommand(
@@ -119,8 +123,8 @@ async function readSandboxCursorRuntimeInfo(input: {
       input.target,
       [
         hintedRemoteSystemHomeDir
-          ? `printf ${JSON.stringify(`${homeMarker}%s\\n`)} ${JSON.stringify(hintedRemoteSystemHomeDir)}`
-          : `printf ${JSON.stringify(`${homeMarker}%s\\n`)} "$HOME"`,
+          ? `printf ${shellSingleQuote(`${homeMarker}%s\\n`)} ${shellSingleQuote(hintedRemoteSystemHomeDir)}`
+          : `printf ${shellSingleQuote(`${homeMarker}%s\\n`)} "$HOME"`,
         preferredProbeBranches.length > 0
           ? preferredProbeBranches
             .map((probeBranch, index) => {

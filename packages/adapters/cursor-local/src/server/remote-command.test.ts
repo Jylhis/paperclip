@@ -134,4 +134,42 @@ describe("prepareCursorSandboxCommand", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("treats remoteSystemHomeDirHint as data and does not execute shell substitutions", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-remote-command-injection-"));
+    const remoteWorkspace = path.join(root, "workspace");
+    const markerPath = path.join(root, "injection-marker");
+    const maliciousHomeDir = `${path.join(root, "system-home")}$(touch ${markerPath})`;
+    await fs.mkdir(remoteWorkspace, { recursive: true });
+
+    try {
+      const result = await prepareCursorSandboxCommand({
+        runId: "run-remote-command-injection",
+        target: {
+          kind: "remote",
+          transport: "sandbox",
+          shellCommand: "bash",
+          remoteCwd: remoteWorkspace,
+          runner: createLocalSandboxRunner(),
+          timeoutMs: 30_000,
+        },
+        command: "agent",
+        cwd: remoteWorkspace,
+        env: {
+          HOME: remoteWorkspace,
+          PATH: "/usr/bin:/bin",
+        },
+        remoteSystemHomeDirHint: maliciousHomeDir,
+        timeoutSec: 30,
+        graceSec: 5,
+      });
+
+      await expect(fs.access(markerPath)).rejects.toThrow();
+      expect(result.remoteSystemHomeDir).toBe(maliciousHomeDir);
+      expect(result.command).toBe("agent");
+      expect(result.preferredCommandPath).toBeNull();
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
 });
