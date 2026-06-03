@@ -1128,6 +1128,19 @@ export function sanitizeInheritedPaperclipEnv(baseEnv: NodeJS.ProcessEnv): NodeJ
     if (key === "PAPERCLIP_LISTEN_PORT") continue;
     delete env[key];
   }
+  for (const key of Object.keys(env)) {
+    if (key === "OTEL_EXPORTER_OTLP_HEADERS") {
+      delete env[key];
+      continue;
+    }
+    if (key.startsWith("OTEL_EXPORTER_")) {
+      delete env[key];
+      continue;
+    }
+    if (key.startsWith("GRAFANA_")) {
+      delete env[key];
+    }
+  }
   return env;
 }
 

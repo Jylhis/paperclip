@@ -293,6 +293,19 @@ export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJ
   delete env.DATABASE_URL;
   delete env.npm_config_tailscale_auth;
   delete env.npm_config_authenticated_private;
+  for (const key of Object.keys(env)) {
+    if (key === "OTEL_EXPORTER_OTLP_HEADERS") {
+      delete env[key];
+      continue;
+    }
+    if (key.startsWith("OTEL_EXPORTER_")) {
+      delete env[key];
+      continue;
+    }
+    if (key.startsWith("GRAFANA_")) {
+      delete env[key];
+    }
+  }
   return env;
 }
 
