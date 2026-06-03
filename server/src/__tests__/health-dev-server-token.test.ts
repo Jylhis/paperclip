@@ -202,4 +202,49 @@ describe("POST /health/dev-server/restart", () => {
       }
     }
   });
+
+  it("rejects non-admin board actors in authenticated mode", async () => {
+    const previousFile = process.env.PAPERCLIP_DEV_SERVER_STATUS_FILE;
+    process.env.PAPERCLIP_DEV_SERVER_STATUS_FILE = createDevServerStatusFile({
+      dirty: true,
+      changedPathCount: 1,
+      changedPathsSample: ["server/src/routes/health.ts"],
+      pendingMigrations: [],
+    });
+
+    try {
+      const app = express();
+      app.use((req, _res, next) => {
+        (req as any).actor = {
+          type: "board",
+          userId: "user-1",
+          companyIds: [],
+          memberships: [],
+          isInstanceAdmin: false,
+          source: "session",
+        };
+        next();
+      });
+      app.use(
+        "/health",
+        healthRoutes(undefined, {
+          deploymentMode: "authenticated",
+          deploymentExposure: "private",
+          authReady: true,
+          companyDeletionEnabled: true,
+        }),
+      );
+
+      const res = await request(app).post("/health/dev-server/restart");
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: "instance_admin_required" });
+    } finally {
+      if (previousFile === undefined) {
+        delete process.env.PAPERCLIP_DEV_SERVER_STATUS_FILE;
+      } else {
+        process.env.PAPERCLIP_DEV_SERVER_STATUS_FILE = previousFile;
+      }
+    }
+  });
 });

@@ -45,10 +45,16 @@ export function healthRoutes(
   const router = Router();
 
   router.post("/dev-server/restart", async (req, res) => {
-    const actorType = "actor" in req ? req.actor?.type : null;
-    if (opts.deploymentMode === "authenticated" && actorType !== "board") {
-      res.status(403).json({ error: "board_access_required" });
-      return;
+    const actor = "actor" in req ? req.actor : null;
+    if (opts.deploymentMode === "authenticated") {
+      if (actor?.type !== "board") {
+        res.status(403).json({ error: "board_access_required" });
+        return;
+      }
+      if (actor.isInstanceAdmin !== true) {
+        res.status(403).json({ error: "instance_admin_required" });
+        return;
+      }
     }
 
     const persistedDevServerStatus = readPersistedDevServerStatus();
