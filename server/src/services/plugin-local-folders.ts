@@ -608,6 +608,9 @@ export function assertWritableConfiguredLocalFolder(status: PluginLocalFolderSta
   if (!status.configured || !status.realPath || !status.readable) {
     throw notFound("Local folder is not configured or readable");
   }
+  if (status.access !== "readWrite" || !status.writable) {
+    throw badRequest("Local folder is not writable");
+  }
   const onlyMissingRequiredPaths = status.problems.every((item) =>
     item.code === "missing_directory" || item.code === "missing_file"
   );

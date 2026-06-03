@@ -181,6 +181,23 @@ describe("plugin local folders", () => {
     expect(repaired.healthy).toBe(true);
   });
 
+  it("rejects write guard for read-only folders even when readable and healthy", async () => {
+    const root = await makeRoot();
+    await fs.writeFile(path.join(root, "schema.md"), "schema", "utf8");
+    const status = await inspectPluginLocalFolder({
+      folderKey: "content-root",
+      storedConfig: {
+        path: root,
+        access: "read",
+        requiredFiles: ["schema.md"],
+      },
+    });
+
+    expect(status.healthy).toBe(true);
+    expect(status.writable).toBe(false);
+    expect(() => assertWritableConfiguredLocalFolder(status)).toThrow("Local folder is not writable");
+  });
+
   it("rejects traversal outside the configured folder", async () => {
     const root = await makeRoot();
 
