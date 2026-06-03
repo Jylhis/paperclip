@@ -156,7 +156,6 @@ export async function testEnvironment(
     adapterKey: "cursor",
     installCommand: SANDBOX_INSTALL_COMMAND,
     detectCommand: command,
-    env,
   });
   if (installCheck) checks.push(installCheck);
   const finalSandboxCommand = await prepareCursorSandboxCommand({

@@ -112,7 +112,6 @@ export async function testEnvironment(
     adapterKey: "claude",
     installCommand: SANDBOX_INSTALL_COMMAND,
     detectCommand: command,
-    env,
   });
   if (installCheck) checks.push(installCheck);
   try {

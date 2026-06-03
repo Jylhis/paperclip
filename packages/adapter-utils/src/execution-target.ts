@@ -553,7 +553,6 @@ export async function maybeRunSandboxInstallCommand(input: {
   installCommand: string;
   /** When provided, skip the install if `command -v <detectCommand>` succeeds. */
   detectCommand?: string | null;
-  env?: Record<string, string>;
   timeoutSec?: number;
 }): Promise<AdapterSandboxInstallCommandCheck | null> {
   const { target, adapterKey, installCommand } = input;
@@ -577,7 +576,7 @@ export async function maybeRunSandboxInstallCommand(input: {
         `command -v ${shellQuote(detectCommand)} >/dev/null 2>&1`,
         {
           cwd: target.remoteCwd,
-          env: input.env ?? {},
+          env: {},
           timeoutSec: 30,
           graceSec: 5,
         },
@@ -599,7 +598,7 @@ export async function maybeRunSandboxInstallCommand(input: {
   try {
     result = await runAdapterExecutionTargetShellCommand(input.runId, target, trimmed, {
       cwd: target.remoteCwd,
-      env: input.env ?? {},
+      env: {},
       timeoutSec: input.timeoutSec ?? 240,
       graceSec: 10,
     });
@@ -611,14 +610,12 @@ export async function maybeRunSandboxInstallCommand(input: {
       detail: err instanceof Error ? err.message : String(err),
     };
   }
-  const tail = (text: string) =>
-    text.split(/\r?\n/).filter((line) => line.trim().length > 0).slice(-3).join(" | ").slice(0, 480);
   if (result.timedOut) {
     return {
       code,
       level: "warn",
       message: `Install command timed out: ${trimmed}`,
-      detail: tail(result.stderr || result.stdout),
+      detail: "Install command output omitted for security.",
     };
   }
   if ((result.exitCode ?? 1) === 0) {
@@ -626,14 +623,13 @@ export async function maybeRunSandboxInstallCommand(input: {
       code,
       level: "info",
       message: `Install command ran: ${trimmed}`,
-      ...(tail(result.stdout) ? { detail: tail(result.stdout) } : {}),
     };
   }
   return {
     code,
     level: "warn",
     message: `Install command exited ${result.exitCode}: ${trimmed}`,
-    detail: tail(result.stderr || result.stdout),
+    detail: "Install command output omitted for security.",
   };
 }
 

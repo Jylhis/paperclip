@@ -209,7 +209,6 @@ export async function testEnvironment(
     adapterKey: "codex",
     installCommand: SANDBOX_INSTALL_COMMAND,
     detectCommand: command,
-    env,
   });
   if (installCheck) checks.push(installCheck);
   try {

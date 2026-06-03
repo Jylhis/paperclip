@@ -141,8 +141,7 @@ export async function testEnvironment(
       target,
       adapterKey: "pi",
       installCommand: SANDBOX_INSTALL_COMMAND,
-    detectCommand: command,
-      env,
+      detectCommand: command,
     });
     if (installCheck) checks.push(installCheck);
     try {

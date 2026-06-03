@@ -190,7 +190,6 @@ export async function testEnvironment(
         adapterKey: "opencode",
         installCommand: SANDBOX_INSTALL_COMMAND,
         detectCommand: command,
-        env,
       });
       if (installCheck) checks.push(installCheck);
       try {

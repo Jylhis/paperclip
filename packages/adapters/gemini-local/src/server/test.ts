@@ -104,7 +104,6 @@ export async function testEnvironment(
     adapterKey: "gemini",
     installCommand: SANDBOX_INSTALL_COMMAND,
     detectCommand: command,
-    env,
   });
   if (installCheck) checks.push(installCheck);
   try {
