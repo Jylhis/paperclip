@@ -3247,6 +3247,17 @@ export function issueRoutes(
       existing.companyId,
       req.body.assigneeAgentId as string | null | undefined,
     );
+    if (req.actor.type === "agent" && req.body.workMode !== undefined) {
+      res.status(403).json({
+        error: "Agent cannot change issue work mode",
+        details: {
+          issueId: existing.id,
+          actorAgentId: req.actor.agentId,
+          securityPrinciples: ["Least Privilege", "Complete Mediation", "Fail Securely"],
+        },
+      });
+      return;
+    }
     const titleOrDescriptionChanged = req.body.title !== undefined || req.body.description !== undefined;
     const existingRelations =
       Array.isArray(req.body.blockedByIssueIds)

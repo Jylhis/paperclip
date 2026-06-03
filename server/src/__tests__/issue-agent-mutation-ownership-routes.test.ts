@@ -564,6 +564,16 @@ describe("agent issue mutation checkout ownership", () => {
     });
   });
 
+  it("rejects agent work-mode changes on issue patch", async () => {
+    mockIssueService.getById.mockResolvedValue(makeIssue({ workMode: "planning" }));
+
+    const res = await request(await createApp(ownerActor())).patch(`/api/issues/${issueId}`).send({ workMode: "standard" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body.error).toBe("Agent cannot change issue work mode");
+    expect(mockIssueService.update).not.toHaveBeenCalled();
+  });
+
   it("rejects peer-agent status updates that would clear a recovery action they do not own", async () => {
     mockIssueService.getById.mockResolvedValue(
       makeIssue({ status: "blocked", assigneeAgentId: null, assigneeUserId: "board-user" }),
