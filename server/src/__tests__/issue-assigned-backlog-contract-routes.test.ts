@@ -3,9 +3,12 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const assigneeAgentId = "22222222-2222-4222-8222-222222222222";
+const assignedBacklogBlockerId = "33333333-3333-4333-8333-333333333333";
 
 const mockWakeup = vi.hoisted(() => vi.fn(async () => undefined));
 const mockLogActivity = vi.hoisted(() => vi.fn(async () => undefined));
+const mockCanUser = vi.hoisted(() => vi.fn(async () => true));
+const mockHasPermission = vi.hoisted(() => vi.fn(async () => true));
 const mockIssueService = vi.hoisted(() => ({
   create: vi.fn(),
   createChild: vi.fn(),
@@ -21,8 +24,8 @@ const mockIssueService = vi.hoisted(() => ({
 
 vi.mock("../services/index.js", () => ({
   accessService: () => ({
-    canUser: vi.fn(async () => true),
-    hasPermission: vi.fn(async () => true),
+    canUser: mockCanUser,
+    hasPermission: mockHasPermission,
   }),
   agentService: () => ({
     getById: vi.fn(async () => null),
@@ -107,7 +110,7 @@ async function createApp() {
       type: "board",
       userId: "local-board",
       companyIds: ["company-1"],
-      source: "local_implicit",
+      source: "session",
       isInstanceAdmin: false,
     };
     next();
@@ -151,6 +154,8 @@ function expectClearAssignedStatusValidation(res: request.Response) {
 describe("assigned backlog creation contract", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCanUser.mockResolvedValue(true);
+    mockHasPermission.mockResolvedValue(true);
     mockIssueService.getById.mockResolvedValue(makeIssue({
       id: "parent-1",
       title: "Parent issue",
@@ -317,6 +322,34 @@ describe("assigned backlog creation contract", () => {
         }),
       }),
     );
+    expect(mockWakeup).not.toHaveBeenCalled();
+  });
+
+  it("requires tasks:assign when creating a blocked issue pointing to an assigned backlog blocker", async () => {
+    mockCanUser.mockResolvedValue(false);
+    mockIssueService.getById.mockImplementation(async (id: string) => {
+      if (id === assignedBacklogBlockerId) {
+        return makeIssue({
+          id: assignedBacklogBlockerId,
+          title: "Assigned backlog blocker",
+          status: "backlog",
+          assigneeAgentId,
+        });
+      }
+      return null;
+    });
+
+    const res = await request(await createApp())
+      .post("/api/companies/company-1/issues")
+      .send({
+        title: "Blocked by assigned backlog",
+        status: "blocked",
+        blockedByIssueIds: [assignedBacklogBlockerId],
+      });
+
+    expect(res.status).toBe(403);
+    expect(String(res.body?.error ?? res.text)).toMatch(/tasks:assign/i);
+    expect(mockIssueService.create).not.toHaveBeenCalled();
     expect(mockWakeup).not.toHaveBeenCalled();
   });
 });

@@ -2998,6 +2998,18 @@ export function issueRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
+    if (req.body.status === "blocked" && Array.isArray(req.body.blockedByIssueIds) && req.body.blockedByIssueIds.length > 0) {
+      const blockers = await Promise.all(req.body.blockedByIssueIds.map((id: string) => svc.getById(id)));
+      const hasAssignedBacklogBlocker = blockers.some((blocker) =>
+        blocker
+        && blocker.companyId === companyId
+        && blocker.status === "backlog"
+        && (blocker.assigneeAgentId || blocker.assigneeUserId),
+      );
+      if (hasAssignedBacklogBlocker) {
+        await assertCanAssignTasks(req, companyId);
+      }
+    }
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, companyId);
     }
