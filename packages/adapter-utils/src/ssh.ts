@@ -291,6 +291,11 @@ async function spawnText(
       finishReject(Object.assign(error, { code: null }));
     });
 
+    child.stdin?.on("error", (error) => {
+      clearTimers();
+      finishReject(Object.assign(error, { code: null }));
+    });
+
     child.on("close", (code, signal) => {
       clearTimers();
       if (settled) return;
