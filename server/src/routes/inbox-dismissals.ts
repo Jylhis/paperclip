@@ -54,11 +54,7 @@ export function inboxDismissalRoutes(db: Db) {
         action: "inbox.dismissed",
         entityType: "company",
         entityId: companyId,
-        details: {
-          userId: req.actor.userId,
-          itemKey: dismissal.itemKey,
-          dismissedAt: dismissal.dismissedAt,
-        },
+        details: {},
       });
 
       res.status(201).json(dismissal);
