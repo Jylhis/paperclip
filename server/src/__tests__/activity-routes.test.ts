@@ -203,4 +203,99 @@ describe.sequential("activity routes", () => {
     expect(mockHeartbeatService.getRun).not.toHaveBeenCalled();
     expect(mockActivityService.issuesForRun).not.toHaveBeenCalled();
   });
+
+  it("includes sensitive environment details for local_implicit board actor", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+
+    const app = await createApp({ type: "board", source: "local_implicit", isInstanceAdmin: false });
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: true,
+    });
+  });
+
+  it("includes sensitive environment details for instance admin board actor", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      companyIds: ["company-1"],
+      source: "session",
+      isInstanceAdmin: true,
+    });
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: true,
+    });
+  });
+
+  it("includes sensitive environment details for board user with environments:manage", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+    mockAccessService.canUser.mockResolvedValue(true);
+
+    const app = await createApp();
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockAccessService.canUser).toHaveBeenCalledWith("company-1", "user-1", "environments:manage");
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: true,
+    });
+  });
+
+  it("redacts sensitive environment details for agent without environments:manage", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+    mockAgentService.getById.mockResolvedValue({ id: "agent-uuid-1", companyId: "company-1", permissions: null });
+
+    const app = await createApp({ type: "agent", agentId: "agent-uuid-1", companyId: "company-1" });
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: false,
+    });
+  });
+
+  it("includes sensitive environment details for agent with environments:manage grant", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+    mockAgentService.getById.mockResolvedValue({ id: "agent-uuid-1", companyId: "company-1", permissions: null });
+    mockAccessService.hasPermission.mockResolvedValue(true);
+
+    const app = await createApp({ type: "agent", agentId: "agent-uuid-1", companyId: "company-1" });
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockAccessService.hasPermission).toHaveBeenCalledWith("company-1", "agent", "agent-uuid-1", "environments:manage");
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: true,
+    });
+  });
+
+  it("includes sensitive environment details for agent with canCreateAgents permission", async () => {
+    mockIssueService.getByIdentifier.mockResolvedValue({ id: "issue-uuid-1", companyId: "company-1" });
+    mockActivityService.runsForIssue.mockResolvedValue([]);
+    mockAgentService.getById.mockResolvedValue({
+      id: "agent-uuid-1",
+      companyId: "company-1",
+      permissions: { canCreateAgents: true },
+    });
+
+    const app = await createApp({ type: "agent", agentId: "agent-uuid-1", companyId: "company-1" });
+    const res = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/issues/pc1a2-475/runs"));
+
+    expect(res.status).toBe(200);
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: true,
+    });
+  });
 });

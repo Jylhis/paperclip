@@ -38,8 +38,6 @@ export function activityRoutes(db: Db) {
   }
 
   async function actorCanReadEnvironmentDetails(req: Parameters<typeof assertCompanyAccess>[0], companyId: string) {
-    assertCompanyAccess(req, companyId);
-
     if (req.actor.type === "board") {
       if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
       return access.canUser(companyId, req.actor.userId, "environments:manage");
