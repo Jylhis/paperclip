@@ -15,6 +15,7 @@ import {
 import { envConfigSchema } from "./secret.js";
 
 const routineVariableValueSchema = z.union([z.string(), z.number().finite(), z.boolean()]);
+const MAX_ROUTINE_DESCRIPTION_LENGTH = 20_000;
 
 export const routineVariableSchema = z.object({
   name: z.string().trim().regex(/^[A-Za-z][A-Za-z0-9_]*$/),
@@ -54,7 +55,7 @@ export const createRoutineSchema = z.object({
   goalId: z.string().uuid().optional().nullable(),
   parentIssueId: z.string().uuid().optional().nullable(),
   title: z.string().trim().min(1).max(200),
-  description: z.string().optional().nullable(),
+  description: z.string().max(MAX_ROUTINE_DESCRIPTION_LENGTH).optional().nullable(),
   assigneeAgentId: z.string().uuid().optional().nullable(),
   priority: z.enum(ISSUE_PRIORITIES).optional().default("medium"),
   status: z.enum(ROUTINE_STATUSES).optional().default("active"),
