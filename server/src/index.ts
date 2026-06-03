@@ -620,12 +620,15 @@ export async function startServer(): Promise<StartedServer> {
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
-  // Increase keep-alive timeouts to safely outlive default idle timeouts
-  // of common reverse proxies and load balancers (like AWS ALB, Nginx, or Traefik).
-  // This prevents intermittent 502/ECONNRESET errors caused by Node's 5s default.
-  server.keepAliveTimeout = 185000;
-  server.headersTimeout = 186000;
-  
+  const longKeepAliveEnabled = process.env.PAPERCLIP_HTTP_LONG_KEEPALIVE === "true";
+  if (longKeepAliveEnabled) {
+    // Opt-in only: increase keep-alive timeouts when running behind a trusted
+    // reverse proxy/load balancer with shorter backend idle timeouts.
+    // This avoids exposing direct deployments to unnecessarily long idle socket retention.
+    server.keepAliveTimeout = 185000;
+    server.headersTimeout = 186000;
+  }
+
   if (listenPort !== requestedListenPort) {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
   }
