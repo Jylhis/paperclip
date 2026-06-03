@@ -14,7 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   assets,
@@ -81,6 +81,22 @@ import {
 } from "../board-claim.js";
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
+
+async function hasActiveBootstrapCeoInvite(db: Db) {
+  const now = new Date();
+  const rows = await db
+    .select({ count: count() })
+    .from(invites)
+    .where(
+      and(
+        eq(invites.inviteType, "bootstrap_ceo"),
+        isNull(invites.revokedAt),
+        isNull(invites.acceptedAt),
+        gt(invites.expiresAt, now),
+      ),
+    );
+  return Number(rows[0]?.count ?? 0) > 0;
+}
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -2467,6 +2483,12 @@ export function accessRoutes(
       !req.actor.userId
     ) {
       throw unauthorized("Sign in from a browser session before claiming first admin");
+    }
+
+    if (await hasActiveBootstrapCeoInvite(db)) {
+      throw conflict(
+        "A bootstrap invite is already active. Use the invite URL or rotate it from the host before claiming in the browser."
+      );
     }
 
     const claimed = await claimFirstInstanceAdmin(db, {

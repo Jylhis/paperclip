@@ -202,6 +202,31 @@ describe("CloudAccessGate", () => {
     unmountRoot(root);
   });
 
+  it("keeps private bootstrap-pending instances invite-only when a bootstrap invite is active", async () => {
+    mockHealthApi.get.mockResolvedValue({
+      status: "ok",
+      deploymentMode: "authenticated",
+      deploymentExposure: "private",
+      bootstrapStatus: "bootstrap_pending",
+      bootstrapInviteActive: true,
+    });
+    mockAuthApi.getSession.mockResolvedValue({
+      session: { id: "session-1", userId: "user-1" },
+      user: { id: "user-1", email: "user@example.com", name: "User", image: null },
+    });
+
+    const root = renderGate(container);
+    await waitForText(container, "A one-time first-admin invite is already active");
+
+    expect(container.textContent).toContain("A one-time first-admin invite is already active");
+    expect(container.textContent).toContain("pnpm paperclipai auth bootstrap-ceo");
+    expect(container.textContent).not.toContain("Claim this instance");
+    expect(container.textContent).not.toContain("Sign in / Create account");
+    expect(mockAccessApi.claimBootstrapAdmin).not.toHaveBeenCalled();
+
+    unmountRoot(root);
+  });
+
   it("keeps public bootstrap-pending instances invite-only", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
@@ -219,7 +244,7 @@ describe("CloudAccessGate", () => {
     await waitForText(container, "This Paperclip is waiting on its first admin");
 
     expect(container.textContent).toContain("This Paperclip is waiting on its first admin");
-    expect(container.textContent).toContain("invite-only mode");
+    expect(container.textContent).toContain("A one-time first-admin invite is already active");
     expect(container.textContent).not.toContain("Claim this instance");
     expect(container.textContent).not.toContain("Sign in / Create account");
     expect(mockAccessApi.claimBootstrapAdmin).not.toHaveBeenCalled();

@@ -134,6 +134,16 @@ describe("POST /bootstrap/claim", () => {
     expect(claimFirstInstanceAdminMock).not.toHaveBeenCalled();
   });
 
+  it("rejects browser claim while an unaccepted bootstrap invite is active", async () => {
+    const app = createApp({ db: createDb({ count: 1 }) });
+
+    const res = await request(app).post("/api/bootstrap/claim").send({});
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain("bootstrap invite is already active");
+    expect(claimFirstInstanceAdminMock).not.toHaveBeenCalled();
+  });
+
   it("returns conflict when first admin has already been claimed", async () => {
     claimFirstInstanceAdminMock.mockResolvedValueOnce({
       status: "already_claimed",

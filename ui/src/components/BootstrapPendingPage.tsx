@@ -77,14 +77,17 @@ export function BootstrapPendingPage({
       <StateChrome>
         <h1 className="text-xl font-semibold">This Paperclip is waiting on its first admin</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This instance runs in invite-only mode. The operator must generate a one-time first-admin invite URL
-          from the host. Once you have the link, open it from this browser to finish setup.
+          {hasActiveInvite
+            ? "A one-time first-admin invite is already active. Open that invite URL from this browser to finish setup, or rotate it from the host."
+            : "This instance runs in invite-only mode. The operator must generate a one-time first-admin invite URL from the host. Once you have the link, open it from this browser to finish setup."}
         </p>
         <CliFallback hasActiveInvite={hasActiveInvite} />
-        <p className="mt-4 text-xs text-muted-foreground">
-          Browser-based claim is intentionally disabled in public mode so anyone on the network can't promote
-          themselves.
-        </p>
+        {!hasActiveInvite && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            Browser-based claim is intentionally disabled in public mode so anyone on the network can't promote
+            themselves.
+          </p>
+        )}
       </StateChrome>
     );
   }
