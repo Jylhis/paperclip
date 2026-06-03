@@ -74,8 +74,14 @@ import { execute } from "./execute.js";
 
 describe("codex remote execution", () => {
   const cleanupDirs: string[] = [];
+  const previousPaperclipHome = process.env.PAPERCLIP_HOME;
 
   afterEach(async () => {
+    if (previousPaperclipHome === undefined) {
+      delete process.env.PAPERCLIP_HOME;
+    } else {
+      process.env.PAPERCLIP_HOME = previousPaperclipHome;
+    }
     vi.clearAllMocks();
     while (cleanupDirs.length > 0) {
       const dir = cleanupDirs.pop();
@@ -87,8 +93,16 @@ describe("codex remote execution", () => {
   it("prepares the workspace, syncs CODEX_HOME, and restores workspace changes for remote SSH execution", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-codex-remote-"));
     cleanupDirs.push(rootDir);
+    process.env.PAPERCLIP_HOME = rootDir;
     const workspaceDir = path.join(rootDir, "workspace");
-    const codexHomeDir = path.join(rootDir, "codex-home");
+    const codexHomeDir = path.join(
+      rootDir,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+    );
     const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-1/workspace";
     await mkdir(workspaceDir, { recursive: true });
     await mkdir(codexHomeDir, { recursive: true });
@@ -206,8 +220,16 @@ describe("codex remote execution", () => {
   it("does not resume saved Codex sessions for remote SSH execution without a matching remote identity", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-codex-remote-resume-"));
     cleanupDirs.push(rootDir);
+    process.env.PAPERCLIP_HOME = rootDir;
     const workspaceDir = path.join(rootDir, "workspace");
-    const codexHomeDir = path.join(rootDir, "codex-home");
+    const codexHomeDir = path.join(
+      rootDir,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+    );
     await mkdir(workspaceDir, { recursive: true });
     await mkdir(codexHomeDir, { recursive: true });
     await writeFile(path.join(codexHomeDir, "auth.json"), "{}", "utf8");
@@ -269,8 +291,16 @@ describe("codex remote execution", () => {
   it("resumes saved Codex sessions for remote SSH execution when the remote identity matches", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-codex-remote-resume-match-"));
     cleanupDirs.push(rootDir);
+    process.env.PAPERCLIP_HOME = rootDir;
     const workspaceDir = path.join(rootDir, "workspace");
-    const codexHomeDir = path.join(rootDir, "codex-home");
+    const codexHomeDir = path.join(
+      rootDir,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+    );
     const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-ssh-resume/workspace";
     await mkdir(workspaceDir, { recursive: true });
     await mkdir(codexHomeDir, { recursive: true });
@@ -342,8 +372,16 @@ describe("codex remote execution", () => {
   it("uses the provider-neutral execution target contract for remote SSH execution", async () => {
     const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-codex-target-"));
     cleanupDirs.push(rootDir);
+    process.env.PAPERCLIP_HOME = rootDir;
     const workspaceDir = path.join(rootDir, "workspace");
-    const codexHomeDir = path.join(rootDir, "codex-home");
+    const codexHomeDir = path.join(
+      rootDir,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+    );
     const managedRemoteWorkspace = "/remote/workspace/.paperclip-runtime/runs/run-target/workspace";
     await mkdir(workspaceDir, { recursive: true });
     await mkdir(codexHomeDir, { recursive: true });

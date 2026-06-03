@@ -45,7 +45,14 @@ import {
   isCodexTransientUpstreamError,
   isCodexUnknownSessionError,
 } from "./parse.js";
-import { pathExists, prepareManagedCodexHome, resolveManagedCodexHomeDir, resolveSharedCodexHomeDir, writeApiKeyAuthJson } from "./codex-home.js";
+import {
+  pathExists,
+  prepareManagedCodexHome,
+  resolveManagedCodexHomeDir,
+  resolveSharedCodexHomeDir,
+  resolveTrustedConfiguredCodexHomeDir,
+  writeTrustedConfiguredCodexHomeApiKeyAuthJson,
+} from "./codex-home.js";
 import { resolveCodexDesiredSkillNames } from "./skills.js";
 import { buildCodexExecArgs } from "./codex-args.js";
 import { SANDBOX_INSTALL_COMMAND } from "../index.js";
@@ -329,10 +336,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     legacyRemoteExecution: ctx.executionTransport?.remoteExecution,
   });
   const executionTargetIsRemote = adapterExecutionTargetIsRemote(executionTarget);
-  const configuredCodexHome =
+  const configuredCodexHomeRaw =
     typeof envConfig.CODEX_HOME === "string" && envConfig.CODEX_HOME.trim().length > 0
-      ? path.resolve(envConfig.CODEX_HOME.trim())
+      ? envConfig.CODEX_HOME.trim()
       : null;
+  const configuredCodexHome = configuredCodexHomeRaw
+    ? await resolveTrustedConfiguredCodexHomeDir(process.env, agent.companyId, configuredCodexHomeRaw)
+    : null;
   const codexSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredSkillNames = resolveCodexDesiredSkillNames(config, codexSkillEntries);
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
@@ -354,7 +364,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // credentials only from there, not the env var). Write it explicitly to keep
   // custom homes consistent with the managed path and avoid silent auth failures.
   if (configuredOpenAiApiKey && configuredCodexHome) {
-    await writeApiKeyAuthJson(effectiveCodexHome, configuredOpenAiApiKey);
+    await writeTrustedConfiguredCodexHomeApiKeyAuthJson(
+      process.env,
+      agent.companyId,
+      effectiveCodexHome,
+      configuredOpenAiApiKey,
+    );
     await onLog(
       "stdout",
       `[paperclip] Wrote API-key auth.json into custom Codex home "${effectiveCodexHome}" from configured OPENAI_API_KEY.\n`,

@@ -41,6 +41,51 @@ export function resolveManagedCodexHomeDir(
     : path.resolve(instanceRoot, "codex-home");
 }
 
+function pathIsInsideOrEqual(parent: string, candidate: string): boolean {
+  const relative = path.relative(parent, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+async function assertNoExistingSymlinkPath(root: string, candidate: string): Promise<void> {
+  const resolvedRoot = path.resolve(root);
+  const resolvedCandidate = path.resolve(candidate);
+  const relative = path.relative(resolvedRoot, resolvedCandidate);
+  const parts = relative ? relative.split(path.sep).filter(Boolean) : [];
+  let current = resolvedRoot;
+
+  for (const part of ["", ...parts]) {
+    if (part) current = path.join(current, part);
+
+    const existing = await fs.lstat(current).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!existing) return;
+    if (existing.isSymbolicLink()) {
+      throw new Error(`Refusing CODEX_HOME path with symlink component: ${current}`);
+    }
+  }
+}
+
+export async function resolveTrustedConfiguredCodexHomeDir(
+  env: NodeJS.ProcessEnv,
+  companyId: string | undefined,
+  configuredCodexHome: string,
+): Promise<string> {
+  const managedRoot = resolveManagedCodexHomeDir(env, companyId);
+  const resolvedConfiguredHome = path.resolve(configuredCodexHome);
+
+  if (!pathIsInsideOrEqual(managedRoot, resolvedConfiguredHome)) {
+    throw new Error(
+      `Refusing CODEX_HOME outside the Paperclip-managed Codex home for this company: ${resolvedConfiguredHome}`,
+    );
+  }
+
+  await fs.mkdir(managedRoot, { recursive: true });
+  await assertNoExistingSymlinkPath(managedRoot, resolvedConfiguredHome);
+  return resolvedConfiguredHome;
+}
+
 async function ensureParentDir(target: string): Promise<void> {
   await fs.mkdir(path.dirname(target), { recursive: true });
 }
@@ -96,11 +141,25 @@ async function ensureCopiedFile(target: string, source: string): Promise<void> {
  * path. Required because the codex CLI (>= 0.122) ignores the `OPENAI_API_KEY`
  * environment variable and only reads credentials from `$CODEX_HOME/auth.json`.
  */
-export async function writeApiKeyAuthJson(home: string, apiKey: string): Promise<void> {
+async function writeApiKeyAuthJson(home: string, apiKey: string): Promise<void> {
   await fs.mkdir(home, { recursive: true });
   const target = path.join(home, "auth.json");
   await fs.rm(target, { force: true });
   await fs.writeFile(target, JSON.stringify({ OPENAI_API_KEY: apiKey }), { mode: 0o600 });
+}
+
+export async function writeTrustedConfiguredCodexHomeApiKeyAuthJson(
+  env: NodeJS.ProcessEnv,
+  companyId: string | undefined,
+  configuredCodexHome: string,
+  apiKey: string,
+): Promise<void> {
+  const trustedCodexHome = await resolveTrustedConfiguredCodexHomeDir(
+    env,
+    companyId,
+    configuredCodexHome,
+  );
+  await writeApiKeyAuthJson(trustedCodexHome, apiKey);
 }
 
 export async function prepareManagedCodexHome(

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { prepareManagedCodexHome } from "./codex-home.js";
+import { prepareManagedCodexHome, resolveTrustedConfiguredCodexHomeDir } from "./codex-home.js";
 
 describe("codex managed home", () => {
   afterEach(() => {
@@ -54,4 +54,96 @@ describe("codex managed home", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it("rejects configured CODEX_HOME outside the company-managed Codex home", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const paperclipHome = path.join(root, "paperclip-home");
+    const victimHome = path.join(
+      paperclipHome,
+      "instances",
+      "default",
+      "companies",
+      "victim-company",
+      "codex-home",
+    );
+
+    try {
+      await expect(
+        resolveTrustedConfiguredCodexHomeDir(
+          {
+            PAPERCLIP_HOME: paperclipHome,
+            PAPERCLIP_INSTANCE_ID: "default",
+          },
+          "attacker-company",
+          victimHome,
+        ),
+      ).rejects.toThrow(/outside the Paperclip-managed Codex home/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("allows configured CODEX_HOME inside the company-managed Codex home", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const paperclipHome = path.join(root, "paperclip-home");
+    const customHome = path.join(
+      paperclipHome,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+      "custom",
+    );
+
+    try {
+      await expect(
+        resolveTrustedConfiguredCodexHomeDir(
+          {
+            PAPERCLIP_HOME: paperclipHome,
+            PAPERCLIP_INSTANCE_ID: "default",
+          },
+          "company-1",
+          customHome,
+        ),
+      ).resolves.toBe(customHome);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects configured CODEX_HOME with an existing symlink path component", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-codex-home-"));
+    const paperclipHome = path.join(root, "paperclip-home");
+    const managedHome = path.join(
+      paperclipHome,
+      "instances",
+      "default",
+      "companies",
+      "company-1",
+      "codex-home",
+    );
+    const outsideHome = path.join(root, "outside");
+    const symlinkHome = path.join(managedHome, "linked-home");
+
+    try {
+      await fs.mkdir(managedHome, { recursive: true });
+      await fs.mkdir(outsideHome, { recursive: true });
+      await fs.symlink(outsideHome, symlinkHome);
+
+      await expect(
+        resolveTrustedConfiguredCodexHomeDir(
+          {
+            PAPERCLIP_HOME: paperclipHome,
+            PAPERCLIP_INSTANCE_ID: "default",
+          },
+          "company-1",
+          path.join(symlinkHome, "nested"),
+        ),
+      ).rejects.toThrow(/symlink component/);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
 });
