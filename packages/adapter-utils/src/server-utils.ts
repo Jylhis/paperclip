@@ -1122,11 +1122,31 @@ export function refreshPaperclipWorkspaceEnvForExecution(input: {
 export function sanitizeInheritedPaperclipEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of Object.keys(env)) {
-    if (!key.startsWith("PAPERCLIP_")) continue;
-    if (key === "PAPERCLIP_RUNTIME_API_URL") continue;
-    if (key === "PAPERCLIP_LISTEN_HOST") continue;
-    if (key === "PAPERCLIP_LISTEN_PORT") continue;
-    delete env[key];
+    if (key.startsWith("PAPERCLIP_")) {
+      if (key === "PAPERCLIP_RUNTIME_API_URL") continue;
+      if (key === "PAPERCLIP_LISTEN_HOST") continue;
+      if (key === "PAPERCLIP_LISTEN_PORT") continue;
+      delete env[key];
+      continue;
+    }
+
+    const normalized = key.toUpperCase();
+    if (normalized === "DATABASE_URL" || normalized === "BETTER_AUTH_SECRET") {
+      delete env[key];
+      continue;
+    }
+
+    if (/(?:^|_)(?:API_)?KEY$/.test(normalized)) {
+      delete env[key];
+      continue;
+    }
+    if (/(?:^|_)(?:ACCESS_)?TOKEN$/.test(normalized)) {
+      delete env[key];
+      continue;
+    }
+    if (/(?:^|_)SECRET$/.test(normalized)) {
+      delete env[key];
+    }
   }
   return env;
 }

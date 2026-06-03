@@ -13,6 +13,7 @@ import {
   renderPaperclipWakePrompt,
   runningProcesses,
   runChildProcess,
+  sanitizeInheritedPaperclipEnv,
   sanitizeSshRemoteEnv,
   shapePaperclipWorkspaceEnvForExecution,
   rewriteWorkspaceCwdEnvVarsForExecution,
@@ -142,6 +143,42 @@ describe("sanitizeSshRemoteEnv", () => {
         },
       ),
     ).toEqual({ PATH: "/explicit/remote/bin" });
+  });
+});
+
+describe("sanitizeInheritedPaperclipEnv", () => {
+  it("removes sensitive inherited credentials while preserving safe runtime keys", () => {
+    expect(
+      sanitizeInheritedPaperclipEnv({
+        PAPERCLIP_INTERNAL_SECRET: "remove",
+        PAPERCLIP_RUNTIME_API_URL: "http://127.0.0.1:3100",
+        DATABASE_URL: "postgres://example",
+        BETTER_AUTH_SECRET: "secret",
+        OPENAI_API_KEY: "key",
+        GITHUB_TOKEN: "token",
+        AWS_SESSION_TOKEN: "session-token",
+        SAFE_VALUE: "visible",
+      }),
+    ).toEqual({
+      PAPERCLIP_RUNTIME_API_URL: "http://127.0.0.1:3100",
+      SAFE_VALUE: "visible",
+    });
+  });
+
+  it("keeps non-secret keys that merely contain similar substrings", () => {
+    expect(
+      sanitizeInheritedPaperclipEnv({
+        MONKEY: "ok",
+        HOCKEY: "ok",
+        TOKENIZED_FLAG: "ok",
+        SECRETARY_NAME: "ok",
+      }),
+    ).toEqual({
+      MONKEY: "ok",
+      HOCKEY: "ok",
+      TOKENIZED_FLAG: "ok",
+      SECRETARY_NAME: "ok",
+    });
   });
 });
 
