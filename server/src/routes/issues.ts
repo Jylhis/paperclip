@@ -1204,6 +1204,40 @@ export function issueRoutes(
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
   }
 
+  function issueExecutionPolicyParticipantKeys(policy: unknown) {
+    if (!policy || typeof policy !== "object") return [];
+    const stages = (policy as { stages?: unknown }).stages;
+    if (!Array.isArray(stages)) return [];
+    const keys = new Set<string>();
+    for (const stage of stages) {
+      if (!stage || typeof stage !== "object") continue;
+      const participants = (stage as { participants?: unknown }).participants;
+      if (!Array.isArray(participants)) continue;
+      for (const participant of participants) {
+        if (!participant || typeof participant !== "object") continue;
+        const principal = participant as { type?: unknown; agentId?: unknown; userId?: unknown };
+        if (principal.type === "agent" && typeof principal.agentId === "string" && principal.agentId.length > 0) {
+          keys.add(`agent:${principal.agentId}`);
+        }
+        if (principal.type === "user" && typeof principal.userId === "string" && principal.userId.length > 0) {
+          keys.add(`user:${principal.userId}`);
+        }
+      }
+    }
+    return [...keys].sort();
+  }
+
+  function issueExecutionPolicyAssignsParticipants(policy: unknown) {
+    return issueExecutionPolicyParticipantKeys(policy).length > 0;
+  }
+
+  function issueExecutionPolicyParticipantsChanged(previousPolicy: unknown, nextPolicy: unknown) {
+    const previousKeys = issueExecutionPolicyParticipantKeys(previousPolicy);
+    const nextKeys = issueExecutionPolicyParticipantKeys(nextPolicy);
+    if (previousKeys.length !== nextKeys.length) return true;
+    return previousKeys.some((key, index) => key !== nextKeys[index]);
+  }
+
   async function assertCanAssignTasks(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
     if (req.actor.type === "board") {
@@ -2998,9 +3032,6 @@ export function issueRoutes(
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
-    if (req.body.assigneeAgentId || req.body.assigneeUserId) {
-      await assertCanAssignTasks(req, companyId);
-    }
     await assertIssueEnvironmentSelection(companyId, req.body.executionWorkspaceSettings?.environmentId);
 
     const actor = getActorInfo(req);
@@ -3008,6 +3039,9 @@ export function issueRoutes(
       normalizeIssueExecutionPolicy(req.body.executionPolicy),
       actor.actorType,
     );
+    if (req.body.assigneeAgentId || req.body.assigneeUserId || issueExecutionPolicyAssignsParticipants(executionPolicy)) {
+      await assertCanAssignTasks(req, companyId);
+    }
     assertCanManageIssueMonitor(req, req.body.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
     const issue = await svc.create(companyId, {
       ...req.body,
@@ -3093,9 +3127,6 @@ export function issueRoutes(
     }
     assertCompanyAccess(req, parent.companyId);
     assertNoAgentHostWorkspaceCommandMutation(req, collectIssueWorkspaceCommandPaths(req.body));
-    if (req.body.assigneeAgentId || req.body.assigneeUserId) {
-      await assertCanAssignTasks(req, parent.companyId);
-    }
     await assertIssueEnvironmentSelection(parent.companyId, req.body.executionWorkspaceSettings?.environmentId);
 
     const actor = getActorInfo(req);
@@ -3103,6 +3134,9 @@ export function issueRoutes(
       normalizeIssueExecutionPolicy(req.body.executionPolicy),
       actor.actorType,
     );
+    if (req.body.assigneeAgentId || req.body.assigneeUserId || issueExecutionPolicyAssignsParticipants(executionPolicy)) {
+      await assertCanAssignTasks(req, parent.companyId);
+    }
     assertCanManageIssueMonitor(req, req.body.assigneeAgentId ?? null, Boolean(executionPolicy?.monitor));
     const { issue, parentBlockerAdded } = await svc.createChild(parent.id, {
       ...req.body,
@@ -3446,6 +3480,9 @@ export function issueRoutes(
       updateFields.assigneeUserId === undefined ? existing.assigneeUserId : (updateFields.assigneeUserId as string | null);
     const assigneeWillChange =
       nextAssigneeAgentId !== existing.assigneeAgentId || nextAssigneeUserId !== existing.assigneeUserId;
+    const executionPolicyAssigneesWillChange =
+      req.body.executionPolicy !== undefined &&
+      issueExecutionPolicyParticipantsChanged(previousExecutionPolicy, nextExecutionPolicy);
     const isAgentReturningIssueToCreator =
       req.actor.type === "agent" &&
       !!req.actor.agentId &&
@@ -3455,10 +3492,8 @@ export function issueRoutes(
       !!existing.createdByUserId &&
       nextAssigneeUserId === existing.createdByUserId;
 
-    if (assigneeWillChange && !transition.workflowControlledAssignment) {
-      if (!isAgentReturningIssueToCreator) {
-        await assertCanAssignTasks(req, existing.companyId);
-      }
+    if (executionPolicyAssigneesWillChange || (assigneeWillChange && !isAgentReturningIssueToCreator)) {
+      await assertCanAssignTasks(req, existing.companyId);
     }
 
     let issue;
