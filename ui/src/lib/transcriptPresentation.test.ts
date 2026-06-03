@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import { describeToolInput, summarizeToolInput } from "./transcriptPresentation";
 
 describe("summarizeToolInput", () => {
-  it("prefers human descriptions over raw commands when both exist", () => {
+  it("prefers raw commands for command tools when both command and intent exist", () => {
     expect(
       summarizeToolInput("command_execution", {
         description: "Inspect the issue chat thread layout classes",
         command: "zsh -lc 'sed -n \"1,220p\" ui/src/components/IssueChatThread.tsx'",
       }),
-    ).toBe("Inspect the issue chat thread layout classes");
+    ).toBe('sed -n "1,220p" ui/src/components/IssueChatThread.tsx');
   });
 });
 
 describe("describeToolInput", () => {
-  it("keeps command tools description-first in the detail view", () => {
+  it("always includes command details for command tools", () => {
     expect(
       describeToolInput("command_execution", {
         description: "Inspect the issue chat thread layout classes",
@@ -23,6 +23,7 @@ describe("describeToolInput", () => {
     ).toEqual([
       { label: "Intent", value: "Inspect the issue chat thread layout classes", tone: "default" },
       { label: "Directory", value: "/workspace/paperclip", tone: "default" },
+      { label: "Command", value: 'sed -n "1,220p" ui/src/components/IssueChatThread.tsx', tone: "code" },
     ]);
   });
 

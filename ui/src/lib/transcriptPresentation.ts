@@ -146,11 +146,11 @@ export function summarizeToolInput(
   const humanDescription =
     summarizeRecord(record, ["description", "summary", "reason", "goal", "intent", "action", "task"])
     ?? null;
-  if (humanDescription) {
-    return truncate(humanDescription, compactMax);
-  }
   if (command && isCommandTool(name, record)) {
     return truncate(stripWrappedShell(command), compactMax);
+  }
+  if (humanDescription) {
+    return truncate(humanDescription, compactMax);
   }
 
   const direct =
@@ -230,7 +230,7 @@ export function describeToolInput(name: string, input: unknown): ToolInputDetail
     : typeof record.cmd === "string"
       ? record.cmd
       : null;
-  if (command && isCommandTool(name, record) && !details.some((detail) => detail.label === "Intent")) {
+  if (command && isCommandTool(name, record)) {
     pushDetail("Command", truncate(stripWrappedShell(command), 200), "code");
   }
 
