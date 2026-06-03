@@ -402,21 +402,27 @@ export function resolveProjectNameForUniqueShortname(
 ): string {
   const requestedShortname = normalizeProjectUrlKey(requestedName);
   if (!requestedShortname) return requestedName;
-  // Non-ASCII names get a UUID suffix in deriveProjectUrlKey, making slugs inherently unique.
-  if (hasNonAsciiContent(requestedName)) return requestedName;
+
+  const scopedProjects = existingProjects.filter(
+    (project) => !(options?.excludeProjectId && project.id === options.excludeProjectId),
+  );
 
   const usedShortnames = new Set(
-    existingProjects
-      .filter((project) => !(options?.excludeProjectId && project.id === options.excludeProjectId))
+    scopedProjects
       .map((project) => normalizeProjectUrlKey(project.name))
       .filter((value): value is string => value !== null),
   );
-  if (!usedShortnames.has(requestedShortname)) return requestedName;
+  const usedUrlKeys = new Set(scopedProjects.map((project) => deriveProjectUrlKey(project.name, project.id)));
+
+  // Non-ASCII names get UUID-derived url keys; keep names unchanged while still reserving
+  // those derived url keys against ASCII shortname requests.
+  if (hasNonAsciiContent(requestedName)) return requestedName;
+  if (!usedShortnames.has(requestedShortname) && !usedUrlKeys.has(requestedShortname)) return requestedName;
 
   for (let suffix = 2; suffix < 10_000; suffix += 1) {
     const candidateName = `${requestedName} ${suffix}`;
     const candidateShortname = normalizeProjectUrlKey(candidateName);
-    if (candidateShortname && !usedShortnames.has(candidateShortname)) {
+    if (candidateShortname && !usedShortnames.has(candidateShortname) && !usedUrlKeys.has(candidateShortname)) {
       return candidateName;
     }
   }

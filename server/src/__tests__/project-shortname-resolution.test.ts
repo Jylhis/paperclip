@@ -42,4 +42,18 @@ describe("resolveProjectNameForUniqueShortname", () => {
     ]);
     expect(resolved).toBe("!!!");
   });
+
+  it("avoids collisions with derived non-ASCII url keys", () => {
+    const resolved = resolveProjectNameForUniqueShortname("12345678", [
+      { id: "12345678-1234-4abc-8def-123456789abc", name: "部署" },
+    ]);
+    expect(resolved).toBe("12345678 2");
+  });
+
+  it("avoids collisions with derived mixed-ascii url keys", () => {
+    const resolved = resolveProjectNameForUniqueShortname("foo-12345678", [
+      { id: "12345678-1234-4abc-8def-123456789def", name: "fooé" },
+    ]);
+    expect(resolved).toBe("foo-12345678 2");
+  });
 });
