@@ -129,6 +129,12 @@ type ImportSelectionState = {
   skills: Set<string>;
 };
 
+type InteractiveImportSelection = {
+  selectedFiles: string[];
+  include: CompanyPortabilityInclude;
+  agents: "all" | string[];
+};
+
 function readPortableFileEntry(filePath: string, contents: Buffer): CompanyPortabilityFileEntry {
   const contentType = binaryContentTypeByExtension[path.extname(filePath).toLowerCase()];
   if (!contentType) return contents.toString("utf8");
@@ -365,7 +371,14 @@ export function buildSelectedFilesFromImportSelection(
     selected.add(normalizePortablePath(catalog.extensionPath));
   }
 
-  return Array.from(selected).sort((left, right) => left.localeCompare(right));
+  const filterBySuffix = (filePath: string, suffix: string): boolean => filePath.endsWith(`/${suffix}`) || filePath === suffix;
+
+  return Array.from(selected)
+    .filter((filePath) => (state.projects.size > 0 ? true : !filterBySuffix(filePath, "PROJECT.md")))
+    .filter((filePath) => (state.issues.size > 0 ? true : !filterBySuffix(filePath, "TASK.md")))
+    .filter((filePath) => (state.agents.size > 0 ? true : !filterBySuffix(filePath, "AGENTS.md")))
+    .filter((filePath) => (state.skills.size > 0 ? true : !filterBySuffix(filePath, "SKILL.md")))
+    .sort((left, right) => left.localeCompare(right));
 }
 
 export function buildDefaultImportAdapterOverrides(
@@ -399,7 +412,7 @@ function buildDefaultImportAdapterMessages(
   ];
 }
 
-async function promptForImportSelection(preview: CompanyPortabilityPreviewResult): Promise<string[]> {
+async function promptForImportSelection(preview: CompanyPortabilityPreviewResult): Promise<InteractiveImportSelection> {
   const catalog = buildImportSelectionCatalog(preview);
   const state = buildDefaultImportSelectionState(catalog);
 
@@ -452,7 +465,17 @@ async function promptForImportSelection(preview: CompanyPortabilityPreviewResult
         p.note("Select at least one import target before confirming.", "Nothing selected");
         continue;
       }
-      return selectedFiles;
+      return {
+        selectedFiles,
+        include: {
+          company: state.company,
+          projects: state.projects.size > 0,
+          issues: state.issues.size > 0,
+          agents: state.agents.size > 0,
+          skills: state.skills.size > 0,
+        },
+        agents: state.agents.size > 0 ? Array.from(state.agents).sort((left, right) => left.localeCompare(right)) : [],
+      };
     }
 
     if (choice === "company") {
@@ -1354,6 +1377,8 @@ export function registerCompanyCommands(program: Command): void {
           });
 
           let selectedFiles: string[] | undefined;
+          let effectiveInclude = include;
+          let effectiveAgents = agents;
           if (interactiveView && !opts.yes && !opts.include?.trim()) {
             const initialPreview = await ctx.api.post<CompanyPortabilityPreviewResult>(previewApiPath, {
               source: sourcePayload,
@@ -1365,14 +1390,17 @@ export function registerCompanyCommands(program: Command): void {
             if (!initialPreview) {
               throw new Error("Import preview returned no data.");
             }
-            selectedFiles = await promptForImportSelection(initialPreview);
+            const interactiveSelection = await promptForImportSelection(initialPreview);
+            selectedFiles = interactiveSelection.selectedFiles;
+            effectiveInclude = interactiveSelection.include;
+            effectiveAgents = interactiveSelection.agents;
           }
 
           const previewPayload = {
             source: sourcePayload,
-            include,
+            include: effectiveInclude,
             target: targetPayload,
-            agents,
+            agents: effectiveAgents,
             collisionStrategy: collision,
             selectedFiles,
           };

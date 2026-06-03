@@ -478,6 +478,7 @@ describe("import selection catalog", () => {
         },
         "projects/alpha/PROJECT.md": "# Alpha",
         "projects/alpha/notes.md": "project notes",
+        "projects/alpha/hidden/AGENTS.md": "# Hidden Agent",
         "projects/alpha/issues/kickoff/TASK.md": "# Kickoff",
         "projects/alpha/issues/kickoff/details.md": "task details",
         "agents/ceo/AGENT.md": "# CEO",
@@ -509,6 +510,7 @@ describe("import selection catalog", () => {
     expect(selectedFiles).toContain(".paperclip.yaml");
     expect(selectedFiles).toContain("projects/alpha/PROJECT.md");
     expect(selectedFiles).toContain("projects/alpha/notes.md");
+    expect(selectedFiles).not.toContain("projects/alpha/hidden/AGENTS.md");
     expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/TASK.md");
     expect(selectedFiles).not.toContain("projects/alpha/issues/kickoff/details.md");
   });
