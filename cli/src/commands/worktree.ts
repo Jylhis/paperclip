@@ -2021,6 +2021,13 @@ function renderMergePlan(plan: Awaited<ReturnType<typeof collectMergePlan>>["pla
 }): string {
   const terminalWidth = Math.max(60, process.stdout.columns ?? 100);
   const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
+  const sanitizeTerminalText = (value: string) => value
+    // Strip ANSI CSI sequences.
+    .replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "")
+    // Strip ANSI OSC sequences terminated by BEL or ST.
+    .replace(/\x1B\][\s\S]*?(?:\x07|\x1B\\)/g, "")
+    // Drop remaining C0/C1 control chars, keeping tab/newline/carriage return.
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "");
   const truncateToWidth = (value: string, maxWidth: number) => {
     if (maxWidth <= 1) return "";
     if (value.length <= maxWidth) return value;
@@ -2063,7 +2070,7 @@ function renderMergePlan(plan: Awaited<ReturnType<typeof collectMergePlan>>["pla
           : "";
       const adjustments = issue.adjustments.length > 0 ? ` [${issue.adjustments.join(", ")}]` : "";
       const prefix = `- ${issue.source.identifier ?? issue.source.id} -> ${issue.previewIdentifier} (${issue.targetStatus}${projectNote})`;
-      const title = oneLine(issue.source.title);
+      const title = oneLine(sanitizeTerminalText(issue.source.title));
       const suffix = `${adjustments}${title ? ` ${title}` : ""}`;
       lines.push(
         `${prefix}${truncateToWidth(suffix, Math.max(8, terminalWidth - prefix.length))}`,
