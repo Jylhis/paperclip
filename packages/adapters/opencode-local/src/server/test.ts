@@ -173,7 +173,11 @@ export async function testEnvironment(
         preparedRuntimeConfig.env.XDG_CONFIG_HOME = preparedExecutionTargetRuntime.assetDirs.xdgConfig;
       }
     }
-    const runtimeEnv = normalizeEnv(ensurePathInEnv({ ...process.env, ...preparedRuntimeConfig.env }));
+    const runtimeEnv = normalizeEnv(
+      ensurePathInEnv(
+        targetIsRemote ? preparedRuntimeConfig.env : { ...process.env, ...preparedRuntimeConfig.env },
+      ),
+    );
 
     const cwdInvalid = checks.some((check) => check.code === "opencode_cwd_invalid");
     if (cwdInvalid) {
