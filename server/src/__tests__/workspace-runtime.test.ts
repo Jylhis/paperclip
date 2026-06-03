@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -57,6 +57,17 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 const provisionWorktreeScriptPath = new URL("../../../scripts/provision-worktree.sh", import.meta.url);
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    return `{${Object.keys(rec).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(rec[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 async function runGit(cwd: string, args: string[]) {
   await execFileAsync("git", args, { cwd });
@@ -2213,6 +2224,91 @@ describe("ensureRuntimeServicesForRun", () => {
     });
 
     expect(services).toEqual([]);
+  });
+
+  it("does not expose rendered secret env values through shared runtime service reuse keys", async () => {
+    const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-home-"));
+    process.env.PAPERCLIP_HOME = paperclipHome;
+    const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-runtime-secret-reuse-"));
+    const workspace = buildWorkspace(workspaceRoot);
+    const command = "node -e \"setInterval(()=>{},1000)\"";
+    const config = {
+      workspaceRuntime: {
+        services: [
+          {
+            name: "secret-web",
+            command,
+            lifecycle: "shared",
+            reuseScope: "project_workspace",
+            env: {
+              SECRET_DERIVED_VALUE: "prefix-{{workspace.env.LOW_ENTROPY_PASSWORD}}",
+            },
+            stopPolicy: {
+              type: "on_run_finish",
+            },
+          },
+        ],
+      },
+    };
+
+    const run1 = "run-secret-1";
+    const run2 = "run-secret-2";
+    leasedRunIds.add(run1);
+    leasedRunIds.add(run2);
+
+    const first = await ensureRuntimeServicesForRun({
+      runId: run1,
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+      issue: null,
+      workspace,
+      config,
+      adapterEnv: { LOW_ENTROPY_PASSWORD: "swordfish" },
+    });
+    const second = await ensureRuntimeServicesForRun({
+      runId: run2,
+      agent: {
+        id: "agent-1",
+        name: "Codex Coder",
+        companyId: "company-1",
+      },
+      issue: null,
+      workspace,
+      config,
+      adapterEnv: { LOW_ENTROPY_PASSWORD: "opensesame" },
+    });
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(first[0]?.reuseKey).toBeTruthy();
+    expect(second[0]?.reuseKey).toBe(first[0]?.reuseKey);
+    expect(second[0]?.reused).toBe(false);
+    expect(second[0]?.id).not.toBe(first[0]?.id);
+
+    const vulnerableReuseKey = createHash("sha256")
+      .update(
+        stableStringify({
+          scopeType: "project_workspace",
+          scopeId: workspace.workspaceId,
+          serviceName: "secret-web",
+          command,
+          cwd: workspaceRoot,
+          port: null,
+          env: {
+            SECRET_DERIVED_VALUE: "prefix-swordfish",
+          },
+        }),
+      )
+      .digest("hex");
+    expect(first[0]?.reuseKey).not.toBe(vulnerableReuseKey);
+
+    await releaseRuntimeServicesForRun(run1);
+    leasedRunIds.delete(run1);
+    await releaseRuntimeServicesForRun(run2);
+    leasedRunIds.delete(run2);
   });
 
   it("reuses shared runtime services across runs and starts a new service after release", async () => {

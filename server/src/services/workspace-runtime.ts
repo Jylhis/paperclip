@@ -1,8 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AdapterRuntimeServiceReport } from "@paperclipai/adapter-utils";
@@ -15,7 +15,7 @@ import {
 } from "@paperclipai/shared";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { asNumber, asString, parseObject, renderTemplate } from "../adapters/utils.js";
-import { resolveHomeAwarePath } from "../home-paths.js";
+import { resolveHomeAwarePath, resolvePaperclipInstanceRoot } from "../home-paths.js";
 import {
   createLocalServiceKey,
   findLocalServiceRegistryRecordByRuntimeServiceId,
@@ -138,6 +138,37 @@ export async function resetRuntimeServicesForTests() {
   runtimeServicesById.clear();
   runtimeServicesByReuseKey.clear();
   runtimeServiceLeasesByRun.clear();
+}
+
+function loadOrCreateRuntimeServiceIdentityKey(): Buffer {
+  const fromEnv = process.env.PAPERCLIP_RUNTIME_SERVICE_IDENTITY_KEY?.trim();
+  if (fromEnv) {
+    return Buffer.from(fromEnv, "utf8");
+  }
+
+  const keyPath = path.resolve(resolvePaperclipInstanceRoot(), "runtime-services", "identity.key");
+  if (existsSync(keyPath)) {
+    return readFileSync(keyPath);
+  }
+
+  mkdirSync(path.dirname(keyPath), { recursive: true });
+  const generated = randomBytes(32);
+  writeFileSync(keyPath, generated.toString("base64"), { encoding: "utf8", mode: 0o600 });
+  try {
+    chmodSync(keyPath, 0o600);
+  } catch {
+    // Best effort only.
+  }
+  return Buffer.from(generated.toString("base64"), "utf8");
+}
+
+function runtimeServicePrivateFingerprint(value: unknown): string {
+  return createHmac("sha256", loadOrCreateRuntimeServiceIdentityKey()).update(stableStringify(value)).digest("hex");
+}
+
+function runtimeServiceReuseMapKey(reuseKey: string | null, envFingerprint: string): string | null {
+  if (!reuseKey) return null;
+  return `${reuseKey}:${envFingerprint}`;
 }
 
 function stableStringify(value: unknown): string {
@@ -1722,7 +1753,7 @@ function resolveRuntimeServiceReuseIdentity(input: {
     envConfig,
     templateData,
   });
-  const envFingerprint = createHash("sha256").update(stableStringify(renderedEnv)).digest("hex");
+  const envFingerprint = runtimeServicePrivateFingerprint(renderedEnv);
   const reuseKey =
     lifecycle === "shared"
       ? createHash("sha256")
@@ -1734,7 +1765,7 @@ function resolveRuntimeServiceReuseIdentity(input: {
               command,
               cwd: serviceCwd,
               port: identityPort,
-              env: renderedEnv,
+              envConfig,
             }),
           )
           .digest("hex")
@@ -2109,7 +2140,7 @@ async function startLocalRuntimeService(input: {
   const portConfig = parseObject(input.service.port);
   const envConfig = identity.envConfig;
   const envFingerprint = identity.envFingerprint;
-  const serviceIdentityFingerprint = input.reuseKey ?? envFingerprint;
+  const serviceIdentityFingerprint = runtimeServiceReuseMapKey(input.reuseKey, envFingerprint) ?? envFingerprint;
   const explicitPort = identity.explicitPort;
   const identityPort = identity.identityPort;
   const stoppedReuseCandidate = await findStoppedRuntimeServiceReuseCandidate({
@@ -2356,8 +2387,9 @@ async function stopRuntimeService(serviceId: string) {
   record.lastUsedAt = new Date().toISOString();
   record.stoppedAt = new Date().toISOString();
   runtimeServicesById.delete(serviceId);
-  if (record.reuseKey && runtimeServicesByReuseKey.get(record.reuseKey) === record.id) {
-    runtimeServicesByReuseKey.delete(record.reuseKey);
+  const reuseMapKey = runtimeServiceReuseMapKey(record.reuseKey, record.envFingerprint);
+  if (reuseMapKey && runtimeServicesByReuseKey.get(reuseMapKey) === record.id) {
+    runtimeServicesByReuseKey.delete(reuseMapKey);
   }
   if (record.child && record.child.pid) {
     await terminateLocalService({
@@ -2402,8 +2434,9 @@ async function markPersistedRuntimeServicesStoppedForExecutionWorkspace(input: {
 function registerRuntimeService(db: Db | undefined, record: RuntimeServiceRecord) {
   record.db = db;
   runtimeServicesById.set(record.id, record);
-  if (record.reuseKey) {
-    runtimeServicesByReuseKey.set(record.reuseKey, record.id);
+  const reuseMapKey = runtimeServiceReuseMapKey(record.reuseKey, record.envFingerprint);
+  if (reuseMapKey) {
+    runtimeServicesByReuseKey.set(reuseMapKey, record.id);
   }
 
   record.child?.on("exit", (code, signal) => {
@@ -2415,8 +2448,9 @@ function registerRuntimeService(db: Db | undefined, record: RuntimeServiceRecord
     current.lastUsedAt = new Date().toISOString();
     current.stoppedAt = new Date().toISOString();
     runtimeServicesById.delete(current.id);
-    if (current.reuseKey && runtimeServicesByReuseKey.get(current.reuseKey) === current.id) {
-      runtimeServicesByReuseKey.delete(current.reuseKey);
+    const currentReuseMapKey = runtimeServiceReuseMapKey(current.reuseKey, current.envFingerprint);
+    if (currentReuseMapKey && runtimeServicesByReuseKey.get(currentReuseMapKey) === current.id) {
+      runtimeServicesByReuseKey.delete(currentReuseMapKey);
     }
     void removeLocalServiceRegistryRecord(current.serviceKey);
     void persistRuntimeServiceRecord(db, current);
@@ -2544,7 +2578,7 @@ export async function ensureRuntimeServicesForRun(input: {
         runId: input.runId,
         agent: input.agent,
       });
-      const reuseKey = resolveRuntimeServiceReuseIdentity({
+      const identity = resolveRuntimeServiceReuseIdentity({
         service,
         workspace: input.workspace,
         agent: input.agent,
@@ -2552,10 +2586,12 @@ export async function ensureRuntimeServicesForRun(input: {
         adapterEnv: input.adapterEnv,
         scopeType,
         scopeId,
-      }).reuseKey;
+      });
+      const reuseKey = identity.reuseKey;
+      const reuseMapKey = runtimeServiceReuseMapKey(reuseKey, identity.envFingerprint);
 
-      if (reuseKey) {
-        const existingId = runtimeServicesByReuseKey.get(reuseKey);
+      if (reuseMapKey) {
+        const existingId = runtimeServicesByReuseKey.get(reuseMapKey);
         const existing = existingId ? runtimeServicesById.get(existingId) : null;
         if (existing && existing.status === "running") {
           existing.leaseRunIds.add(input.runId);
@@ -2632,7 +2668,7 @@ export async function startRuntimeServicesForWorkspaceControl(input: {
       runId: invocationId,
       agent: input.actor,
     });
-    const reuseKey = resolveRuntimeServiceReuseIdentity({
+    const identity = resolveRuntimeServiceReuseIdentity({
       service,
       workspace: input.workspace,
       agent: input.actor,
@@ -2640,10 +2676,12 @@ export async function startRuntimeServicesForWorkspaceControl(input: {
       adapterEnv: input.adapterEnv,
       scopeType,
       scopeId,
-    }).reuseKey;
+    });
+    const reuseKey = identity.reuseKey;
+    const reuseMapKey = runtimeServiceReuseMapKey(reuseKey, identity.envFingerprint);
 
-    if (reuseKey) {
-      const existingId = runtimeServicesByReuseKey.get(reuseKey);
+    if (reuseMapKey) {
+      const existingId = runtimeServicesByReuseKey.get(reuseMapKey);
       const existing = existingId ? runtimeServicesById.get(existingId) : null;
       if (existing && existing.status === "running") {
         existing.lastUsedAt = new Date().toISOString();
