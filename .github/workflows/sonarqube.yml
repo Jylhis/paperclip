@@ -58,6 +58,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -105,6 +111,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Full history improves SonarCloud relevancy.
+
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
 
       - name: Setup Node.js
         # Provides the runtime the scanner reuses (sonar.scanner.skipNodeProvisioning).

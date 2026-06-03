@@ -31,6 +31,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+
       - name: Block manual lockfile edits
         if: github.head_ref != 'chore/refresh-lockfile'
         run: |
@@ -96,6 +102,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -136,6 +148,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -184,6 +202,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -228,6 +252,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -255,6 +285,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -287,6 +323,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore Nix cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4

@@ -39,6 +39,7 @@ test("runCheck reports missing workflow guardrails", () => {
 
     assert.equal(code, 1);
     assert.ok(errors.some((line) => line.includes("canon.yml: missing top-level standard concurrency")));
+    assert.ok(errors.some((line) => line.includes("docker.yml: missing nix cache step")));
     assert.ok(errors.some((line) => line.includes("sonarqube.yml: missing daily schedule for full matrix")));
   } finally {
     rmSync(tmpRoot, { recursive: true, force: true });

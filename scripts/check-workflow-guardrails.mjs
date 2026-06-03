@@ -13,6 +13,9 @@ const DOCS_IGNORE_PATTERN = /paths-ignore:\n[\s\S]*?-\s+["']?doc\/\*\*["']?\n[\s
 const SCHEDULE_DAILY_PATTERN =
   /schedule:\n(?:\s+#.*\n)*\s+-\s+cron:\s+['"]\d+\s+\d+\s+\*\s+\*\s+\*['"]/m;
 
+const NIX_CACHE_PATTERN =
+  /uses:\s+actions\/cache@v4\n\s+with:\n\s+path:\s+~\/\.cache\/nix\n\s+key:\s+\$\{\{\s*runner\.os\s*\}\}-nix-\$\{\{\s*hashFiles\('flake\.lock'\)\s*\}\}/m;
+
 const EXPECTATIONS = [
   {
     workflow: "canon.yml",
@@ -25,6 +28,7 @@ const EXPECTATIONS = [
         description: "scoped canon paths",
         pattern: /paths:\n(?:\s+-\s+(?:\.github\/workflows\/canon\.yml|AGENTS\.md|ENGINEERING_PRINCIPLES\.md|WAY_OF_WORKING\.md|README\.md|LICENSE)\n)+/m,
       },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
     ],
   },
   {
@@ -32,17 +36,22 @@ const EXPECTATIONS = [
     patterns: [
       { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
       { description: "docs-only push filter", pattern: DOCS_IGNORE_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
     ],
   },
   {
     workflow: "e2e.yml",
-    patterns: [{ description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN }],
+    patterns: [
+      { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
+    ],
   },
   {
     workflow: "pr.yml",
     patterns: [
       { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
       { description: "docs-only pull_request filter", pattern: DOCS_IGNORE_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
       {
         description: "draft PR guard on typecheck job",
         pattern: /^  typecheck_release_registry:\n(?:\s+.*\n){0,3}\s+if:\s+github\.event\.pull_request\.draft == false/m,
@@ -78,17 +87,22 @@ const EXPECTATIONS = [
     patterns: [
       { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
       { description: "docs-only push filter", pattern: DOCS_IGNORE_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
     ],
   },
   {
     workflow: "release-smoke.yml",
-    patterns: [{ description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN }],
+    patterns: [
+      { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
+    ],
   },
   {
     workflow: "release.yml",
     patterns: [
       { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
       { description: "docs-only push filter", pattern: DOCS_IGNORE_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
     ],
   },
   {
@@ -96,6 +110,7 @@ const EXPECTATIONS = [
     patterns: [
       { description: "top-level standard concurrency", pattern: CONCURRENCY_PATTERN },
       { description: "docs-only push/pull_request filters", pattern: DOCS_IGNORE_PATTERN },
+      { description: "nix cache step", pattern: NIX_CACHE_PATTERN },
       { description: "daily schedule for full matrix", pattern: SCHEDULE_DAILY_PATTERN },
       {
         description: "scheduled-only coverage matrix",
