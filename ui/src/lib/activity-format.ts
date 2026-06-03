@@ -137,11 +137,22 @@ function humanizeValue(value: unknown): string {
 function isActivityParticipant(value: unknown): value is ActivityParticipant {
   const record = asRecord(value);
   if (!record) return false;
-  return record.type === "agent" || record.type === "user";
+  if (record.type === "agent") {
+    return record.agentId === undefined || record.agentId === null || typeof record.agentId === "string";
+  }
+  if (record.type === "user") {
+    return record.userId === undefined || record.userId === null || typeof record.userId === "string";
+  }
+  return false;
 }
 
 function isActivityIssueReference(value: unknown): value is ActivityIssueReference {
-  return asRecord(value) !== null;
+  const record = asRecord(value);
+  if (!record) return false;
+  if (record.id !== undefined && record.id !== null && typeof record.id !== "string") return false;
+  if (record.identifier !== undefined && record.identifier !== null && typeof record.identifier !== "string") return false;
+  if (record.title !== undefined && record.title !== null && typeof record.title !== "string") return false;
+  return true;
 }
 
 function readParticipants(details: ActivityDetails, key: string): ActivityParticipant[] {

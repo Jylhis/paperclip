@@ -74,4 +74,18 @@ describe("activity formatting", () => {
       "Run finished without a next step - recovery escalated",
     );
   });
+
+  it("ignores malformed participant and issue-reference entries", () => {
+    const details = {
+      addedParticipants: [{ type: "user", userId: {} }, { type: "agent", agentId: "agent-reviewer" }],
+      removedParticipants: [],
+      addedBlockedByIssues: [{ id: {} }, { id: "issue-2", identifier: "PAP-22" }],
+      removedBlockedByIssues: [],
+    };
+
+    expect(formatActivityVerb("issue.reviewers_updated", details, { agentMap })).toBe("added reviewer Reviewer Bot to");
+    expect(formatIssueActivityAction("issue.reviewers_updated", details, { agentMap })).toBe("added reviewer Reviewer Bot");
+    expect(formatActivityVerb("issue.blockers_updated", details)).toBe("added blocker PAP-22 to");
+    expect(formatIssueActivityAction("issue.blockers_updated", details)).toBe("added blocker PAP-22");
+  });
 });
