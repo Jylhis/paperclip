@@ -290,7 +290,12 @@ describeEmbeddedPostgres("productivity review service", () => {
     });
 
     expect(refreshed.updated).toBe(1);
-    expect(await listRefreshComments(review!.id)).toHaveLength(1);
+    // listRefreshComments matches on prefix only — spoof comments share that prefix, so
+    // total = MAX_REFRESH_COMMENTS (spoof) + 1 (real system refresh). Filter to system-only
+    // to verify exactly one genuine refresh comment was written.
+    const allPrefixComments = await listRefreshComments(review!.id);
+    const systemRefreshCount = allPrefixComments.filter((c) => c.authorType === "system").length;
+    expect(systemRefreshCount).toBe(1);
   });
 
   it("caps productivity review creation per source issue in the rolling creation window", async () => {
