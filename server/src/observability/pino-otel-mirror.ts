@@ -13,6 +13,9 @@ interface OtelMirrorState {
   loggerName: string;
 }
 
+const REDACTED = "[Redacted]";
+const SENSITIVE_KEY = /(authorization|cookie|token|secret|password|api[-_]?key|set-cookie)/i;
+
 /**
  * Returns a pino `hooks.logMethod` that mirrors every log call into the OTel
  * logs API in the main thread (where the OTel SDK is initialised). Pino's own
@@ -107,6 +110,10 @@ function flattenAttributes(obj: Record<string, unknown>): Record<string, unknown
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj)) {
     if (v == null) continue;
+    if (SENSITIVE_KEY.test(k)) {
+      out[k] = REDACTED;
+      continue;
+    }
     if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
       out[k] = v;
     } else if (v instanceof Error) {
@@ -115,11 +122,27 @@ function flattenAttributes(obj: Record<string, unknown>): Record<string, unknown
       out[`${k}.name`] = v.name;
     } else {
       try {
-        out[k] = JSON.stringify(v);
+        out[k] = JSON.stringify(redactValue(v));
       } catch {
         out[k] = "[unserializable]";
       }
     }
+  }
+  return out;
+}
+
+function redactValue(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((v) => redactValue(v));
+
+  const input = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (SENSITIVE_KEY.test(k)) {
+      out[k] = REDACTED;
+      continue;
+    }
+    out[k] = redactValue(v);
   }
   return out;
 }
