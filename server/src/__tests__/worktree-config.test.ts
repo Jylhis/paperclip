@@ -210,6 +210,53 @@ describe("worktree config repair", () => {
     expect(repairedConfig.database.embeddedPostgresPort).toBe(54331);
   });
 
+  it("sanitizes worktree instance ids loaded from env before deriving isolated paths", async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-instance-id-sanitize-"));
+    const worktreeRoot = path.join(tempRoot, "PAP-1000-sanitize-instance-id");
+    const paperclipDir = path.join(worktreeRoot, ".paperclip");
+    const configPath = path.join(paperclipDir, "config.json");
+    const envPath = path.join(paperclipDir, ".env");
+    const sharedRoot = path.join(tempRoot, ".paperclip", "instances", "default");
+    const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");
+
+    await fs.mkdir(paperclipDir, { recursive: true });
+    await fs.writeFile(configPath, JSON.stringify(buildLegacyConfig(sharedRoot), null, 2) + "\n", "utf8");
+    await fs.writeFile(
+      envPath,
+      [
+        "# Paperclip environment variables",
+        "PAPERCLIP_IN_WORKTREE=true",
+        "PAPERCLIP_WORKTREE_NAME=PAP-1000-sanitize-instance-id",
+        "PAPERCLIP_INSTANCE_ID=../../.paperclip/instances/default",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    process.chdir(worktreeRoot);
+    process.env.PAPERCLIP_IN_WORKTREE = "true";
+    process.env.PAPERCLIP_WORKTREE_NAME = "PAP-1000-sanitize-instance-id";
+    process.env.PAPERCLIP_WORKTREES_DIR = isolatedHome;
+    delete process.env.PAPERCLIP_HOME;
+    delete process.env.PAPERCLIP_CONFIG;
+    delete process.env.PAPERCLIP_CONTEXT;
+
+    maybeRepairLegacyWorktreeConfigAndEnvFiles();
+
+    const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
+    const repairedEnv = await fs.readFile(envPath, "utf8");
+    const expectedInstanceId = "paperclip-instances-default";
+    const instanceRoot = path.join(isolatedHome, "instances", expectedInstanceId);
+
+    expect(process.env.PAPERCLIP_INSTANCE_ID).toBe(expectedInstanceId);
+    expect(repairedEnv).toContain(`PAPERCLIP_INSTANCE_ID=${JSON.stringify(expectedInstanceId)}`);
+    expect(repairedConfig.database.embeddedPostgresDataDir).toBe(path.join(instanceRoot, "db"));
+    expect(repairedConfig.database.backup.dir).toBe(path.join(instanceRoot, "data", "backups"));
+    expect(repairedConfig.logging.logDir).toBe(path.join(instanceRoot, "logs"));
+    expect(repairedConfig.storage.localDisk.baseDir).toBe(path.join(instanceRoot, "data", "storage"));
+    expect(repairedConfig.secrets.localEncrypted.keyFilePath).toBe(path.join(instanceRoot, "secrets", "master.key"));
+  });
+
   it("does not persist transient runtime home overrides over repo-local worktree env", async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-runtime-override-"));
     const isolatedHome = path.join(tempRoot, ".paperclip-worktrees");

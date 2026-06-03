@@ -120,10 +120,11 @@ function resolveWorktreeRuntimeContext(
     nonEmpty(persistedEnv.PAPERCLIP_WORKTREE_NAME) ??
     nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ??
     path.basename(worktreeRoot);
-  const instanceId =
+  const rawInstanceId =
     nonEmpty(persistedEnv.PAPERCLIP_INSTANCE_ID) ??
     nonEmpty(env.PAPERCLIP_INSTANCE_ID) ??
-    sanitizeWorktreeInstanceId(worktreeName);
+    worktreeName;
+  const instanceId = sanitizeWorktreeInstanceId(rawInstanceId);
   const homeDir = resolveHomeAwarePath(
     nonEmpty(persistedEnv.PAPERCLIP_HOME) ??
       nonEmpty(env.PAPERCLIP_HOME) ??
