@@ -26,6 +26,9 @@ const mockIssueApprovalService = vi.hoisted(() => ({
 const mockSecretService = vi.hoisted(() => ({
   normalizeHireApprovalPayloadForPersistence: vi.fn(),
 }));
+const mockAgentService = vi.hoisted(() => ({
+  getById: vi.fn(),
+}));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
@@ -34,6 +37,7 @@ function registerModuleMocks() {
     approvalService: () => mockApprovalService,
     heartbeatService: () => mockHeartbeatService,
     issueApprovalService: () => mockIssueApprovalService,
+    agentService: () => mockAgentService,
     logActivity: mockLogActivity,
     secretService: () => mockSecretService,
   }));
@@ -106,9 +110,16 @@ describe("approval routes idempotent retries", () => {
     mockIssueApprovalService.listIssuesForApproval.mockReset();
     mockIssueApprovalService.linkManyForApproval.mockReset();
     mockSecretService.normalizeHireApprovalPayloadForPersistence.mockReset();
+    mockAgentService.getById.mockReset();
     mockLogActivity.mockReset();
     mockHeartbeatService.wakeup.mockResolvedValue({ id: "wake-1" });
     mockIssueApprovalService.listIssuesForApproval.mockResolvedValue([{ id: "issue-1" }]);
+    mockAgentService.getById.mockResolvedValue({
+      id: "agent-1",
+      companyId: "company-1",
+      role: "member",
+      permissions: {},
+    });
     mockLogActivity.mockResolvedValue(undefined);
   });
 
@@ -288,7 +299,27 @@ describe("approval routes idempotent retries", () => {
     );
   });
 
-  it("lets agents create generic issue-linked board approval requests", async () => {
+  it("rejects agent issue-linked approval creation without link permission", async () => {
+    const res = await request(await createAgentApp())
+      .post("/api/companies/company-1/approvals")
+      .send({
+        type: "request_board_approval",
+        issueIds: ["00000000-0000-0000-0000-000000000001"],
+        payload: { title: "Approve hosting spend" },
+      });
+
+    expect(res.status).toBe(403);
+    expect(mockApprovalService.create).not.toHaveBeenCalled();
+    expect(mockIssueApprovalService.linkManyForApproval).not.toHaveBeenCalled();
+  });
+
+  it("binds agent-created approval requester to the authenticated agent", async () => {
+    mockAgentService.getById.mockImplementation(async (id: string) => ({
+      id,
+      companyId: "company-1",
+      role: "ceo",
+      permissions: { canCreateAgents: true },
+    }));
     mockApprovalService.create.mockResolvedValue({
       id: "approval-1",
       companyId: "company-1",
@@ -308,6 +339,7 @@ describe("approval routes idempotent retries", () => {
       .post("/api/companies/company-1/approvals")
       .send({
         type: "request_board_approval",
+        requestedByAgentId: "00000000-0000-0000-0000-000000000099",
         issueIds: ["00000000-0000-0000-0000-000000000001"],
         payload: { title: "Approve hosting spend" },
       });

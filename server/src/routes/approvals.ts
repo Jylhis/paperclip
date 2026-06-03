@@ -10,6 +10,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
 import {
+  agentService,
   approvalService,
   heartbeatService,
   issueApprovalService,
@@ -33,6 +34,7 @@ export function approvalRoutes(
 ) {
   const router = Router();
   const svc = approvalService(db);
+  const agentsSvc = agentService(db);
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });
@@ -47,6 +49,15 @@ export function approvalRoutes(
     }
     assertCompanyAccess(req, approval.companyId);
     return approval;
+  }
+
+  async function assertCanManageIssueApprovalLinks(req: Request, companyId: string) {
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "board") return true;
+    if (!req.actor.agentId) return false;
+    const actorAgent = await agentsSvc.getById(req.actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== companyId) return false;
+    return actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents);
   }
 
   router.get("/companies/:companyId/approvals", async (req, res) => {
@@ -87,12 +98,28 @@ export function approvalRoutes(
         : approvalInput.payload;
 
     const actor = getActorInfo(req);
+    if (uniqueIssueIds.length > 0 && !(await assertCanManageIssueApprovalLinks(req, companyId))) {
+      res.status(403).json({ error: "Missing permission to link approvals" });
+      return;
+    }
+
+    const requestedByAgentId =
+      actor.actorType === "agent"
+        ? actor.actorId
+        : approvalInput.requestedByAgentId ?? null;
+    if (requestedByAgentId) {
+      const requestedByAgent = await agentsSvc.getById(requestedByAgentId);
+      if (!requestedByAgent || requestedByAgent.companyId !== companyId) {
+        res.status(422).json({ error: "requestedByAgentId must belong to the same company" });
+        return;
+      }
+    }
+
     const approval = await svc.create(companyId, {
       ...approvalInput,
       payload: normalizedPayload,
       requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
-      requestedByAgentId:
-        approvalInput.requestedByAgentId ?? (actor.actorType === "agent" ? actor.actorId : null),
+      requestedByAgentId,
       status: "pending",
       decisionNote: null,
       decidedByUserId: null,
