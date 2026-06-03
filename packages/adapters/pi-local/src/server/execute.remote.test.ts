@@ -508,4 +508,48 @@ describe("pi remote execution", () => {
     const usedSession = sessionIndex >= 0 ? call?.[2][sessionIndex + 1] : null;
     expect(usedSession).not.toBe("/remote/workspace/.paperclip-runtime/pi/sessions/session-123.jsonl");
   });
+
+  it("sends the rendered prompt via stdin instead of argv to prevent ps/proc exposure", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-pi-prompt-leak-"));
+    cleanupDirs.push(rootDir);
+    const workspaceDir = path.join(rootDir, "workspace");
+    await mkdir(workspaceDir, { recursive: true });
+
+    await execute({
+      runId: "run-prompt-leak-guard",
+      agent: {
+        id: "agent-1",
+        companyId: "company-1",
+        name: "Pi Builder",
+        adapterType: "pi_local",
+        adapterConfig: {},
+      },
+      runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+      config: { command: "pi", model: "openai/gpt-5.4-mini" },
+      context: { paperclipWorkspace: { cwd: workspaceDir, source: "project_primary" } },
+      executionTransport: {
+        remoteExecution: {
+          host: "127.0.0.1",
+          port: 2222,
+          username: "fixture",
+          remoteWorkspacePath: "/remote/workspace",
+          remoteCwd: "/remote/workspace",
+          privateKey: "PRIVATE KEY",
+          knownHosts: "[127.0.0.1]:2222 ssh-ed25519 AAAA",
+          strictHostKeyChecking: true,
+        },
+      },
+      onLog: async () => {},
+    });
+
+    const call = runChildProcess.mock.calls[0] as unknown as
+      | [string, string, string[], { env: Record<string, string>; stdin?: string }]
+      | undefined;
+
+    // Prompt must be delivered via stdin (non-empty), not exposed in argv
+    expect(call?.[3].stdin).toBeTruthy();
+    // The last argv element must be the skill dir path, not the prompt text
+    const lastArg = (call?.[2] ?? []).at(-1) ?? "";
+    expect(lastArg).toContain("pi/skills");
+  });
 });
