@@ -2689,6 +2689,19 @@ export function accessRoutes(
     if (!allowed) throw forbidden("Permission denied");
   }
 
+  async function assertCanCreateHumanInviteWithDefaults(
+    req: Request,
+    companyId: string,
+    allowedJoinTypes: "human" | "agent" | "both",
+  ) {
+    if (allowedJoinTypes === "agent") {
+      return;
+    }
+
+    await assertCompanyPermission(req, companyId, "joins:approve");
+    await assertCompanyPermission(req, companyId, "users:manage_permissions");
+  }
+
   async function createCompanyInviteForCompany(input: {
     req: Request;
     companyId: string;
@@ -2697,6 +2710,12 @@ export function accessRoutes(
     defaultsPayload?: Record<string, unknown> | null;
     agentMessage?: string | null;
   }) {
+    await assertCanCreateHumanInviteWithDefaults(
+      input.req,
+      input.companyId,
+      input.allowedJoinTypes,
+    );
+
     const normalizedAgentMessage =
       typeof input.agentMessage === "string"
         ? input.agentMessage.trim() || null

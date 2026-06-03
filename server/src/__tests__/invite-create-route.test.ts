@@ -3,14 +3,15 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const logActivityMock = vi.fn();
+const accessServiceMock = {
+  isInstanceAdmin: vi.fn(),
+  canUser: vi.fn(),
+  hasPermission: vi.fn(),
+};
 
 function registerModuleMocks() {
   vi.doMock("../services/index.js", () => ({
-    accessService: () => ({
-      isInstanceAdmin: vi.fn(),
-      canUser: vi.fn(),
-      hasPermission: vi.fn(),
-    }),
+    accessService: () => accessServiceMock,
     agentService: () => ({
       getById: vi.fn(),
     }),
@@ -27,6 +28,7 @@ function registerModuleMocks() {
 }
 
 function createDbStub() {
+  const insertedValues: unknown[] = [];
   const createdInvite = {
     id: "invite-1",
     companyId: "company-1",
@@ -43,9 +45,11 @@ function createDbStub() {
   };
 
   return {
+    insertedValues,
     insert() {
       return {
-        values() {
+        values(value: unknown) {
+          insertedValues.push(value);
           return {
             returning() {
               return Promise.resolve([createdInvite]);
@@ -76,7 +80,13 @@ function createDbStub() {
   };
 }
 
-async function createApp() {
+async function createApp(
+  options: {
+    actor?: Record<string, unknown>;
+    db?: ReturnType<typeof createDbStub>;
+    deploymentMode?: "local_trusted" | "authenticated";
+  } = {},
+) {
   const [{ accessRoutes }, { errorHandler }] = await Promise.all([
     import("../routes/access.js"),
     import("../middleware/index.js"),
@@ -84,7 +94,7 @@ async function createApp() {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
-    (req as any).actor = {
+    (req as any).actor = options.actor ?? {
       type: "board",
       source: "local_implicit",
       userId: null,
@@ -94,8 +104,8 @@ async function createApp() {
   });
   app.use(
     "/api",
-    accessRoutes(createDbStub() as any, {
-      deploymentMode: "local_trusted",
+    accessRoutes((options.db ?? createDbStub()) as any, {
+      deploymentMode: options.deploymentMode ?? "local_trusted",
       deploymentExposure: "private",
       bindHost: "127.0.0.1",
       allowedHostnames: [],
@@ -114,6 +124,9 @@ describe("POST /companies/:companyId/invites", () => {
     vi.doUnmock("../middleware/index.js");
     registerModuleMocks();
     vi.clearAllMocks();
+    accessServiceMock.canUser.mockReset();
+    accessServiceMock.hasPermission.mockReset();
+    accessServiceMock.isInstanceAdmin.mockReset();
     logActivityMock.mockReset();
   });
 
@@ -133,5 +146,100 @@ describe("POST /companies/:companyId/invites", () => {
     expect(res.body.companyName).toBe("Acme Robotics");
     expect(res.body.invitePath).toMatch(/^\/invite\/pcp_invite_/);
     expect(res.body.inviteUrl).toMatch(/^https:\/\/paperclip\.example\/invite\/pcp_invite_/);
+  });
+
+  it("rejects human invites when the creator cannot approve joins or grant permissions", async () => {
+    const db = createDbStub();
+    accessServiceMock.canUser.mockImplementation(
+      async (_companyId: string, _userId: string, permissionKey: string) =>
+        permissionKey === "users:invite",
+    );
+    const app = await createApp({
+      db,
+      deploymentMode: "authenticated",
+      actor: {
+        type: "board",
+        source: "session",
+        userId: "inviter-user",
+        companyIds: ["company-1"],
+        memberships: [
+          {
+            companyId: "company-1",
+            membershipRole: "operator",
+            status: "active",
+          },
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({
+        allowedJoinTypes: "human",
+        humanRole: "owner",
+      });
+
+    expect(res.status).toBe(403);
+    expect(db.insertedValues).toEqual([]);
+    expect(accessServiceMock.canUser).toHaveBeenCalledWith(
+      "company-1",
+      "inviter-user",
+      "users:invite",
+    );
+    expect(accessServiceMock.canUser).toHaveBeenCalledWith(
+      "company-1",
+      "inviter-user",
+      "joins:approve",
+    );
+  });
+
+  it("allows human invites when the creator can invite, approve joins, and manage permissions", async () => {
+    const db = createDbStub();
+    accessServiceMock.canUser.mockResolvedValue(true);
+    const app = await createApp({
+      db,
+      deploymentMode: "authenticated",
+      actor: {
+        type: "board",
+        source: "session",
+        userId: "owner-user",
+        companyIds: ["company-1"],
+        memberships: [
+          {
+            companyId: "company-1",
+            membershipRole: "owner",
+            status: "active",
+          },
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post("/api/companies/company-1/invites")
+      .send({
+        allowedJoinTypes: "human",
+        humanRole: "owner",
+      });
+
+    expect(res.status).toBe(201);
+    expect(db.insertedValues).toEqual([
+      expect.objectContaining({
+        allowedJoinTypes: "human",
+        defaultsPayload: expect.objectContaining({
+          human: expect.objectContaining({
+            role: "owner",
+            grants: expect.arrayContaining([
+              expect.objectContaining({ permissionKey: "users:manage_permissions" }),
+              expect.objectContaining({ permissionKey: "joins:approve" }),
+            ]),
+          }),
+        }),
+      }),
+    ]);
+    expect(accessServiceMock.canUser).toHaveBeenCalledWith(
+      "company-1",
+      "owner-user",
+      "users:manage_permissions",
+    );
   });
 });
