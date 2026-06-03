@@ -52,10 +52,17 @@ export function collectAgentAdapterWorkspaceCommandPaths(
   prefix = "adapterConfig",
 ): string[] {
   if (!isRecord(adapterConfig)) return [];
-  return collectWorkspaceStrategyCommandPaths(
+  const paths = collectWorkspaceStrategyCommandPaths(
     adapterConfig.workspaceStrategy,
     `${prefix}.workspaceStrategy`,
   );
+  if (hasOwn(adapterConfig, "command")) {
+    paths.push(prefixPath(prefix, "command"));
+  }
+  if (hasOwn(adapterConfig, "args")) {
+    paths.push(prefixPath(prefix, "args"));
+  }
+  return paths;
 }
 
 export function collectProjectExecutionWorkspaceCommandPaths(policy: unknown): string[] {
