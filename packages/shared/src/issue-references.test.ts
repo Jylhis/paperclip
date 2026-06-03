@@ -46,6 +46,14 @@ describe("issue references", () => {
     ]);
   });
 
+
+  it("handles long trailing bracket runs without changing matches", () => {
+    const markdown = `See /issues/PAP-123${"]".repeat(10000)} for context.`;
+    expect(findIssueReferenceMatches(markdown)).toEqual([
+      { index: 4, length: 15, identifier: "PAP-123", matchedText: "/issues/PAP-123" },
+    ]);
+  });
+
   it("extracts and dedupes references from markdown", () => {
     expect(extractIssueReferenceIdentifiers("PAP-1 [again](/issues/pap-1) PAP-2")).toEqual(["PAP-1", "PAP-2"]);
   });

@@ -73,20 +73,33 @@ function stripMarkdownCode(markdown: string): string {
 }
 
 function trimTrailingPunctuation(token: string): string {
-  let trimmed = token;
-  while (trimmed.length > 0) {
-    const last = trimmed[trimmed.length - 1]!;
+  let end = token.length;
+  let openParens = 0;
+  let closeParens = 0;
+  let openBrackets = 0;
+  let closeBrackets = 0;
+
+  for (const char of token) {
+    if (char === "(") openParens += 1;
+    else if (char === ")") closeParens += 1;
+    else if (char === "[") openBrackets += 1;
+    else if (char === "]") closeBrackets += 1;
+  }
+
+  while (end > 0) {
+    const last = token[end - 1]!;
     if (!".,!?;:".includes(last) && last !== ")" && last !== "]") break;
 
-    if (
-      (last === ")" && (trimmed.match(/\(/g)?.length ?? 0) >= (trimmed.match(/\)/g)?.length ?? 0))
-      || (last === "]" && (trimmed.match(/\[/g)?.length ?? 0) >= (trimmed.match(/\]/g)?.length ?? 0))
-    ) {
+    if ((last === ")" && openParens >= closeParens) || (last === "]" && openBrackets >= closeBrackets)) {
       break;
     }
-    trimmed = trimmed.slice(0, -1);
+
+    if (last === ")") closeParens -= 1;
+    if (last === "]") closeBrackets -= 1;
+    end -= 1;
   }
-  return trimmed;
+
+  return token.slice(0, end);
 }
 
 export function normalizeIssueIdentifier(value: string): string | null {
