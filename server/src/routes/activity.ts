@@ -2,10 +2,16 @@ import { Router } from "express";
 import { z } from "zod";
 import type { Db } from "@paperclipai/db";
 import { normalizeIssueIdentifier } from "@paperclipai/shared";
+import { forbidden } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { activityService, normalizeActivityLimit } from "../services/activity.js";
+import {
+  accessService,
+  agentService,
+  heartbeatService,
+  issueService,
+} from "../services/index.js";
 import { assertAuthenticated, assertBoard, assertCompanyAccess } from "./authz.js";
-import { heartbeatService, issueService } from "../services/index.js";
 import { sanitizeRecord } from "../redaction.js";
 
 const createActivitySchema = z.object({
@@ -23,6 +29,30 @@ export function activityRoutes(db: Db) {
   const svc = activityService(db);
   const heartbeat = heartbeatService(db);
   const issueSvc = issueService(db);
+  const access = accessService(db);
+  const agents = agentService(db);
+
+  function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
+    if (!agent.permissions || typeof agent.permissions !== "object") return false;
+    return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
+  }
+
+  async function actorCanReadEnvironmentDetails(req: Parameters<typeof assertCompanyAccess>[0], companyId: string) {
+    assertCompanyAccess(req, companyId);
+
+    if (req.actor.type === "board") {
+      if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+      return access.canUser(companyId, req.actor.userId, "environments:manage");
+    }
+
+    if (!req.actor.agentId) return false;
+    const actorAgent = await agents.getById(req.actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== companyId) {
+      throw forbidden("Agent key cannot access another company");
+    }
+    const allowedByGrant = await access.hasPermission(companyId, "agent", actorAgent.id, "environments:manage");
+    return allowedByGrant || canCreateAgents(actorAgent);
+  }
 
   async function resolveIssueByRef(rawId: string) {
     const identifier = normalizeIssueIdentifier(rawId);
@@ -79,7 +109,10 @@ export function activityRoutes(db: Db) {
       return;
     }
     assertCompanyAccess(req, issue.companyId);
-    const result = await svc.runsForIssue(issue.companyId, issue.id);
+    const includeSensitiveEnvironmentDetails = await actorCanReadEnvironmentDetails(req, issue.companyId);
+    const result = await svc.runsForIssue(issue.companyId, issue.id, {
+      includeSensitiveEnvironmentDetails,
+    });
     res.json(result);
   });
 

@@ -375,7 +375,12 @@ export function activityService(db: Db) {
         )
         .orderBy(desc(activityLog.createdAt)),
 
-    runsForIssue: async (companyId: string, issueId: string) => {
+    runsForIssue: async (
+      companyId: string,
+      issueId: string,
+      options: { includeSensitiveEnvironmentDetails?: boolean } = {},
+    ) => {
+      const includeSensitiveEnvironmentDetails = options.includeSensitiveEnvironmentDetails ?? true;
       scheduleRunLivenessBackfill(companyId, issueId);
       const runs = await db
         .select({
@@ -399,7 +404,7 @@ export function activityService(db: Db) {
           continuationAttempt: heartbeatRuns.continuationAttempt,
           lastUsefulActionAt: heartbeatRuns.lastUsefulActionAt,
           nextAction: heartbeatRuns.nextAction,
-          contextSnapshot: heartbeatRuns.contextSnapshot,
+          contextSnapshot: includeSensitiveEnvironmentDetails ? heartbeatRuns.contextSnapshot : sql`null`,
         })
         .from(heartbeatRuns)
         .innerJoin(
@@ -502,9 +507,9 @@ export function activityService(db: Db) {
                 status: leaseRow.lease.status,
                 leasePolicy: leaseRow.lease.leasePolicy,
                 provider: leaseRow.lease.provider,
-                providerLeaseId: leaseRow.lease.providerLeaseId,
+                providerLeaseId: includeSensitiveEnvironmentDetails ? leaseRow.lease.providerLeaseId : null,
                 executionWorkspaceId: leaseRow.lease.executionWorkspaceId,
-                workspacePath,
+                workspacePath: includeSensitiveEnvironmentDetails ? workspacePath : null,
                 failureReason: leaseRow.lease.failureReason,
                 cleanupStatus: leaseRow.lease.cleanupStatus,
                 acquiredAt: leaseRow.lease.acquiredAt,

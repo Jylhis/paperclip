@@ -19,6 +19,15 @@ const mockIssueService = vi.hoisted(() => ({
   getByIdentifier: vi.fn(),
 }));
 
+const mockAccessService = vi.hoisted(() => ({
+  canUser: vi.fn(),
+  hasPermission: vi.fn(),
+}));
+
+const mockAgentService = vi.hoisted(() => ({
+  getById: vi.fn(),
+}));
+
 vi.mock("../services/activity.js", () => ({
   activityService: () => mockActivityService,
   normalizeActivityLimit: (limit: number | undefined) => {
@@ -30,6 +39,8 @@ vi.mock("../services/activity.js", () => ({
 vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
   heartbeatService: () => mockHeartbeatService,
+  accessService: () => mockAccessService,
+  agentService: () => mockAgentService,
 }));
 
 async function createApp(
@@ -92,6 +103,10 @@ describe.sequential("activity routes", () => {
     for (const mock of Object.values(mockActivityService)) mock.mockReset();
     for (const mock of Object.values(mockHeartbeatService)) mock.mockReset();
     for (const mock of Object.values(mockIssueService)) mock.mockReset();
+    for (const mock of Object.values(mockAccessService)) mock.mockReset();
+    for (const mock of Object.values(mockAgentService)) mock.mockReset();
+    mockAccessService.canUser.mockResolvedValue(false);
+    mockAccessService.hasPermission.mockResolvedValue(false);
   });
 
   it("limits company activity lists by default", async () => {
@@ -146,7 +161,9 @@ describe.sequential("activity routes", () => {
     expect(res.status).toBe(200);
     expect(mockIssueService.getByIdentifier).toHaveBeenCalledWith("PC1A2-475");
     expect(mockIssueService.getById).not.toHaveBeenCalled();
-    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1");
+    expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1", {
+      includeSensitiveEnvironmentDetails: false,
+    });
     expect(res.body).toEqual([{ runId: "run-1", adapterType: "codex_local" }]);
   });
 
