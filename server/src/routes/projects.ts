@@ -46,6 +46,12 @@ export function projectRoutes(db: Db) {
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
   const environmentsSvc = environmentService(db);
 
+  function assertCanManageProjectEnv(req: Request) {
+    if (req.actor.type !== "board") {
+      throw forbidden("Board access required to manage project environment variables");
+    }
+  }
+
   async function assertProjectEnvironmentSelection(companyId: string, environmentId: string | null | undefined) {
     if (environmentId === undefined || environmentId === null) return;
     await assertEnvironmentSelectionForCompany(environmentsSvc, companyId, environmentId, {
@@ -135,6 +141,7 @@ export function projectRoutes(db: Db) {
       ],
     );
     if (projectData.env !== undefined) {
+      assertCanManageProjectEnv(req);
       projectData.env = await secretsSvc.normalizeEnvBindingsForPersistence(
         companyId,
         projectData.env,
@@ -204,6 +211,7 @@ export function projectRoutes(db: Db) {
       body.archivedAt = new Date(body.archivedAt);
     }
     if (body.env !== undefined) {
+      assertCanManageProjectEnv(req);
       body.env = await secretsSvc.normalizeEnvBindingsForPersistence(existing.companyId, body.env, {
         strictMode: strictSecretsMode,
         fieldPath: "env",
