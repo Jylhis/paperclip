@@ -286,6 +286,24 @@ function buildOrgTree(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
   return tree;
 }
 
+
+function ensureWithin(parentDir: string, candidatePath: string, label: string): void {
+  const relative = path.relative(parentDir, candidatePath);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) return;
+  throw new Error(`${label} escapes expected directory: ${candidatePath}`);
+}
+
+function safeWriteFileSync(targetPath: string, content: string | Buffer, rootDir: string, label: string): void {
+  ensureWithin(rootDir, targetPath, label);
+  if (fs.existsSync(targetPath)) {
+    const stat = fs.lstatSync(targetPath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`${label} is a symlink: ${targetPath}`);
+    }
+  }
+  fs.writeFileSync(targetPath, content);
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 
 async function main() {
@@ -296,6 +314,7 @@ async function main() {
   }
 
   const resolvedDir = path.resolve(companiesDir);
+  const resolvedDirReal = fs.realpathSync(resolvedDir);
   if (!fs.existsSync(resolvedDir)) {
     console.error(`Directory not found: ${resolvedDir}`);
     process.exit(1);
@@ -307,6 +326,8 @@ async function main() {
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const companyDir = path.join(resolvedDir, entry.name);
+    const companyDirReal = fs.realpathSync(companyDir);
+    ensureWithin(resolvedDirReal, companyDirReal, "company directory");
     const pkg = parseCompanyPackage(companyDir);
     if (!pkg) continue;
 
@@ -323,10 +344,13 @@ async function main() {
         stats: `Agents: ${pkg.agents.length}, Skills: ${pkg.skills.length}`,
       };
       const pngBuffer = await renderOrgChartPng(orgTree, "warmth", overlay);
-      const imagesDir = path.join(companyDir, "images");
+      const imagesDir = path.join(companyDirReal, "images");
+      if (fs.existsSync(imagesDir) && fs.lstatSync(imagesDir).isSymbolicLink()) {
+        throw new Error(`images directory is a symlink: ${imagesDir}`);
+      }
       fs.mkdirSync(imagesDir, { recursive: true });
       const pngPath = path.join(imagesDir, "org-chart.png");
-      fs.writeFileSync(pngPath, pngBuffer);
+      safeWriteFileSync(pngPath, pngBuffer, companyDirReal, "org chart");
       console.log(`   ✓ ${path.relative(resolvedDir, pngPath)} (${(pngBuffer.length / 1024).toFixed(1)}kb)`);
     }
 
@@ -348,8 +372,8 @@ async function main() {
       companyName: pkg.name,
       companyDescription: pkg.description,
     });
-    const readmePath = path.join(companyDir, "README.md");
-    fs.writeFileSync(readmePath, readme);
+    const readmePath = path.join(companyDirReal, "README.md");
+    safeWriteFileSync(readmePath, readme, companyDirReal, "README");
     console.log(`   ✓ ${path.relative(resolvedDir, readmePath)}`);
 
     processed++;
