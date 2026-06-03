@@ -1327,6 +1327,12 @@ in
             "AF_NETLINK"
           ];
           RestrictNamespaces = true;
+          # Map every UID/GID except the unit's User/Group to nobody via
+          # a user namespace. Postgres peer auth still works (the kernel
+          # surfaces the host UID through SO_PEERCRED) and the unit owns
+          # its own state-dir files. Verified by the module-peer-auth VM
+          # test.
+          PrivateUsers = true;
           RestrictRealtime = true;
           RestrictSUIDSGID = true;
           LockPersonality = true;
@@ -1344,7 +1350,23 @@ in
           CapabilityBoundingSet = "";
           AmbientCapabilities = "";
           SystemCallArchitectures = "native";
-          # MemoryDenyWriteExecute stays off — V8's JIT needs WX pages.
+          # Directives intentionally OFF. Flipping any of these breaks
+          # the service; the module-default VM test pins the contract.
+          # - MemoryDenyWriteExecute: V8's JIT requires W+X pages.
+          # - PrivateNetwork: outbound HTTPS to Grafana Cloud, S3, and
+          #   provider APIs (Anthropic / OpenAI / GitHub / ...).
+          # - IPAddressDeny=any: same — no static allowlist is viable
+          #   because provider endpoints rotate.
+          # - RestrictAddressFamilies=~AF_NETLINK: os.networkInterfaces()
+          #   opens a netlink socket at startup (see allowlist note above).
+          # - RestrictAddressFamilies=~AF_UNIX: Postgres peer auth talks
+          #   to /run/postgresql.
+          # - RootDirectory / RootImage: ProtectSystem=strict + the
+          #   BindPaths/ReadWritePaths above + PrivateTmp give near-
+          #   equivalent fs confinement without a chroot or squashfs
+          #   build step.
+          # - DeviceAllow: PrivateDevices=true already gives the cgroup
+          #   device controller a deny-all plus a stripped /dev mount.
         }
         // optionalAttrs cfg.hardenSyscalls {
           SystemCallFilter = [

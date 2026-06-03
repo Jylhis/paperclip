@@ -72,5 +72,22 @@ testLib.mkPaperclipTest {
     assert "--heapsnapshot-signal=SIGUSR2" not in unit, (
         f"heap snapshot flags leaked into default unit:\n{unit}"
     )
+
+    # Hardening contract — see the "Directives intentionally OFF" block
+    # in nix/modules/nixos/paperclip.nix. PrivateUsers must be on; the
+    # three listed below would break V8 JIT / outbound HTTPS, so any
+    # future change that flips them on has to also update both the
+    # module comment and this test.
+    assert "PrivateUsers=yes" in unit, (
+        f"expected PrivateUsers=yes in unit, got:\n{unit}"
+    )
+    assert "PrivateNetwork=yes" not in unit, (
+        f"PrivateNetwork=yes would break outbound HTTPS to providers / "
+        f"Grafana / S3 — update the module comment if intentional:\n{unit}"
+    )
+    assert "MemoryDenyWriteExecute=yes" not in unit, (
+        f"MemoryDenyWriteExecute=yes would break V8's JIT — update the "
+        f"module comment if intentional:\n{unit}"
+    )
   '';
 }
