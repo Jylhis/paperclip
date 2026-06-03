@@ -1861,9 +1861,6 @@ function shouldQueueFollowupForRunningIssueWake(input: {
   return Boolean(wakeReason && RUNNING_ISSUE_WAKE_REASONS_REQUIRING_FOLLOWUP.has(wakeReason));
 }
 
-function isCheckoutConflictError(error: unknown): boolean {
-  return error instanceof HttpError && error.status === 409 && error.message === "Issue checkout conflict";
-}
 
 function deriveCommentId(
   contextSnapshot: Record<string, unknown> | null | undefined,
@@ -7134,13 +7131,8 @@ export function heartbeatService(db: Db, options: HeartbeatServiceOptions = {}) 
         agentId: agent.id,
       })
     ) {
-      try {
-        await issuesSvc.checkout(issueId, agent.id, ["todo", "backlog", "blocked"], run.id);
-        context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = true;
-      } catch (error) {
-        if (!isCheckoutConflictError(error)) throw error;
-        context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = false;
-      }
+      await issuesSvc.checkout(issueId, agent.id, ["todo", "backlog", "blocked"], run.id);
+      context[PAPERCLIP_HARNESS_CHECKOUT_KEY] = true;
       issueContext = await getIssueExecutionContext(agent.companyId, issueId);
     }
     const wakeCommentId = deriveCommentId(context, null);
