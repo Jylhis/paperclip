@@ -172,6 +172,44 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     await tempDb?.cleanup();
   });
 
+  async function insertWorkspaceWithRepo(workspaceId: string, repoRoot: string, baseRef: string) {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: "PAP",
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Workspaces",
+      status: "in_progress",
+      executionWorkspacePolicy: {
+        enabled: true,
+      },
+    });
+    await db.insert(executionWorkspaces).values({
+      id: workspaceId,
+      companyId,
+      projectId,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "Feature workspace",
+      status: "active",
+      providerType: "git_worktree",
+      cwd: repoRoot,
+      providerRef: repoRoot,
+      branchName: "main",
+      baseRef,
+      metadata: {
+        createdByRuntime: true,
+      },
+    });
+  }
+
   it("allows archiving shared workspace sessions with warnings even when issues are still open", async () => {
     const companyId = randomUUID();
     const projectId = randomUUID();
@@ -341,6 +379,49 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       environmentId: expect.any(String),
     });
     expect(readExecutionWorkspaceConfig(byId.get(untouchedWorkspaceId) ?? null)).toBeNull();
+  });
+
+  it("does not pass unsafe base refs to git readiness comparisons", async () => {
+    const repoRoot = await createTempRepo();
+    tempDirs.add(repoRoot);
+    const victimPath = path.join(repoRoot, "victim.txt");
+    const outputLinkPath = path.join(repoRoot, "owned...HEAD");
+    const workspaceId = randomUUID();
+
+    await fs.writeFile(victimPath, "SECRET-DATA\n", "utf8");
+    await fs.symlink(victimPath, outputLinkPath);
+    await insertWorkspaceWithRepo(workspaceId, repoRoot, "--output=owned");
+
+    const readiness = await svc.getCloseReadiness(workspaceId);
+
+    await expect(fs.readFile(victimPath, "utf8")).resolves.toBe("SECRET-DATA\n");
+    expect(readiness?.git).toMatchObject({
+      workspacePath: repoRoot,
+      baseRef: "--output=owned",
+      aheadCount: null,
+      behindCount: null,
+      isMergedIntoBase: null,
+    });
+    expect(readiness?.warnings).toEqual(expect.arrayContaining([
+      "Could not compare this workspace against unsafe base ref --output=owned.",
+    ]));
+  });
+
+  it("disables repository-local fsmonitor during close readiness status checks", async () => {
+    const repoRoot = await createTempRepo();
+    tempDirs.add(repoRoot);
+    const markerPath = path.join(repoRoot, "fsmonitor-ran");
+    const helperPath = path.join(repoRoot, "fsmonitor-helper.sh");
+    const workspaceId = randomUUID();
+
+    await fs.writeFile(helperPath, `#!/bin/sh\necho helper-ran > ${JSON.stringify(markerPath)}\n`, { mode: 0o755 });
+    await runGit(repoRoot, ["config", "core.fsmonitor", helperPath]);
+    await insertWorkspaceWithRepo(workspaceId, repoRoot, "main");
+
+    const readiness = await svc.getCloseReadiness(workspaceId);
+
+    expect(readiness?.git?.hasDirtyTrackedFiles).toBe(false);
+    await expect(fs.access(markerPath)).rejects.toThrow();
   });
 
   it("warns about dirty and unmerged git worktrees and reports cleanup actions", async () => {

@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+const gitRevisionInputSchema = z.string().refine(
+  (value) => value.trim().length > 0 && !value.trim().startsWith("-") && !/[\u0000-\u001f\u007f\s]/u.test(value.trim()),
+  "Git refs must not start with '-' or contain whitespace/control characters",
+);
+
 export const executionWorkspaceStatusSchema = z.enum([
   "active",
   "idle",
@@ -118,7 +123,7 @@ export const updateExecutionWorkspaceSchema = z.object({
   name: z.string().min(1).optional(),
   cwd: z.string().optional().nullable(),
   repoUrl: z.string().optional().nullable(),
-  baseRef: z.string().optional().nullable(),
+  baseRef: gitRevisionInputSchema.optional().nullable(),
   branchName: z.string().optional().nullable(),
   providerRef: z.string().optional().nullable(),
   status: executionWorkspaceStatusSchema.optional(),

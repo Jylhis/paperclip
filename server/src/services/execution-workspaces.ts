@@ -25,6 +25,31 @@ type ExecutionWorkspaceRow = typeof executionWorkspaces.$inferSelect;
 type WorkspaceRuntimeServiceRow = typeof workspaceRuntimeServices.$inferSelect;
 const execFileAsync = promisify(execFile);
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
+const GIT_NULL_DEVICE = process.platform === "win32" ? "NUL" : "/dev/null";
+
+function gitReadOnlyEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    GIT_ATTR_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: GIT_NULL_DEVICE,
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_OPTIONAL_LOCKS: "0",
+  };
+
+  for (const key of Object.keys(env)) {
+    if (key === "GIT_CONFIG_GLOBAL" || key === "GIT_CONFIG_NOSYSTEM") continue;
+    if (
+      key === "GIT_CONFIG_COUNT" ||
+      key === "GIT_CONFIG_PARAMETERS" ||
+      key.startsWith("GIT_CONFIG_KEY_") ||
+      key.startsWith("GIT_CONFIG_VALUE_")
+    ) {
+      delete env[key];
+    }
+  }
+
+  return env;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -65,8 +90,38 @@ async function pathExists(value: string | null | undefined) {
   }
 }
 
+function isSafeGitRevisionInput(value: string) {
+  return (
+    value.length > 0 &&
+    !value.startsWith("-") &&
+    !/[\u0000-\u001f\u007f\s]/u.test(value)
+  );
+}
+
 async function runGit(args: string[], cwd: string) {
-  return await execFileAsync("git", ["-C", cwd, ...args], { cwd });
+  return await execFileAsync(
+    "git",
+    [
+      "-c",
+      "core.fsmonitor=false",
+      "-c",
+      "core.untrackedCache=false",
+      "-c",
+      `core.hooksPath=${GIT_NULL_DEVICE}`,
+      "-C",
+      cwd,
+      ...args,
+    ],
+    { cwd, env: gitReadOnlyEnv() },
+  );
+}
+
+async function resolveGitCommit(ref: string, cwd: string) {
+  const trimmed = readNullableString(ref);
+  if (!trimmed || !isSafeGitRevisionInput(trimmed)) return null;
+
+  const resolved = (await runGit(["rev-parse", "--verify", "--quiet", "--end-of-options", `${trimmed}^{commit}`], cwd)).stdout.trim();
+  return /^[0-9a-f]{40,64}$/iu.test(resolved) ? resolved : null;
 }
 
 async function inspectGitCloseReadiness(workspace: ExecutionWorkspace): Promise<{
@@ -151,30 +206,45 @@ async function inspectGitCloseReadiness(workspace: ExecutionWorkspace): Promise<
   let aheadCount: number | null = null;
   let behindCount: number | null = null;
   let isMergedIntoBase: boolean | null = null;
-  const baseRef = workspace.baseRef;
+  const baseRef = readNullableString(workspace.baseRef);
 
   if (repoRoot && baseRef) {
-    try {
-      const counts = (await runGit(["rev-list", "--left-right", "--count", `${baseRef}...HEAD`], workspacePath)).stdout.trim();
-      const [behindRaw, aheadRaw] = counts.split(/\s+/);
-      behindCount = behindRaw ? Number.parseInt(behindRaw, 10) : 0;
-      aheadCount = aheadRaw ? Number.parseInt(aheadRaw, 10) : 0;
-    } catch (error) {
-      warnings.push(
-        `Could not compare this workspace against ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    let baseCommit: string | null = null;
+    let headCommit: string | null = null;
+
+    if (!isSafeGitRevisionInput(baseRef)) {
+      warnings.push(`Could not compare this workspace against unsafe base ref ${baseRef}.`);
+    } else {
+      try {
+        baseCommit = await resolveGitCommit(baseRef, workspacePath);
+        headCommit = await resolveGitCommit("HEAD", workspacePath);
+        if (!baseCommit || !headCommit) {
+          warnings.push(`Could not compare this workspace against ${baseRef}: the base ref could not be resolved to a commit.`);
+        } else {
+          const counts = (await runGit(["rev-list", "--left-right", "--count", `${baseCommit}...${headCommit}`], workspacePath)).stdout.trim();
+          const [behindRaw, aheadRaw] = counts.split(/\s+/);
+          behindCount = behindRaw ? Number.parseInt(behindRaw, 10) : 0;
+          aheadCount = aheadRaw ? Number.parseInt(aheadRaw, 10) : 0;
+        }
+      } catch (error) {
+        warnings.push(
+          `Could not compare this workspace against ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
 
-    try {
-      await runGit(["merge-base", "--is-ancestor", "HEAD", baseRef], workspacePath);
-      isMergedIntoBase = true;
-    } catch (error) {
-      const code = typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : null;
-      if (code === 1) isMergedIntoBase = false;
-      else {
-        warnings.push(
-          `Could not determine whether this workspace is merged into ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+    if (baseCommit && headCommit) {
+      try {
+        await runGit(["merge-base", "--is-ancestor", headCommit, baseCommit], workspacePath);
+        isMergedIntoBase = true;
+      } catch (error) {
+        const code = typeof error === "object" && error && "code" in error ? (error as { code?: unknown }).code : null;
+        if (code === 1) isMergedIntoBase = false;
+        else {
+          warnings.push(
+            `Could not determine whether this workspace is merged into ${baseRef}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     }
   }
