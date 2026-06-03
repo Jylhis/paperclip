@@ -2945,6 +2945,75 @@ describeEmbeddedPostgres("issueService.create workspace inheritance", () => {
       },
     });
   });
+
+  it("does not clear reused workspace config fields omitted from issue workspace settings patches", async () => {
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    const executionWorkspaceId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Paperclip",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await instanceSettingsService(db).updateExperimental({ enableIsolatedWorkspaces: true });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Workspace project", status: "in_progress" });
+    await db.insert(projectWorkspaces).values({ id: projectWorkspaceId, companyId, projectId, name: "Primary workspace" });
+    await db.insert(executionWorkspaces).values({
+      id: executionWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "isolated_workspace",
+      strategyType: "git_worktree",
+      name: "Issue worktree",
+      status: "active",
+      providerType: "git_worktree",
+      metadata: {
+        config: {
+          environmentId: "env-old",
+          provisionCommand: "bash ./scripts/provision-old.sh",
+          teardownCommand: "bash ./scripts/teardown-old.sh",
+          workspaceRuntime: { profile: "old" },
+        },
+      },
+    });
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      title: "Recovery issue",
+      status: "in_progress",
+      priority: "medium",
+      executionWorkspaceId,
+      executionWorkspacePreference: "reuse_existing",
+      executionWorkspaceSettings: { mode: "isolated_workspace" },
+    });
+
+    await svc.update(issueId, { executionWorkspaceSettings: { mode: "isolated_workspace" } });
+
+    const workspace = await db
+      .select({ metadata: executionWorkspaces.metadata })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, executionWorkspaceId))
+      .then((rows) => rows[0] ?? null);
+
+    expect(workspace?.metadata).toEqual({
+      config: {
+        environmentId: "env-old",
+        provisionCommand: "bash ./scripts/provision-old.sh",
+        teardownCommand: "bash ./scripts/teardown-old.sh",
+        cleanupCommand: null,
+        workspaceRuntime: { profile: "old" },
+        desiredState: null,
+        serviceStates: null,
+      },
+    });
+  });
 });
 
 describeEmbeddedPostgres("issueService.findMentionedProjectIds", () => {

@@ -82,6 +82,12 @@ export function collectIssueWorkspaceCommandPaths(input: {
 }): string[] {
   const paths: string[] = [];
   if (isRecord(input.executionWorkspaceSettings)) {
+    if (hasOwn(input.executionWorkspaceSettings, "environmentId")) {
+      paths.push("executionWorkspaceSettings.environmentId");
+    }
+    if (hasOwn(input.executionWorkspaceSettings, "workspaceRuntime")) {
+      paths.push("executionWorkspaceSettings.workspaceRuntime");
+    }
     paths.push(
       ...collectWorkspaceStrategyCommandPaths(
         input.executionWorkspaceSettings.workspaceStrategy,

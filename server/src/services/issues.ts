@@ -123,13 +123,29 @@ function readStringFromRecord(record: unknown, key: string) {
 }
 
 function buildReusedExecutionWorkspaceConfigPatchFromIssueSettings(
+  rawSettings: unknown,
   settings: ReturnType<typeof parseIssueExecutionWorkspaceSettings>,
 ) {
+  const raw = rawSettings && typeof rawSettings === "object" && !Array.isArray(rawSettings)
+    ? (rawSettings as Record<string, unknown>)
+    : null;
+  const rawStrategy =
+    raw?.workspaceStrategy && typeof raw.workspaceStrategy === "object" && !Array.isArray(raw.workspaceStrategy)
+      ? (raw.workspaceStrategy as Record<string, unknown>)
+      : null;
   return {
-    environmentId: settings?.environmentId ?? null,
-    provisionCommand: settings?.workspaceStrategy?.provisionCommand ?? null,
-    teardownCommand: settings?.workspaceStrategy?.teardownCommand ?? null,
-    workspaceRuntime: settings?.workspaceRuntime ?? null,
+    ...(raw && Object.prototype.hasOwnProperty.call(raw, "environmentId")
+      ? { environmentId: settings?.environmentId ?? null }
+      : {}),
+    ...(rawStrategy && Object.prototype.hasOwnProperty.call(rawStrategy, "provisionCommand")
+      ? { provisionCommand: settings?.workspaceStrategy?.provisionCommand ?? null }
+      : {}),
+    ...(rawStrategy && Object.prototype.hasOwnProperty.call(rawStrategy, "teardownCommand")
+      ? { teardownCommand: settings?.workspaceStrategy?.teardownCommand ?? null }
+      : {}),
+    ...(raw && Object.prototype.hasOwnProperty.call(raw, "workspaceRuntime")
+      ? { workspaceRuntime: settings?.workspaceRuntime ?? null }
+      : {}),
   };
 }
 
@@ -4510,7 +4526,10 @@ export function issueService(db: Db) {
               .set({
                 metadata: mergeExecutionWorkspaceConfig(
                   (workspace.metadata as Record<string, unknown> | null) ?? null,
-                  buildReusedExecutionWorkspaceConfigPatchFromIssueSettings(nextExecutionWorkspaceSettings),
+                  buildReusedExecutionWorkspaceConfigPatchFromIssueSettings(
+                    issueData.executionWorkspaceSettings,
+                    nextExecutionWorkspaceSettings,
+                  ),
                 ),
                 updatedAt: new Date(),
               })
