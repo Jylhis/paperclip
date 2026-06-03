@@ -215,7 +215,7 @@ describe("buildRealizedExecutionWorkspaceFromPersisted", () => {
   it("reuses the persisted execution workspace path instead of deriving a new worktree", () => {
     const result = buildRealizedExecutionWorkspaceFromPersisted({
       base: buildResolvedWorkspace({
-        cwd: "/tmp/project-primary",
+        cwd: "/tmp/reused-worktree",
         repoRef: "main",
       }),
       workspace: {

@@ -623,6 +623,18 @@ export function buildRealizedExecutionWorkspaceFromPersisted(input: {
     return null;
   }
 
+  const baseCwd = readNonEmptyString(input.base.baseCwd)
+    ?? readNonEmptyString((input.base as { cwd?: string | null }).cwd);
+  if (!baseCwd) {
+    return null;
+  }
+
+  const normalizedBaseCwd = path.resolve(baseCwd);
+  const normalizedCwd = path.resolve(cwd);
+  if (normalizedCwd !== normalizedBaseCwd) {
+    return null;
+  }
+
   const strategy = input.workspace.strategyType === "git_worktree" ? "git_worktree" : "project_primary";
   return {
     baseCwd: input.base.baseCwd,
@@ -632,9 +644,9 @@ export function buildRealizedExecutionWorkspaceFromPersisted(input: {
     repoUrl: input.workspace.repoUrl ?? input.base.repoUrl,
     repoRef: input.workspace.baseRef ?? input.base.repoRef,
     strategy,
-    cwd,
+    cwd: normalizedCwd,
     branchName: input.workspace.branchName ?? null,
-    worktreePath: strategy === "git_worktree" ? (readNonEmptyString(input.workspace.providerRef) ?? cwd) : null,
+    worktreePath: strategy === "git_worktree" ? normalizedCwd : null,
     warnings: [],
     created: false,
   };
