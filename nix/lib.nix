@@ -44,7 +44,7 @@ let
   #      (nixbuild.net's default 60 s kills the fixup on this tree —
   #      run on the lab or extend the plan).
   #   3. Copy the printed `got:` hash back into `pnpmDepsHash` below.
-  pnpmDepsHash = "sha256-+QZzOKLHfEmJiMH3bERs5uulRTYI1xBObd9cHJ5mKB4=";
+  pnpmDepsHash = "sha256-t6DQcyS+QH2wZ2RhRrRdhKVta5z7vUHM5SqviwtcYN0=";
 
   pnpmDeps = fetchPnpmDeps {
     pname = "paperclip-pnpm-deps";

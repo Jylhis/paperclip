@@ -15,7 +15,7 @@ export function agentPluginConfigRoutes(db: Db) {
 
   // GET /agents/:agentId/plugin-configs
   router.get("/:agentId/plugin-configs", async (req, res) => {
-    const { agentId } = req.params;
+    const agentId = req.params.agentId as string;
     const agent = await agentService(db).getById(agentId);
     if (!agent) throw notFound("Agent not found");
     assertCompanyAccess(req, agent.companyId);
@@ -25,7 +25,7 @@ export function agentPluginConfigRoutes(db: Db) {
 
   // POST /agents/:agentId/plugin-configs
   router.post("/:agentId/plugin-configs", validate(createAgentPluginConfigSchema), async (req, res) => {
-    const { agentId } = req.params;
+    const agentId = req.params.agentId as string;
     const agent = await agentService(db).getById(agentId);
     if (!agent) throw notFound("Agent not found");
     assertCompanyAccess(req, agent.companyId);
@@ -46,7 +46,8 @@ export function agentPluginConfigRoutes(db: Db) {
 
   // PATCH /agents/:agentId/plugin-configs/:configId
   router.patch("/:agentId/plugin-configs/:configId", validate(updateAgentPluginConfigSchema), async (req, res) => {
-    const { agentId, configId } = req.params;
+    const agentId = req.params.agentId as string;
+    const configId = req.params.configId as string;
     const agent = await agentService(db).getById(agentId);
     if (!agent) throw notFound("Agent not found");
     assertCompanyAccess(req, agent.companyId);
@@ -67,7 +68,8 @@ export function agentPluginConfigRoutes(db: Db) {
 
   // DELETE /agents/:agentId/plugin-configs/:configId
   router.delete("/:agentId/plugin-configs/:configId", async (req, res) => {
-    const { agentId, configId } = req.params;
+    const agentId = req.params.agentId as string;
+    const configId = req.params.configId as string;
     const agent = await agentService(db).getById(agentId);
     if (!agent) throw notFound("Agent not found");
     assertCompanyAccess(req, agent.companyId);
