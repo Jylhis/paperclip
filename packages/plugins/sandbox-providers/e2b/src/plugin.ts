@@ -162,20 +162,15 @@ function isValidShellEnvKey(value: string) {
 function buildLoginShellScript(input: {
   command: string;
   args: string[];
-  env?: Record<string, string>;
+  envKeys?: string[];
 }): string {
-  const env = input.env ?? {};
-  for (const key of Object.keys(env)) {
-    if (!isValidShellEnvKey(key)) {
-      throw new Error(`Invalid sandbox environment variable key: ${key}`);
-    }
-  }
-  const envArgs = Object.entries(env)
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    .map(([key, value]) => `${key}=${shellQuote(value)}`);
+  const envKeys = input.envKeys ?? [];
+  const restoreLine = envKeys
+    .map((key) => `export ${key}="$__PAPERCLIP_ENV_${key}"`)
+    .join("; ");
   const commandParts = [shellQuote(input.command), ...input.args.map(shellQuote)].join(" ");
-  const execLine = envArgs.length > 0
-    ? `exec env ${envArgs.join(" ")} ${commandParts}`
+  const execLine = restoreLine.length > 0
+    ? `${restoreLine}; exec ${commandParts}`
     : `exec ${commandParts}`;
   return [
     'if [ -f /etc/profile ]; then . /etc/profile >/dev/null 2>&1 || true; fi',
@@ -190,6 +185,22 @@ function buildLoginShellScript(input: {
     '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true',
     execLine,
   ].join(" && ");
+}
+
+function buildSandboxRunEnvs(env?: Record<string, string>) {
+  if (!env) return undefined;
+  const normalized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (!isValidShellEnvKey(key)) {
+      throw new Error(`Invalid sandbox environment variable key: ${key}`);
+    }
+    if (typeof value !== "string") {
+      continue;
+    }
+    normalized[key] = value;
+    normalized[`__PAPERCLIP_ENV_${key}`] = value;
+  }
+  return normalized;
 }
 
 async function killSandboxBestEffort(sandbox: Sandbox, reason: string): Promise<void> {
@@ -391,10 +402,11 @@ const plugin = definePlugin({
 
     const config = parseDriverConfig(params.config);
     const sandbox = await connectSandbox(config, params.lease.providerLeaseId);
+    const runEnvs = buildSandboxRunEnvs(params.env);
     const baseCommand = buildLoginShellScript({
       command: params.command,
       args: params.args ?? [],
-      env: params.env,
+      envKeys: Object.keys(runEnvs ?? {}).filter((key) => !key.startsWith("__PAPERCLIP_ENV_")),
     });
     const timeoutMs = params.timeoutMs ?? config.timeoutMs;
 
@@ -423,11 +435,11 @@ const plugin = definePlugin({
       : baseCommand;
 
     try {
-      // Env is interpolated into the script via `exec env KEY=val …` after
-      // profile sourcing so user-configured env wins over anything profiles
-      // export. No need to pass `envs:` separately.
+      // Pass env via SDK option so values do not appear in command text.
+      // Mirror SSH precedence by restoring user-configured values after profile sourcing.
       const result = await sandbox.commands.run(command, {
         cwd: params.cwd,
+        envs: runEnvs,
         timeoutMs,
       }) as Awaited<ReturnType<Sandbox["commands"]["run"]>> & {
         exitCode: number;

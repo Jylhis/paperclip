@@ -307,9 +307,9 @@ describe("E2B sandbox provider plugin", () => {
     expect(stdinCall).toBeDefined();
     if (!stdinCall) throw new Error("stdinCall not found");
     expect(stdinCall[0]).toMatch(/\.profile/);
-    expect(stdinCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello' < '\/tmp\/paperclip-stdin-/);
+    expect(stdinCall[0]).toMatch(/export FOO="\$__PAPERCLIP_ENV_FOO"; exec 'printf' 'hello' < '\/tmp\/paperclip-stdin-/);
     expect(stdinCall[1]).toEqual(expect.objectContaining({ cwd: "/workspace", timeoutMs: 1000 }));
-    expect(stdinCall[1]).not.toHaveProperty("envs");
+    expect(stdinCall[1]).toHaveProperty("envs");
     expect(stdinCall[1]).not.toHaveProperty("background");
     expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
     expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
@@ -364,9 +364,9 @@ describe("E2B sandbox provider plugin", () => {
     expect(fgCall).toBeDefined();
     if (!fgCall) throw new Error("fgCall not found");
     expect(fgCall[0]).toMatch(/\.profile/);
-    expect(fgCall[0]).toMatch(/exec env FOO='bar' 'printf' 'hello'$/);
+    expect(fgCall[0]).toMatch(/export FOO="\$__PAPERCLIP_ENV_FOO"; exec 'printf' 'hello'$/);
     expect(fgCall[1]).toEqual(expect.objectContaining({ cwd: "/workspace", timeoutMs: 1000 }));
-    expect(fgCall[1]).not.toHaveProperty("envs");
+    expect(fgCall[1]).toHaveProperty("envs");
     expect(fgCall[1]).not.toHaveProperty("background");
     expect(sandbox.commands.sendStdin).not.toHaveBeenCalled();
     expect(sandbox.commands.closeStdin).not.toHaveBeenCalled();
