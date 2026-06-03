@@ -3988,6 +3988,12 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
       }
     }
 
+    const isDirectUrlSource = (input.source as { type?: string }).type === "url";
+    const previewFiles = isDirectUrlSource ? {} : source.files;
+    if (isDirectUrlSource && Object.keys(source.files).length > 0) {
+      warnings.push("File content preview is disabled for direct URL imports.");
+    }
+
     const preview: CompanyPortabilityPreviewResult = {
       include,
       targetCompanyId,
@@ -4005,7 +4011,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         issuePlans,
       },
       manifest,
-      files: source.files,
+      files: previewFiles,
       envInputs: manifest.envInputs ?? [],
       warnings,
       errors,
