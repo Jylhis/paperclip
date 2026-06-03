@@ -25,6 +25,21 @@ function collectWorkspaceStrategyCommandPaths(raw: unknown, prefix: string): str
   return paths;
 }
 
+function collectWorkspaceRuntimeCommandPaths(raw: unknown, prefix: string): string[] {
+  if (!isRecord(raw)) return [];
+  const paths: string[] = [];
+  for (const key of ["commands", "services", "jobs"] as const) {
+    const entries = raw[key];
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      if (isRecord(entry) && hasOwn(entry, "command")) {
+        paths.push(`${prefixPath(prefix, key)}[${index}].command`);
+      }
+    });
+  }
+  return paths;
+}
+
 function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: string): string[] {
   if (!isRecord(raw)) return [];
   const paths: string[] = [];
@@ -37,7 +52,40 @@ function collectExecutionWorkspaceConfigCommandPaths(raw: unknown, prefix: strin
   if (hasOwn(raw, "cleanupCommand")) {
     paths.push(prefixPath(prefix, "cleanupCommand"));
   }
+  if (hasOwn(raw, "workspaceRuntime")) {
+    paths.push(
+      ...collectWorkspaceRuntimeCommandPaths(
+        raw.workspaceRuntime,
+        prefixPath(prefix, "workspaceRuntime"),
+      ),
+    );
+  }
   return paths;
+}
+
+function boardActorCanModifyHostWorkspaceCommands(req: Request, companyId: string): boolean {
+  if (req.actor.type !== "board") return false;
+  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
+  const membership = req.actor.memberships?.find((item) => item.companyId === companyId);
+  return (
+    membership?.status === "active"
+    && (membership.membershipRole === "owner" || membership.membershipRole === "admin")
+  );
+}
+
+export function assertCanModifyHostWorkspaceCommands(req: Request, companyId: string, paths: string[]) {
+  if (paths.length === 0) return;
+  if (boardActorCanModifyHostWorkspaceCommands(req, companyId)) return;
+
+  if (req.actor.type === "agent") {
+    throw forbidden(
+      `Agent keys cannot modify host-executed workspace commands (${paths.join(", ")}).`,
+    );
+  }
+
+  throw forbidden(
+    `Admin access is required to modify host-executed workspace commands (${paths.join(", ")}).`,
+  );
 }
 
 export function assertNoAgentHostWorkspaceCommandMutation(req: Request, paths: string[]) {

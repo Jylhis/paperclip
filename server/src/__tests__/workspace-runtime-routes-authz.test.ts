@@ -508,6 +508,93 @@ describe.sequential("workspace runtime service route authorization", () => {
     expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
   });
 
+  it("rejects agent callers that patch execution workspace runtime commands", async () => {
+    mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
+    const app = await createExecutionWorkspaceApp({
+      type: "agent",
+      agentId: "agent-1",
+      companyId: "company-1",
+      source: "agent_key",
+      runId: "run-1",
+    });
+
+    const res = await request(app)
+      .patch(`/api/execution-workspaces/${executionWorkspaceId}`)
+      .send({
+        config: {
+          workspaceRuntime: {
+            services: [{ name: "evil", command: "touch /tmp/paperclip-rce" }],
+          },
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("config.workspaceRuntime.services[0].command");
+    expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin board callers that patch execution workspace command config", async () => {
+    mockExecutionWorkspaceService.getById.mockResolvedValue(buildExecutionWorkspace({ id: executionWorkspaceId }));
+    const app = await createExecutionWorkspaceApp({
+      type: "board",
+      userId: "board-1",
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", membershipRole: "operator", status: "active" }],
+      source: "session",
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app)
+      .patch(`/api/execution-workspaces/${executionWorkspaceId}`)
+      .send({
+        config: {
+          teardownCommand: "touch /tmp/paperclip-rce",
+        },
+      });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toContain("Admin access is required");
+    expect(mockExecutionWorkspaceService.update).not.toHaveBeenCalled();
+  });
+
+  it("allows admin board callers to patch execution workspace command config", async () => {
+    const workspace = buildExecutionWorkspace({ id: executionWorkspaceId });
+    mockExecutionWorkspaceService.getById.mockResolvedValue(workspace);
+    mockExecutionWorkspaceService.update.mockResolvedValue({
+      ...workspace,
+      config: {
+        provisionCommand: null,
+        teardownCommand: "echo teardown",
+        cleanupCommand: null,
+        workspaceRuntime: null,
+      },
+      metadata: {
+        config: {
+          teardownCommand: "echo teardown",
+        },
+      },
+    });
+    const app = await createExecutionWorkspaceApp({
+      type: "board",
+      userId: "board-1",
+      companyIds: ["company-1"],
+      memberships: [{ companyId: "company-1", membershipRole: "admin", status: "active" }],
+      source: "session",
+      isInstanceAdmin: false,
+    });
+
+    const res = await request(app)
+      .patch(`/api/execution-workspaces/${executionWorkspaceId}`)
+      .send({
+        config: {
+          teardownCommand: "echo teardown",
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(mockExecutionWorkspaceService.update).toHaveBeenCalled();
+  });
+
   it("allows board callers through the execution workspace runtime auth gate", async () => {
     mockExecutionWorkspaceService.getById.mockResolvedValue(null);
     const app = await createExecutionWorkspaceApp({
