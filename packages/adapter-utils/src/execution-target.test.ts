@@ -4,6 +4,7 @@ import * as serverUtils from "./server-utils.js";
 import {
   adapterExecutionTargetUsesManagedHome,
   ensureAdapterExecutionTargetRuntimeCommandInstalled,
+  maybeRunSandboxInstallCommand,
   resolveAdapterExecutionTargetCwd,
   runAdapterExecutionTargetProcess,
   runAdapterExecutionTargetShellCommand,
@@ -399,5 +400,118 @@ describe("resolveAdapterExecutionTargetCwd", () => {
     expect(resolveAdapterExecutionTargetCwd(null, "", "/Users/host/repo/server")).toBe(
       "/Users/host/repo/server",
     );
+  });
+});
+
+describe("maybeRunSandboxInstallCommand", () => {
+  function makeSandboxRunner(overrides?: Partial<{
+    exitCode: number | null;
+    timedOut: boolean;
+    stdout: string;
+    stderr: string;
+  }>) {
+    return {
+      execute: vi.fn(async () => ({
+        exitCode: overrides?.exitCode ?? 0,
+        signal: null,
+        timedOut: overrides?.timedOut ?? false,
+        stdout: overrides?.stdout ?? "",
+        stderr: overrides?.stderr ?? "",
+        pid: null,
+        startedAt: new Date().toISOString(),
+      })),
+    };
+  }
+
+  it("returns null for non-sandbox targets", async () => {
+    const result = await maybeRunSandboxInstallCommand({
+      runId: "run-1",
+      target: null,
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("runs install command with empty env, never forwarding adapter secrets", async () => {
+    const runner = makeSandboxRunner();
+
+    await maybeRunSandboxInstallCommand({
+      runId: "run-2",
+      target: { kind: "remote", transport: "sandbox", providerKey: "e2b", remoteCwd: "/workspace", runner },
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+    });
+
+    expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
+      env: {},
+    }));
+    const call = runner.execute.mock.calls[0][0];
+    expect(call.env).not.toHaveProperty("ANTHROPIC_API_KEY");
+    expect(call.env).not.toHaveProperty("PAPERCLIP_API_KEY");
+  });
+
+  it("runs detect probe with empty env and skips install when binary found", async () => {
+    const runner = makeSandboxRunner({ exitCode: 0 });
+
+    const result = await maybeRunSandboxInstallCommand({
+      runId: "run-3",
+      target: { kind: "remote", transport: "sandbox", providerKey: "e2b", remoteCwd: "/workspace", runner },
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+      detectCommand: "claude",
+    });
+
+    // Detect probe runs first with empty env.
+    expect(runner.execute).toHaveBeenCalledTimes(1);
+    expect(runner.execute).toHaveBeenCalledWith(expect.objectContaining({
+      env: {},
+    }));
+    expect(result?.message).toContain("already on PATH");
+  });
+
+  it("omits stdout from the success check — no output leak on exit 0", async () => {
+    const runner = makeSandboxRunner({ exitCode: 0, stdout: "SECRET_TOKEN=abc123 npm install done" });
+
+    const result = await maybeRunSandboxInstallCommand({
+      runId: "run-4",
+      target: { kind: "remote", transport: "sandbox", remoteCwd: "/workspace", runner },
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+    });
+
+    expect(result?.level).toBe("info");
+    expect(result).not.toHaveProperty("detail");
+  });
+
+  it("replaces timed-out output with a fixed security-safe message", async () => {
+    const runner = makeSandboxRunner({ timedOut: true, stdout: "SECRET=xyz partial output", stderr: "token=abc" });
+
+    const result = await maybeRunSandboxInstallCommand({
+      runId: "run-5",
+      target: { kind: "remote", transport: "sandbox", remoteCwd: "/workspace", runner },
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+    });
+
+    expect(result?.level).toBe("warn");
+    expect(result?.detail).toBe("Install command output omitted for security.");
+    expect(result?.detail).not.toContain("SECRET");
+    expect(result?.detail).not.toContain("token=abc");
+  });
+
+  it("replaces non-zero exit stderr with a fixed security-safe message", async () => {
+    const runner = makeSandboxRunner({ exitCode: 1, stderr: "npm ERR! TOKEN=supersecret", stdout: "" });
+
+    const result = await maybeRunSandboxInstallCommand({
+      runId: "run-6",
+      target: { kind: "remote", transport: "sandbox", remoteCwd: "/workspace", runner },
+      adapterKey: "claude",
+      installCommand: "npm install -g @anthropic-ai/claude-code",
+    });
+
+    expect(result?.level).toBe("warn");
+    expect(result?.detail).toBe("Install command output omitted for security.");
+    expect(result?.detail).not.toContain("TOKEN=supersecret");
   });
 });
