@@ -1,10 +1,11 @@
 import { createDb } from "./client.js";
 import { companies, agents, goals, projects, issues } from "./schema/index.js";
+import { targetFromUrl } from "./target.js";
 
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is required");
 
-const db = createDb(url);
+const db = createDb(targetFromUrl(url));
 
 console.log("Seeding database...");
 

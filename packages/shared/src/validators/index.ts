@@ -1,4 +1,16 @@
 export {
+  agentPluginConfigKindSchema,
+  agentPluginRestartPolicySchema,
+  agentPluginWorkspaceScopeSchema,
+  serverBinarySchema,
+  pluginEnvSchema,
+  createAgentPluginConfigSchema,
+  updateAgentPluginConfigSchema,
+  type CreateAgentPluginConfig,
+  type UpdateAgentPluginConfig,
+} from "./agent-plugin-config.js";
+
+export {
   instanceGeneralSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
@@ -39,9 +51,7 @@ export {
   type ProbeEnvironmentConfig,
 } from "./environment.js";
 export {
-  feedbackDataSharingPreferenceSchema,
   feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   type UpsertIssueFeedbackVote,
@@ -151,6 +161,7 @@ export {
   createIssueSchema,
   createIssueInputSchema,
   createChildIssueSchema,
+  createAcceptedPlanDecompositionSchema,
   resolveCreateIssueStatusDefault,
   createIssueLabelSchema,
   issueBlockedInboxAttentionSchema,
@@ -202,6 +213,7 @@ export {
   restoreIssueDocumentRevisionSchema,
   type CreateIssue,
   type CreateChildIssue,
+  type CreateAcceptedPlanDecomposition,
   type CreateIssueLabel,
   type UpdateIssue,
   type IssueExecutionWorkspaceSettings,
@@ -293,6 +305,7 @@ export {
   createSecretSchema,
   createSecretProviderConfigSchema,
   updateSecretProviderConfigSchema,
+  secretProviderConfigDiscoveryPreviewSchema,
   remoteSecretImportPreviewSchema,
   remoteSecretImportSchema,
   remoteSecretImportSelectionSchema,
@@ -309,6 +322,7 @@ export {
   type CreateSecret,
   type CreateSecretProviderConfig,
   type UpdateSecretProviderConfig,
+  type SecretProviderConfigDiscoveryPreview,
   type RemoteSecretImportPreview,
   type RemoteSecretImport,
   type RemoteSecretImportSelection,

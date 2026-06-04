@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
 import type { ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,9 +52,6 @@ vi.mock("../hooks/usePaperclipIssueRuntime", () => ({
   usePaperclipIssueRuntime: () => ({}),
 }));
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
-
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
 
@@ -66,7 +63,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  act(() => root?.unmount());
+  flushSync(() => root?.unmount());
   container.remove();
 });
 
@@ -78,7 +75,7 @@ function renderThread(
     successfulRunHandoff?: SuccessfulRunHandoffState | null;
   } = {},
 ) {
-  act(() => {
+  flushSync(() => {
     root.render(
       <MemoryRouter>
         <IssueChatThread
@@ -312,10 +309,12 @@ describe("IssueChatThread system notice routing", () => {
 
     const copyLink = container.querySelector('button[aria-label="Copy link to system notice"]') as HTMLButtonElement;
     const copyText = container.querySelector('button[aria-label="Copy system notice"]') as HTMLButtonElement;
-    await act(async () => {
+    flushSync(() => {
       copyLink.click();
-      await Promise.resolve();
     });
+    await Promise.resolve();
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("#comment-comment-copy-link"));
     expect(copyLink.querySelector(".lucide-check")).not.toBeNull();
@@ -472,7 +471,7 @@ describe("IssueChatThread system notice routing", () => {
     expect(details).not.toBeNull();
     expect(details?.textContent).toContain("run-stale");
     expect(details).toHaveProperty("hidden", true);
-    act(() => {
+    flushSync(() => {
       toggle.click();
     });
 

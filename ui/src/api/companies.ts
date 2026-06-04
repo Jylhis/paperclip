@@ -34,7 +34,6 @@ export const companiesApi = {
         | "budgetMonthlyCents"
         | "attachmentMaxBytes"
         | "requireBoardApprovalForNewAgents"
-        | "feedbackDataSharingEnabled"
         | "brandColor"
         | "logoAssetId"
       >

@@ -1,4 +1,8 @@
 /// <reference path="./types/express.d.ts" />
+// MUST be the very first import. Registers OTel auto-instrumentation loader
+// hooks before any modules that need patching (node:http, express, pg,
+// drizzle) are first loaded by the imports below.
+import "./observability/preload.js";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
@@ -9,40 +13,48 @@ import type { Request as ExpressRequest, RequestHandler } from "express";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
+  type DatabaseTarget,
+  describeTarget,
+  resolveDatabaseTarget,
+  type ResolvedDatabaseTarget,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
   inspectMigrations,
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
+  prepareEmbeddedPostgresNativeRuntime,
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
+  targetFromUrl,
   authUsers,
   companies,
   companyMemberships,
   instanceUserRoles,
 } from "@paperclipai/db";
-import detectPort from "detect-port";
 import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
+import { detectAvailablePort } from "./port-detection.js";
+import { initObservability } from "./observability/index.js";
+import { serverVersion } from "./version.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import {
   feedbackService,
+  backfillPrincipalAccessCompatibility,
   heartbeatService,
   instanceSettingsService,
+  reconcileCloudUpstreamRunsOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
 } from "./services/index.js";
-import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
-import { initTelemetry, getTelemetryClient } from "./telemetry.js";
 import { conflict } from "./errors.js";
 import type {
   InstanceDatabaseBackupRunResult,
@@ -97,8 +109,13 @@ export function applyLongKeepAliveTimeouts(server: import("node:http").Server): 
 }
 
 export async function startServer(): Promise<StartedServer> {
+  // Bootstrap observability before anything else so auto-instrumentation can
+  // hook into http/express/pg modules as they're first required. Safe to call
+  // unconditionally — the crash handler always installs, OTLP exporters only
+  // come up when GRAFANA_CLOUD_* env vars are present.
+  const observability = await initObservability({ logger, serverVersion });
+
   let config = loadConfig();
-  initTelemetry({ enabled: config.telemetryEnabled });
   if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
     process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
   }
@@ -143,20 +160,20 @@ export async function startServer(): Promise<StartedServer> {
   };
   
   async function ensureMigrations(
-    connectionString: string,
+    target: DatabaseTarget,
     label: string,
     opts?: EnsureMigrationsOptions,
   ): Promise<MigrationSummary> {
     const autoApply = opts?.autoApply === true;
-    let state = await inspectMigrations(connectionString);
+    let state = await inspectMigrations(target);
     if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
-      const repair = await reconcilePendingMigrationHistory(connectionString);
+      const repair = await reconcilePendingMigrationHistory(target);
       if (repair.repairedMigrations.length > 0) {
         logger.warn(
           { repairedMigrations: repair.repairedMigrations },
           `${label} had drifted migration history; repaired migration journal entries from existing schema state.`,
         );
-        state = await inspectMigrations(connectionString);
+        state = await inspectMigrations(target);
         if (state.status === "upToDate") return "already applied";
       }
     }
@@ -173,12 +190,12 @@ export async function startServer(): Promise<StartedServer> {
             "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
         );
       }
-  
+
       logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
       return "applied (pending migrations)";
     }
-  
+
     const apply = autoApply ? true : await promptApplyMigrations(state.pendingMigrations);
     if (!apply) {
       throw new Error(
@@ -186,15 +203,40 @@ export async function startServer(): Promise<StartedServer> {
           "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
       );
     }
-  
+
     logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-    await applyPendingMigrations(connectionString);
+    await applyPendingMigrations(target);
     return "applied (pending migrations)";
   }
   
   function isLoopbackHost(host: string): boolean {
     const normalized = host.trim().toLowerCase();
     return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
+  }
+
+  function isPostgresConnectionString(connectionString: string): boolean {
+    try {
+      const parsed = new URL(connectionString);
+      return parsed.protocol === "postgres:" || parsed.protocol === "postgresql:";
+    } catch {
+      return false;
+    }
+  }
+
+  function assertCloudDatabaseContract(resolved: ResolvedDatabaseTarget): void {
+    if (config.deploymentMode !== "authenticated" || config.deploymentExposure !== "public") {
+      return;
+    }
+    if (resolved.mode !== "postgres") {
+      throw new Error(
+        "authenticated public deployments require an external PostgreSQL target (DATABASE_URL, socket, or config.database.connectionString); refusing embedded PostgreSQL fallback",
+      );
+    }
+    if (resolved.target.kind === "url" && !isPostgresConnectionString(resolved.target.connectionString)) {
+      throw new Error(
+        "authenticated public deployments require DATABASE_URL to be a postgres/postgresql connection string",
+      );
+    }
   }
 
   function rewriteLocalUrlPort(rawUrl: string | undefined, port: number): string | undefined {
@@ -275,20 +317,25 @@ export async function startServer(): Promise<StartedServer> {
   let embeddedPostgres: EmbeddedPostgresInstance | null = null;
   let embeddedPostgresStartedByThisProcess = false;
   let migrationSummary: MigrationSummary = "skipped";
-  let activeDatabaseConnectionString: string;
+  let activeDatabaseTarget: DatabaseTarget;
   let resolvedEmbeddedPostgresPort: number | null = null;
   let startupDbInfo:
     | { mode: "external-postgres"; connectionString: string }
     | { mode: "embedded-postgres"; dataDir: string; port: number };
-  if (config.databaseUrl) {
-    const migrationUrl = config.databaseMigrationUrl ?? config.databaseUrl;
-    migrationSummary = await ensureMigrations(migrationUrl, "PostgreSQL");
-  
-    db = createDb(config.databaseUrl);
-    pluginMigrationDb = config.databaseMigrationUrl ? createDb(config.databaseMigrationUrl) : db;
-    logger.info("Using external PostgreSQL via DATABASE_URL/config");
-    activeDatabaseConnectionString = config.databaseUrl;
-    startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+  const resolvedDatabase = resolveDatabaseTarget();
+  assertCloudDatabaseContract(resolvedDatabase);
+  if (resolvedDatabase.mode === "postgres") {
+    const dbTarget = resolvedDatabase.target;
+    const migrationTarget = config.databaseMigrationUrl
+      ? targetFromUrl(config.databaseMigrationUrl)
+      : dbTarget;
+    migrationSummary = await ensureMigrations(migrationTarget, "PostgreSQL");
+
+    db = createDb(dbTarget);
+    pluginMigrationDb = config.databaseMigrationUrl ? createDb(migrationTarget) : db;
+    logger.info(`Using PostgreSQL via ${resolvedDatabase.source}`);
+    activeDatabaseTarget = dbTarget;
+    startupDbInfo = { mode: "external-postgres", connectionString: describeTarget(dbTarget) };
   } else {
     const moduleName = "embedded-postgres";
     let EmbeddedPostgres: EmbeddedPostgresCtor;
@@ -300,9 +347,10 @@ export async function startServer(): Promise<StartedServer> {
         "Embedded PostgreSQL mode requires dependency `embedded-postgres`. Reinstall dependencies (without omitting required packages), or set DATABASE_URL for external Postgres.",
       );
     }
-  
-    const dataDir = resolve(config.embeddedPostgresDataDir);
-    const configuredPort = config.embeddedPostgresPort;
+    await prepareEmbeddedPostgresNativeRuntime();
+
+    const dataDir = resolve(resolvedDatabase.dataDir);
+    const configuredPort = resolvedDatabase.port;
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
     const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
@@ -371,19 +419,19 @@ export async function startServer(): Promise<StartedServer> {
     } else {
       const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
       try {
-        const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
+        const actualDataDir = await getPostgresDataDirectory(targetFromUrl(configuredAdminConnectionString));
         if (
           typeof actualDataDir !== "string" ||
           resolve(actualDataDir) !== resolve(dataDir)
         ) {
           throw new Error("reachable postgres does not use the expected embedded data directory");
         }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
+        await ensurePostgresDatabase(targetFromUrl(configuredAdminConnectionString), "paperclip");
         logger.warn(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
       } catch {
-        const detectedPort = await detectPort(configuredPort);
+        const detectedPort = await detectAvailablePort(configuredPort, "127.0.0.1");
         if (detectedPort !== configuredPort) {
           logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
         }
@@ -432,24 +480,24 @@ export async function startServer(): Promise<StartedServer> {
     }
   
     const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
+    const dbStatus = await ensurePostgresDatabase(targetFromUrl(embeddedAdminConnectionString), "paperclip");
     if (dbStatus === "created") {
       logger.info("Created embedded PostgreSQL database: paperclip");
     }
-  
+
     const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
     }
-    migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
+    migrationSummary = await ensureMigrations(targetFromUrl(embeddedConnectionString), "Embedded PostgreSQL", {
       autoApply: shouldAutoApplyFirstRunMigrations,
     });
-  
-    db = createDb(embeddedConnectionString);
+
+    db = createDb(targetFromUrl(embeddedConnectionString));
     pluginMigrationDb = db;
     logger.info("Embedded PostgreSQL ready");
-    activeDatabaseConnectionString = embeddedConnectionString;
+    activeDatabaseTarget = targetFromUrl(embeddedConnectionString);
     resolvedEmbeddedPostgresPort = port;
     startupDbInfo = { mode: "embedded-postgres", dataDir, port };
   }
@@ -480,7 +528,7 @@ export async function startServer(): Promise<StartedServer> {
   }
 
   const requestedListenPort = config.port;
-  const listenPort = await detectPort(requestedListenPort);
+  const listenPort = await detectAvailablePort(requestedListenPort, config.host);
   if (config.authBaseUrlMode === "explicit" && config.authPublicBaseUrl) {
     config.authPublicBaseUrl = rewriteLocalUrlPort(config.authPublicBaseUrl, listenPort);
   }
@@ -495,6 +543,10 @@ export async function startServer(): Promise<StartedServer> {
     | undefined;
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
+  }
+  const accessBackfill = await backfillPrincipalAccessCompatibility(db as any);
+  if (accessBackfill.agentMembershipsInserted > 0 || accessBackfill.humanGrantsInserted > 0) {
+    logger.info(accessBackfill, "Backfilled principal access compatibility records");
   }
   if (config.deploymentMode === "authenticated") {
     const {
@@ -539,9 +591,7 @@ export async function startServer(): Promise<StartedServer> {
   });
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
-  const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
-  });
+  const feedback = feedbackService(db as any);
   const backupSettingsSvc = instanceSettingsService(db);
   let databaseBackupInFlight = false;
   const runServerDatabaseBackup = async (
@@ -567,7 +617,7 @@ export async function startServer(): Promise<StartedServer> {
       const retention = generalSettings.backupRetention;
 
       const result = await runDatabaseBackup({
-        connectionString: activeDatabaseConnectionString,
+        target: activeDatabaseTarget,
         backupDir: config.databaseBackupDir,
         retention,
         filenamePrefix: "paperclip",
@@ -607,7 +657,6 @@ export async function startServer(): Promise<StartedServer> {
     uiMode,
     serverPort: listenPort,
     storageService,
-    feedbackExportService: feedback,
     databaseBackupService: {
       runManualBackup: async () => {
         const result = await runServerDatabaseBackup("manual");
@@ -673,6 +722,19 @@ export async function startServer(): Promise<StartedServer> {
     })
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of persisted runtime services failed");
+    });
+
+  void reconcileCloudUpstreamRunsOnStartup(db as any)
+    .then((result) => {
+      if (result.reconciled > 0) {
+        logger.warn(
+          { reconciled: result.reconciled },
+          "reconciled cloud upstream runs from a previous server process",
+        );
+      }
+    })
+    .catch((err) => {
+      logger.error({ err }, "startup reconciliation of cloud upstream runs failed");
     });
   
   if (config.heartbeatSchedulerEnabled) {
@@ -878,11 +940,8 @@ export async function startServer(): Promise<StartedServer> {
   
   {
     const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
-      const telemetryClient = getTelemetryClient();
-      if (telemetryClient) {
-        telemetryClient.stop();
-        await telemetryClient.flush();
-      }
+      const appShutdown = (app as { locals?: { paperclipShutdown?: () => void } }).locals?.paperclipShutdown;
+      appShutdown?.();
 
       if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
         logger.info({ signal }, "Stopping embedded PostgreSQL");
@@ -891,6 +950,12 @@ export async function startServer(): Promise<StartedServer> {
         } catch (err) {
           logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
         }
+      }
+
+      try {
+        await observability.shutdown();
+      } catch (err) {
+        logger.error({ err }, "Failed to flush observability exporters cleanly");
       }
 
       process.exit(0);
@@ -909,7 +974,7 @@ export async function startServer(): Promise<StartedServer> {
     host: config.host,
     listenPort,
     apiUrl: configuredApiUrl,
-    databaseUrl: activeDatabaseConnectionString,
+    databaseUrl: describeTarget(activeDatabaseTarget),
   };
 }
 

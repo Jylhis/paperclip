@@ -190,5 +190,11 @@ describe("codex remote environment diagnostics", () => {
     expect(probeCall?.[4].env.CODEX_HOME).toContain("/remote/workspace/.paperclip-runtime/codex/probe-home-codex-envtest-");
     expect(probeCall?.[4].env.CODEX_HOME?.startsWith("/tmp/")).toBe(false);
     expect(probeCall?.[3]).toContain("--skip-git-repo-check");
+
+    // probeCall[3] is the args array: [ "-c", "<shell-script>", input.command, ...input.args ]
+    const wrapperShellScript = probeCall?.[3]?.[1];
+    expect(wrapperShellScript).toContain("chmod -R u+rwX");
+    // Trap must end with `:` so a failed rm doesn't override codex's exit code.
+    expect(wrapperShellScript).toMatch(/rm -rf "\$CODEX_HOME" 2>\/dev\/null; :' EXIT INT TERM/);
   });
 });

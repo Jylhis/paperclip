@@ -9,7 +9,9 @@ import {
   createEmbeddedPostgresLogBuffer,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
+  prepareEmbeddedPostgresNativeRuntime,
   routines,
+  targetFromUrl,
 } from "@paperclipai/db";
 import { eq, inArray } from "drizzle-orm";
 import { loadPaperclipEnvFile } from "../config/env.js";
@@ -116,6 +118,7 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
       "Embedded PostgreSQL support requires dependency `embedded-postgres`. Reinstall dependencies and try again.",
     );
   }
+  await prepareEmbeddedPostgresNativeRuntime();
 
   const postmasterPidFile = path.resolve(dataDir, "postmaster.pid");
   const runningPid = readRunningPostmasterPid(postmasterPidFile);
@@ -194,10 +197,10 @@ async function openConfiguredDb(configPath: string): Promise<{
         config.database.embeddedPostgresPort,
       );
       const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${embeddedHandle.port}/postgres`;
-      await ensurePostgresDatabase(adminConnectionString, "paperclip");
+      await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
       const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${embeddedHandle.port}/paperclip`;
-      await applyPendingMigrations(connectionString);
-      const db = createDb(connectionString) as ClosableDb;
+      await applyPendingMigrations(targetFromUrl(connectionString));
+      const db = createDb(targetFromUrl(connectionString)) as ClosableDb;
       return {
         db,
         stop: async () => {
@@ -214,8 +217,8 @@ async function openConfiguredDb(configPath: string): Promise<{
       throw new Error(`Config at ${configPath} does not define a database connection string.`);
     }
 
-    await applyPendingMigrations(connectionString);
-    const db = createDb(connectionString) as ClosableDb;
+    await applyPendingMigrations(targetFromUrl(connectionString));
+    const db = createDb(targetFromUrl(connectionString)) as ClosableDb;
     return {
       db,
       stop: async () => {
@@ -257,17 +260,17 @@ export async function disableAllRoutinesInConfig(
         config.database.embeddedPostgresPort,
       );
       const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${embeddedHandle.port}/postgres`;
-      await ensurePostgresDatabase(adminConnectionString, "paperclip");
+      await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
       const connectionString = `postgres://paperclip:paperclip@127.0.0.1:${embeddedHandle.port}/paperclip`;
-      await applyPendingMigrations(connectionString);
-      db = createDb(connectionString) as ClosableDb;
+      await applyPendingMigrations(targetFromUrl(connectionString));
+      db = createDb(targetFromUrl(connectionString)) as ClosableDb;
     } else {
       const connectionString = nonEmpty(config.database.connectionString);
       if (!connectionString) {
         throw new Error(`Config at ${configPath} does not define a database connection string.`);
       }
-      await applyPendingMigrations(connectionString);
-      db = createDb(connectionString) as ClosableDb;
+      await applyPendingMigrations(targetFromUrl(connectionString));
+      db = createDb(targetFromUrl(connectionString)) as ClosableDb;
     }
 
     const existing = await db

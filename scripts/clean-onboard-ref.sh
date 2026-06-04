@@ -74,7 +74,7 @@ echo "PAPERCLIP_PORT: $PAPERCLIP_PORT"
 git -C "$REPO_ROOT" worktree add --detach "$PC_REPO" "$TARGET_COMMIT"
 
 cd "$PC_REPO"
-pnpm install
+nix run .#install-deps
 
 env \
   HOME="$PC_HOME" \

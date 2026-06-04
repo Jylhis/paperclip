@@ -10,6 +10,7 @@ import {
   createDb,
   projects,
   routines,
+  targetFromUrl,
 } from "@paperclipai/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -94,7 +95,7 @@ describeEmbeddedPostgres("disableAllRoutinesInConfig", () => {
 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-cli-db-");
-    db = createDb(tempDb.connectionString);
+    db = createDb(targetFromUrl(tempDb.connectionString));
     tempRoot = mkdtempSync(path.join(os.tmpdir(), "paperclip-routines-cli-config-"));
     configPath = path.join(tempRoot, "config.json");
     writeTestConfig(configPath, tempRoot, tempDb.connectionString);

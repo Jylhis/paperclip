@@ -15,6 +15,7 @@ import {
   projects,
   routines,
   routineTriggers,
+  targetFromUrl,
 } from "@paperclipai/db";
 import {
   copyGitHooksToWorktreeGitDir,
@@ -106,9 +107,6 @@ function buildSourceConfig(): PaperclipConfig {
       baseUrlMode: "explicit",
       publicBaseUrl: "http://127.0.0.1:3100",
       disableSignUp: false,
-    },
-    telemetry: {
-      enabled: true,
     },
     storage: {
       provider: "local_disk",
@@ -289,7 +287,7 @@ describe("worktree helpers", () => {
 
   itEmbeddedPostgres("quarantines copied live execution state in seeded worktree databases", async () => {
     const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-quarantine-");
-    const db = createDb(tempDb.connectionString);
+    const db = createDb(targetFromUrl(tempDb.connectionString));
     const companyId = randomUUID();
     const agentId = randomUUID();
     const idleAgentId = randomUUID();
@@ -566,7 +564,7 @@ describe("worktree helpers", () => {
       const sourceDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-auth-source-");
 
       try {
-        const sourceDbClient = createDb(sourceDb.connectionString);
+        const sourceDbClient = createDb(targetFromUrl(sourceDb.connectionString));
         await sourceDbClient.insert(authUsers).values({
           id: "user-existing",
           email: "existing@paperclip.ing",
@@ -626,7 +624,9 @@ describe("worktree helpers", () => {
         await targetPg.start();
         try {
           const targetDb = createDb(
-            `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+            targetFromUrl(
+              `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+            ),
           );
           const seededUsers = await targetDb.select().from(authUsers);
           expect(seededUsers.some((row) => row.email === "existing@paperclip.ing")).toBe(true);
@@ -1226,7 +1226,7 @@ describe("worktree helpers", () => {
 describeEmbeddedPostgres("pauseSeededScheduledRoutines", () => {
   it("pauses only routines with enabled schedule triggers", async () => {
     const tempDb = await startEmbeddedPostgresTestDatabase("paperclip-worktree-routines-");
-    const db = createDb(tempDb.connectionString);
+    const db = createDb(targetFromUrl(tempDb.connectionString));
     const companyId = randomUUID();
     const projectId = randomUUID();
     const agentId = randomUUID();

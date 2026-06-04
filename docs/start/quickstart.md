@@ -25,12 +25,13 @@ npx paperclipai run
 
 ## Local Development
 
-For contributors working on Paperclip itself. Prerequisites: Node.js 20+ and pnpm 9+.
+For contributors working on Paperclip itself. Prerequisite: Nix with flakes enabled.
 
 Clone the repository, then:
 
 ```sh
-pnpm install
+nix develop
+nix run .#install-deps
 pnpm dev
 ```
 

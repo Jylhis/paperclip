@@ -11,6 +11,7 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockAccessService = vi.hoisted(() => ({
   canUser: vi.fn(),
+  decide: vi.fn(),
   hasPermission: vi.fn(),
   getMembership: vi.fn(),
   listPrincipalGrants: vi.fn(),
@@ -52,22 +53,11 @@ const mockSecretService = vi.hoisted(() => ({
 }));
 
 const mockLogActivity = vi.hoisted(() => vi.fn());
-const mockTrackAgentCreated = vi.hoisted(() => vi.fn());
-const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockSyncInstructionsBundleConfigFromFilePath = vi.hoisted(() => vi.fn());
 
 const mockAdapter = vi.hoisted(() => ({
   listSkills: vi.fn(),
   syncSkills: vi.fn(),
-}));
-
-vi.mock("@paperclipai/shared/telemetry", () => ({
-  trackAgentCreated: mockTrackAgentCreated,
-  trackErrorHandlerCrash: vi.fn(),
-}));
-
-vi.mock("../telemetry.js", () => ({
-  getTelemetryClient: mockGetTelemetryClient,
 }));
 
 vi.mock("../services/index.js", () => ({
@@ -95,15 +85,6 @@ vi.mock("../adapters/index.js", () => ({
 }));
 
 function registerModuleMocks() {
-  vi.doMock("@paperclipai/shared/telemetry", () => ({
-    trackAgentCreated: mockTrackAgentCreated,
-    trackErrorHandlerCrash: vi.fn(),
-  }));
-
-  vi.doMock("../telemetry.js", () => ({
-    getTelemetryClient: mockGetTelemetryClient,
-  }));
-
   vi.doMock("../services/index.js", () => ({
     agentService: () => mockAgentService,
     agentInstructionsService: () => mockAgentInstructionsService,
@@ -227,13 +208,10 @@ describe.sequential("agent skill routes", () => {
     for (const mock of Object.values(mockCompanySkillService)) mock.mockReset();
     for (const mock of Object.values(mockSecretService)) mock.mockReset();
     mockLogActivity.mockReset();
-    mockTrackAgentCreated.mockReset();
-    mockGetTelemetryClient.mockReset();
     mockSyncInstructionsBundleConfigFromFilePath.mockReset();
     mockAdapter.listSkills.mockReset();
     mockAdapter.syncSkills.mockReset();
     mockSyncInstructionsBundleConfigFromFilePath.mockImplementation((_agent, config) => config);
-    mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
     let persistedAgent: Record<string, unknown> | null = null;
     mockAgentService.resolveByReference.mockResolvedValue({
       ambiguous: false,
@@ -315,6 +293,11 @@ describe.sequential("agent skill routes", () => {
     );
     mockLogActivity.mockResolvedValue(undefined);
     mockAccessService.canUser.mockResolvedValue(true);
+    mockAccessService.decide.mockResolvedValue({
+      allowed: true,
+      reason: "allow_explicit_grant",
+      explanation: "Allowed by test grant",
+    });
     mockAccessService.hasPermission.mockResolvedValue(true);
     mockAccessService.getMembership.mockResolvedValue(null);
     mockAccessService.listPrincipalGrants.mockResolvedValue([]);
@@ -529,16 +512,9 @@ describe.sequential("agent skill routes", () => {
         }),
       }),
     );
-    expect(mockTrackAgentCreated).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        agentId: "11111111-1111-4111-8111-111111111111",
-        agentRole: "engineer",
-      }),
-    );
   });
 
-  it("accepts the security role on direct agent creation and preserves it in telemetry", async () => {
+  it("accepts the security role on direct agent creation", async () => {
     const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
       .post("/api/companies/company-1/agents")
       .send({
@@ -556,13 +532,6 @@ describe.sequential("agent skill routes", () => {
       "company-1",
       expect.objectContaining({
         role: "security",
-      }),
-    );
-    expect(mockTrackAgentCreated).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        agentId: "11111111-1111-4111-8111-111111111111",
-        agentRole: "security",
       }),
     );
   });

@@ -1,3 +1,16 @@
+<!--
+  Jylhis fork notice — keep at the top of README.md.
+  Enforced by .github/workflows/canon.yml.
+-->
+
+> **Jylhis fork.** This repo is a Jylhis-maintained fork of
+> [paperclipai/paperclip](https://github.com/paperclipai/paperclip) backing the
+> Jylhis **Internal Developer Platform** goal. See
+> [Fork status](#jylhis-fork-status) for what differs from upstream, the
+> dogfood plan, and the upstream-sync cadence. Canon docs:
+> [`ENGINEERING_PRINCIPLES.md`](./ENGINEERING_PRINCIPLES.md) ·
+> [`WAY_OF_WORKING.md`](./WAY_OF_WORKING.md) · [`AGENTS.md`](./AGENTS.md).
+
 <p align="center">
   <img src="doc/assets/header.png" alt="Paperclip — runs your business" width="720" />
 </p>
@@ -302,13 +315,14 @@ Or manually:
 ```bash
 git clone https://github.com/paperclipai/paperclip.git
 cd paperclip
-pnpm install
+nix develop
+nix run .#install-deps
 pnpm dev
 ```
 
 This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
 
-> **Requirements:** Node.js 20+, pnpm 9.15+
+> **Requirements:** Nix with flakes enabled. The dev shell provides Node.js and pnpm.
 
 <br/>
 
@@ -388,19 +402,6 @@ This is the short roadmap preview. See the full roadmap in [ROADMAP.md](ROADMAP.
 
 Find Plugins and more at [awesome-paperclip](https://github.com/gsxdsm/awesome-paperclip)
 
-## Telemetry
-
-Paperclip collects anonymous usage telemetry to help us understand how the product is used and improve it. No personal information, issue content, prompts, file paths, or secrets are ever collected. Private repository references are hashed with a per-install salt before being sent.
-
-Telemetry is **enabled by default** and can be disabled with any of the following:
-
-| Method               | How                                                     |
-| -------------------- | ------------------------------------------------------- |
-| Environment variable | `PAPERCLIP_TELEMETRY_DISABLED=1`                        |
-| Standard convention  | `DO_NOT_TRACK=1`                                        |
-| CI environments      | Automatically disabled when `CI=true`                   |
-| Config file          | Set `telemetry.enabled: false` in your Paperclip config |
-
 ## Contributing
 
 We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for details.
@@ -416,9 +417,58 @@ We welcome contributions. See the [contributing guide](CONTRIBUTING.md) for deta
 
 <br/>
 
+## Jylhis fork status
+
+This repo is a Jylhis-maintained downstream of
+[paperclipai/paperclip](https://github.com/paperclipai/paperclip).
+
+**Why we fork.** Paperclip is the control plane for the Jylhis **Internal
+Developer Platform** goal — orchestration for the agents, tasks, and governance
+that run Jylhis as an agent company. We dogfood it: the same instance running
+on the Jylhis box is what manages our internal projects. Forking lets us ship
+operational fixes ahead of upstream cadence while keeping the product surface
+identical.
+
+**What differs from upstream (delta-only).**
+
+- `codex-local`: hello-probe cleanup tolerates read-only plugin trees.
+- Bundled agent CLI probe fixes.
+- `build`: justfile filled out; `devenv.nix` nixpkgs pinned to `flake.lock`.
+- `ci`: SonarCloud analysis exposes coverage and external analyzers.
+- `nixos`: AF_NETLINK allowed for interface enumeration under hardening.
+- `test`: fork fixture compatibility (schema alignment).
+- Prompt-caching telemetry: `cache_creation_input_tokens` tracked end-to-end.
+
+These are operational/build hygiene. **No product-level divergence yet.** When
+that changes we file an ADR under [`doc/adrs/`](./doc/) before merging.
+
+**Dogfood plan.**
+
+1. Run an instance against this repo as the canonical Jylhis control plane.
+2. Land Jylhis-specific patches here first; upstream them when generally
+   useful.
+3. Track upstream `paperclipai/paperclip` releases on a cadence and merge —
+   see [`AGENTS.md` §11](./AGENTS.md) for the fork-sync procedure.
+4. Any product divergence requires an ADR before merge.
+
+**Canon docs.** [`ENGINEERING_PRINCIPLES.md`](./ENGINEERING_PRINCIPLES.md),
+[`WAY_OF_WORKING.md`](./WAY_OF_WORKING.md), and [`AGENTS.md`](./AGENTS.md)
+are the contributor contract. The `canon` CI lane enforces their presence and
+the fork banner above.
+
+**Design-token compatibility.** The fork UI vendors the Jylhis design contract
+from [`Jylhis/design` `v0.4.0`](https://github.com/Jylhis/design/releases/tag/v0.4.0)
+into [`ui/src/styles/jylhis-design-v0.4.0.css`](./ui/src/styles/jylhis-design-v0.4.0.css)
+for command palette, system notice, and activity surfaces. Those surfaces read
+namespaced `--jylhis-*` variables and keep Paperclip fallbacks
+(`var(--jylhis-…, var(--existing-paperclip-token))`), so a contract mismatch
+falls back to the previous fork styling instead of breaking rendering.
+Reverting the integration is a single patch: remove the vendored import and the
+scoped `jylhis-*` surface classes.
+
 ## License
 
-MIT &copy; 2026 Paperclip
+MIT &copy; 2026 Paperclip (upstream) · Jylhis fork retains upstream MIT
 
 ## Star History
 

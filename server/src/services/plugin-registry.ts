@@ -28,6 +28,7 @@ import type {
   PluginWebhookDeliveryStatus,
 } from "@paperclipai/shared";
 import { conflict, notFound } from "../errors.js";
+import { paperclipMetrics } from "../observability/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -700,6 +701,10 @@ export function pluginRegistryService(db: Db) {
         headers?: Record<string, string>;
       },
     ) => {
+      paperclipMetrics().webhookDeliveriesReceived.add(1, {
+        "plugin.id": pluginId,
+        "webhook.key": webhookKey,
+      });
       return db
         .insert(pluginWebhookDeliveries)
         .values({
@@ -731,12 +736,20 @@ export function pluginRegistryService(db: Db) {
         finishedAt?: Date;
       },
     ) => {
-      return db
+      const updated = await db
         .update(pluginWebhookDeliveries)
         .set(input)
         .where(eq(pluginWebhookDeliveries.id, deliveryId))
         .returning()
         .then((rows) => rows[0] ?? null);
+
+      if (updated) {
+        const m = paperclipMetrics();
+        const attrs = { "plugin.id": updated.pluginId, "webhook.key": updated.webhookKey };
+        if (input.status === "success") m.webhookDeliveriesProcessed.add(1, attrs);
+        else if (input.status === "failed") m.webhookDeliveriesFailed.add(1, attrs);
+      }
+      return updated;
     },
   };
 }

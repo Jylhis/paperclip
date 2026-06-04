@@ -304,10 +304,12 @@ describe("issue validators", () => {
       title: "Run a cheap heartbeat",
       assigneeAdapterOverrides: {
         modelProfile: "cheap",
+        includeCrossProjectContext: true,
       },
     });
 
     expect(parsed.assigneeAdapterOverrides?.modelProfile).toBe("cheap");
+    expect(parsed.assigneeAdapterOverrides?.includeCrossProjectContext).toBe(true);
   });
 
   it("rejects unknown issue model profile keys", () => {

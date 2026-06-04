@@ -1,9 +1,11 @@
 ---
 title: Database
-summary: Embedded PGlite vs Docker Postgres vs hosted
+summary: Embedded vs Docker Postgres vs hosted (and the NixOS module)
 ---
 
 Paperclip uses PostgreSQL via Drizzle ORM. There are three ways to run the database.
+
+The NixOS module (`services.paperclip`) does **not** support embedded PostgreSQL — it requires either NixOS-managed PostgreSQL via `services.postgresql` (`database.createLocally = true`, PostgreSQL 17 pinned) or a caller-supplied connection URL (`database.createLocally = false`, `database.url`). See `doc/DATABASE.md` for the full deployment-surface map.
 
 ## 1. Embedded PostgreSQL (Default)
 

@@ -292,9 +292,6 @@ const feedbackVotes: FeedbackVote[] = [
     authorUserId: currentUserId,
     vote: "up",
     reason: null,
-    sharedWithLabs: false,
-    sharedAt: null,
-    consentVersion: null,
     redactionSummary: null,
     createdAt: new Date("2026-04-20T13:52:00.000Z"),
     updatedAt: new Date("2026-04-20T13:52:00.000Z"),
@@ -688,7 +685,6 @@ function IssueChatMatrix() {
             timelineEvents={issueTimelineEvents}
             liveRuns={[liveRun]}
             feedbackVotes={feedbackVotes}
-            feedbackDataSharingPreference="allowed"
             companyId={companyId}
             projectId={projectId}
             issueStatus="in_progress"

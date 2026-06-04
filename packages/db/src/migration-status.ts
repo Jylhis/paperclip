@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const connection = await resolveMigrationConnection();
 
   try {
-    const state = await inspectMigrations(connection.connectionString);
+    const state = await inspectMigrations(connection.target);
     const payload =
       state.status === "upToDate"
         ? {

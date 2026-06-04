@@ -6,6 +6,7 @@ import {
   applyPendingMigrations,
   inspectMigrations,
 } from "./client.js";
+import { type DatabaseTarget, targetFromUrl } from "./target.js";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -15,10 +16,10 @@ const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
-async function createTempDatabase(): Promise<string> {
+async function createTempDatabase(): Promise<{ connectionString: string; target: DatabaseTarget }> {
   const db = await startEmbeddedPostgresTestDatabase("paperclip-db-client-");
   cleanups.push(db.cleanup);
-  return db.connectionString;
+  return { connectionString: db.connectionString, target: targetFromUrl(db.connectionString) };
 }
 
 async function migrationHash(migrationFile: string): Promise<string> {
@@ -46,9 +47,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "applies an inserted earlier migration without replaying later legacy migrations",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -62,16 +63,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0030_rich_magneto.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
@@ -99,9 +100,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0044 safely when its schema changes already exist",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -125,16 +126,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0044_illegal_toad.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
     },
     20_000,
@@ -143,9 +144,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "enforces a unique board_api_keys.key_hash after migration 0044",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -173,9 +174,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0046 safely when document revision columns already exist",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -200,16 +201,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0046_smooth_sentinels.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
@@ -245,9 +246,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0047 safely when feedback tables and run columns already exist",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -294,16 +295,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0047_overjoyed_groot.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
@@ -339,9 +340,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0048 safely when routines.variables already exists",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -365,16 +366,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0048_flashy_marrow.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
@@ -405,9 +406,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0050 safely when projects.env already exists",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -431,16 +432,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0050_stiff_luckman.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });
@@ -471,9 +472,9 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
   it(
     "replays migration 0059 safely when plugin_database_namespaces already exists",
     async () => {
-      const connectionString = await createTempDatabase();
+      const { connectionString, target } = await createTempDatabase();
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
       const sql = postgres(connectionString, { max: 1, onnotice: () => {} });
       try {
@@ -502,16 +503,16 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
         await sql.end();
       }
 
-      const pendingState = await inspectMigrations(connectionString);
+      const pendingState = await inspectMigrations(target);
       expect(pendingState).toMatchObject({
         status: "needsMigrations",
         pendingMigrations: ["0059_plugin_database_namespaces.sql"],
         reason: "pending-migrations",
       });
 
-      await applyPendingMigrations(connectionString);
+      await applyPendingMigrations(target);
 
-      const finalState = await inspectMigrations(connectionString);
+      const finalState = await inspectMigrations(target);
       expect(finalState.status).toBe("upToDate");
 
       const verifySql = postgres(connectionString, { max: 1, onnotice: () => {} });

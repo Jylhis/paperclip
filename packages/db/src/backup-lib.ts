@@ -6,6 +6,7 @@ import { open as openFile } from "node:fs/promises";
 import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import postgres from "postgres";
+import { type DatabaseTarget, postgresOptions } from "./target.js";
 
 export type BackupRetentionPolicy = {
   dailyDays: number;
@@ -14,7 +15,7 @@ export type BackupRetentionPolicy = {
 };
 
 export type RunDatabaseBackupOptions = {
-  connectionString: string;
+  target: DatabaseTarget;
   backupDir: string;
   retention: BackupRetentionPolicy;
   filenamePrefix?: string;
@@ -37,10 +38,43 @@ export type RunDatabaseBackupResult = {
 };
 
 export type RunDatabaseRestoreOptions = {
-  connectionString: string;
+  target: DatabaseTarget;
   backupFile: string;
   connectTimeoutSeconds?: number;
 };
+
+/**
+ * Translate a {@link DatabaseTarget} into the libpq-style CLI arguments
+ * understood by `pg_dump` and `psql`. URL targets become a single
+ * `--dbname=postgres://...` flag (libpq URI form); socket targets become
+ * `--host=...`, `--username=...`, `--dbname=...`, and an optional
+ * `--port=...` in that exact order.
+ */
+export function pgToolArgs(target: DatabaseTarget): string[] {
+  if (target.kind === "url") {
+    return [`--dbname=${target.connectionString}`];
+  }
+  const args = [
+    `--host=${target.socketDir}`,
+    `--username=${target.user}`,
+    `--dbname=${target.database}`,
+  ];
+  if (target.port !== undefined) {
+    args.push(`--port=${target.port}`);
+  }
+  return args;
+}
+
+function openPostgres(
+  target: DatabaseTarget,
+  options: { max?: number; connect_timeout?: number; onnotice?: (notice: unknown) => void },
+): ReturnType<typeof postgres> {
+  const [arg] = postgresOptions(target);
+  if (typeof arg === "string") {
+    return postgres(arg, options);
+  }
+  return postgres({ ...arg, ...options });
+}
 
 type SequenceDefinition = {
   sequence_schema: string;
@@ -249,12 +283,39 @@ function hasBackupTransforms(opts: RunDatabaseBackupOptions): boolean {
     Object.keys(opts.nullifyColumns ?? {}).length > 0;
 }
 
-function formatSqlValue(rawValue: unknown, columnName: string | undefined, nullifiedColumns: Set<string>): string {
+function formatPostgresArrayElement(value: unknown): string {
+  if (value === null || value === undefined) return "NULL";
+  if (Array.isArray(value)) return formatPostgresArrayLiteral(value);
+  const raw = value instanceof Date
+    ? value.toISOString()
+    : typeof value === "object"
+      ? JSON.stringify(value)
+      : String(value);
+  if (raw.length === 0 || /^null$/i.test(raw) || /[{}\s,"\\]/.test(raw)) {
+    return `"${raw.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  }
+  return raw;
+}
+
+function formatPostgresArrayLiteral(value: unknown[]): string {
+  return `{${value.map(formatPostgresArrayElement).join(",")}}`;
+}
+
+function formatSqlValue(
+  rawValue: unknown,
+  columnName: string | undefined,
+  nullifiedColumns: Set<string>,
+  dataType?: string,
+): string {
   const val = columnName && nullifiedColumns.has(columnName) ? null : rawValue;
   if (val === null || val === undefined) return "NULL";
+  if (dataType === "json" || dataType === "jsonb") {
+    return formatSqlLiteral(JSON.stringify(val));
+  }
   if (typeof val === "boolean") return val ? "true" : "false";
   if (typeof val === "number") return String(val);
   if (val instanceof Date) return formatSqlLiteral(val.toISOString());
+  if (Array.isArray(val)) return formatSqlLiteral(formatPostgresArrayLiteral(val));
   if (typeof val === "object") return formatSqlLiteral(JSON.stringify(val));
   return formatSqlLiteral(String(val));
 }
@@ -285,7 +346,7 @@ async function waitForChildExit(child: ReturnType<typeof spawn>, label: string):
 }
 
 async function runPgDumpBackup(opts: {
-  connectionString: string;
+  target: DatabaseTarget;
   backupFile: string;
   connectTimeout: number;
 }): Promise<void> {
@@ -293,7 +354,7 @@ async function runPgDumpBackup(opts: {
   const child = spawn(
     pgDumpBin,
     [
-      `--dbname=${opts.connectionString}`,
+      ...pgToolArgs(opts.target),
       "--format=plain",
       "--clean",
       "--if-exists",
@@ -324,7 +385,7 @@ async function restoreWithPsql(opts: RunDatabaseRestoreOptions, connectTimeout: 
   const child = spawn(
     psqlBin,
     [
-      `--dbname=${opts.connectionString}`,
+      ...pgToolArgs(opts.target),
       "--set=ON_ERROR_STOP=1",
       "--quiet",
       "--no-psqlrc",
@@ -499,7 +560,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
   const canUsePgDump = !hasBackupTransforms(opts);
   const excludedTableNames = normalizeTableNameSet(opts.excludeTables);
   const nullifiedColumnsByTable = normalizeNullifyColumnMap(opts.nullifyColumns);
-  let sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+  let sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
   let sqlClosed = false;
   const closeSql = async () => {
     if (sqlClosed) return;
@@ -517,7 +578,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       try {
         await closeSql();
         await runPgDumpBackup({
-          connectionString: opts.connectionString,
+          target: opts.target,
           backupFile,
           connectTimeout,
         });
@@ -536,7 +597,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         if (backupEngine === "pg_dump") {
           throw error;
         }
-        sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+        sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
         sqlClosed = false;
       }
     }
@@ -745,58 +806,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       emit("");
     }
 
-    // Foreign keys (after all tables created)
-    const allForeignKeys = await sql<{
-      constraint_name: string;
-      source_schema: string;
-      source_table: string;
-      source_columns: string[];
-      target_schema: string;
-      target_table: string;
-      target_columns: string[];
-      update_rule: string;
-      delete_rule: string;
-    }[]>`
-      SELECT
-        c.conname AS constraint_name,
-        srcn.nspname AS source_schema,
-        src.relname AS source_table,
-        array_agg(sa.attname ORDER BY array_position(c.conkey, sa.attnum)) AS source_columns,
-        tgtn.nspname AS target_schema,
-        tgt.relname AS target_table,
-        array_agg(ta.attname ORDER BY array_position(c.confkey, ta.attnum)) AS target_columns,
-        CASE c.confupdtype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS update_rule,
-        CASE c.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS delete_rule
-      FROM pg_constraint c
-      JOIN pg_class src ON src.oid = c.conrelid
-      JOIN pg_namespace srcn ON srcn.oid = src.relnamespace
-      JOIN pg_class tgt ON tgt.oid = c.confrelid
-      JOIN pg_namespace tgtn ON tgtn.oid = tgt.relnamespace
-      JOIN pg_attribute sa ON sa.attrelid = src.oid AND sa.attnum = ANY(c.conkey)
-      JOIN pg_attribute ta ON ta.attrelid = tgt.oid AND ta.attnum = ANY(c.confkey)
-      WHERE c.contype = 'f'
-        AND ${sql.unsafe(nonSystemSchemaPredicate("srcn.nspname"))}
-      GROUP BY c.conname, srcn.nspname, src.relname, tgtn.nspname, tgt.relname, c.confupdtype, c.confdeltype
-      ORDER BY srcn.nspname, src.relname, c.conname
-    `;
-    const fks = allForeignKeys.filter(
-      (fk) => includedTableNames.has(tableKey(fk.source_schema, fk.source_table))
-        && includedTableNames.has(tableKey(fk.target_schema, fk.target_table)),
-    );
-
-    if (fks.length > 0) {
-      emit("-- Foreign keys");
-      for (const fk of fks) {
-        const srcCols = fk.source_columns.map((c) => `"${c}"`).join(", ");
-        const tgtCols = fk.target_columns.map((c) => `"${c}"`).join(", ");
-        emitStatement(
-          `ALTER TABLE ${quoteQualifiedName(fk.source_schema, fk.source_table)} ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${srcCols}) REFERENCES ${quoteQualifiedName(fk.target_schema, fk.target_table)} (${tgtCols}) ON UPDATE ${fk.update_rule} ON DELETE ${fk.delete_rule};`,
-        );
-      }
-      emit("");
-    }
-
-    // Unique constraints
+    // Unique constraints must exist before foreign keys that reference them.
     const allUniqueConstraints = await sql<{
       constraint_name: string;
       schema_name: string;
@@ -823,6 +833,58 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       for (const u of uniques) {
         const cols = u.column_names.map((c) => `"${c}"`).join(", ");
         emitStatement(`ALTER TABLE ${quoteQualifiedName(u.schema_name, u.tablename)} ADD CONSTRAINT "${u.constraint_name}" UNIQUE (${cols});`);
+      }
+      emit("");
+    }
+
+    // Foreign keys (after all tables and referenced unique constraints are created)
+    const allForeignKeys = await sql<{
+      constraint_name: string;
+      source_schema: string;
+      source_table: string;
+      source_columns: string[];
+      target_schema: string;
+      target_table: string;
+      target_columns: string[];
+      update_rule: string;
+      delete_rule: string;
+    }[]>`
+      SELECT
+        c.conname AS constraint_name,
+        srcn.nspname AS source_schema,
+        src.relname AS source_table,
+        array_agg(sa.attname ORDER BY key_columns.ordinal_position) AS source_columns,
+        tgtn.nspname AS target_schema,
+        tgt.relname AS target_table,
+        array_agg(ta.attname ORDER BY key_columns.ordinal_position) AS target_columns,
+        CASE c.confupdtype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS update_rule,
+        CASE c.confdeltype WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END AS delete_rule
+      FROM pg_constraint c
+      JOIN pg_class src ON src.oid = c.conrelid
+      JOIN pg_namespace srcn ON srcn.oid = src.relnamespace
+      JOIN pg_class tgt ON tgt.oid = c.confrelid
+      JOIN pg_namespace tgtn ON tgtn.oid = tgt.relnamespace
+      JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS key_columns(source_attnum, target_attnum, ordinal_position) ON true
+      JOIN pg_attribute sa ON sa.attrelid = src.oid AND sa.attnum = key_columns.source_attnum
+      JOIN pg_attribute ta ON ta.attrelid = tgt.oid AND ta.attnum = key_columns.target_attnum
+      WHERE c.contype = 'f'
+        AND ${sql.unsafe(nonSystemSchemaPredicate("srcn.nspname"))}
+      GROUP BY c.conname, srcn.nspname, src.relname, tgtn.nspname, tgt.relname, c.confupdtype, c.confdeltype
+      ORDER BY srcn.nspname, src.relname, c.conname
+    `;
+    const fks = allForeignKeys.filter(
+      (fk) => includedTableNames.has(tableKey(fk.source_schema, fk.source_table))
+        && includedTableNames.has(tableKey(fk.target_schema, fk.target_table)),
+    );
+
+    if (fks.length > 0) {
+      emit("-- Foreign keys");
+      for (const fk of fks) {
+        const srcCols = fk.source_columns.map((c) => `"${c}"`).join(", ");
+        const tgtCols = fk.target_columns.map((c) => `"${c}"`).join(", ");
+        emitStatement(
+          `ALTER TABLE ${quoteQualifiedName(fk.source_schema, fk.source_table)} ADD CONSTRAINT "${fk.constraint_name}" FOREIGN KEY (${srcCols}) REFERENCES ${quoteQualifiedName(fk.target_schema, fk.target_table)} (${tgtCols}) ON UPDATE ${fk.update_rule} ON DELETE ${fk.delete_rule};`,
+        );
       }
       emit("");
     }
@@ -871,7 +933,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       if (backupEngine !== "javascript" && nullifiedColumns.size === 0) {
         emit(`COPY ${qualifiedTableName} (${colNames}) FROM stdin;`);
         await writer.writeRaw("\n");
-        const copySql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+        const copySql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
         try {
           const copyStream = await copySql
             .unsafe(`COPY ${qualifiedTableName} (${colNames}) TO STDOUT`)
@@ -895,7 +957,7 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
       for await (const rows of rowCursor) {
         for (const row of rows) {
           const values = row.map((rawValue, index) =>
-            formatSqlValue(rawValue, cols[index]?.column_name, nullifiedColumns),
+            formatSqlValue(rawValue, cols[index]?.column_name, nullifiedColumns, cols[index]?.data_type),
           );
           emitStatement(`INSERT INTO ${qualifiedTableName} (${colNames}) VALUES (${values.join(", ")});`);
         }
@@ -968,7 +1030,7 @@ export async function runDatabaseRestore(opts: RunDatabaseRestoreOptions): Promi
     }
   }
 
-  const sql = postgres(opts.connectionString, { max: 1, connect_timeout: connectTimeout });
+  const sql = openPostgres(opts.target, { max: 1, connect_timeout: connectTimeout });
 
   try {
     await sql`SELECT 1`;

@@ -55,6 +55,7 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "routines.managed.reset": ["routines.managed"],
   "project.workspaces.list": ["project.workspaces.read"],
   "project.workspaces.get": ["project.workspaces.read"],
+  "execution.workspaces.get": ["execution.workspaces.read"],
   "issues.list": ["issues.read"],
   "issues.get": ["issues.read"],
   "issues.relations.get": ["issue.relations.read"],
@@ -95,7 +96,6 @@ const OPERATION_CAPABILITIES: Record<string, readonly PluginCapability[]> = {
   "issue.interactions.create": ["issue.interactions.create"],
   "activity.log": ["activity.log.write"],
   "metrics.write": ["metrics.write"],
-  "telemetry.track": ["telemetry.track"],
   "db.migrate": ["database.namespace.migrate"],
   "db.execute": ["database.namespace.write"],
 
@@ -148,6 +148,7 @@ const UI_SLOT_CAPABILITIES: Record<PluginUiSlotType, PluginCapability> = {
   commentAnnotation: "ui.commentAnnotation.register",
   commentContextMenuItem: "ui.action.register",
   settingsPage: "instance.settings.register",
+  companySettingsPage: "instance.settings.register",
   routeSidebar: "ui.sidebar.register",
 };
 

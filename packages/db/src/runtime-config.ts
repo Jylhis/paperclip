@@ -6,13 +6,22 @@ import {
   resolvePaperclipConfigPathForInstance,
   resolvePaperclipEnvPathForConfig,
 } from "@paperclipai/shared/home-paths";
+import type { DatabaseTarget } from "./target.js";
 
 const CONFIG_BASENAME = "config.json";
+
+type PartialSocketConfig = {
+  socketDir: string;
+  name: string;
+  user: string;
+  port?: number;
+};
 
 type PartialConfig = {
   database?: {
     mode?: "embedded-postgres" | "postgres";
     connectionString?: string;
+    socket?: PartialSocketConfig;
     embeddedPostgresDataDir?: string;
     embeddedPostgresPort?: number;
     pgliteDataDir?: string;
@@ -20,11 +29,18 @@ type PartialConfig = {
   };
 };
 
+export type ResolvedDatabaseTargetSource =
+  | "DATABASE_URL"
+  | "PAPERCLIP_DATABASE_SOCKET"
+  | "paperclip-env"
+  | "config.database.socket"
+  | "config.database.connectionString";
+
 export type ResolvedDatabaseTarget =
   | {
       mode: "postgres";
-      connectionString: string;
-      source: "DATABASE_URL" | "paperclip-env" | "config.database.connectionString";
+      target: DatabaseTarget;
+      source: ResolvedDatabaseTargetSource;
       configPath: string;
       envPath: string;
     }
@@ -169,6 +185,7 @@ function readConfig(configPath: string): PartialConfig | null {
           mode: database.mode === "postgres" ? "postgres" : "embedded-postgres",
           connectionString:
             typeof database.connectionString === "string" ? database.connectionString : undefined,
+          socket: readSocketConfig(database.socket),
           embeddedPostgresDataDir:
             typeof database.embeddedPostgresDataDir === "string"
               ? database.embeddedPostgresDataDir
@@ -181,6 +198,75 @@ function readConfig(configPath: string): PartialConfig | null {
   };
 }
 
+function readSocketConfig(raw: unknown): PartialSocketConfig | undefined {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return undefined;
+  const obj = raw as Record<string, unknown>;
+  const socketDir = typeof obj.socketDir === "string" ? obj.socketDir.trim() : "";
+  const name = typeof obj.name === "string" ? obj.name.trim() : "";
+  const user = typeof obj.user === "string" ? obj.user.trim() : "";
+  if (!socketDir || !name || !user) return undefined;
+  const port = asPositiveInt(obj.port);
+  return {
+    socketDir,
+    name,
+    user,
+    ...(port !== null ? { port } : {}),
+  };
+}
+
+function resolveSocketEnvTarget(
+  configPath: string,
+  envPath: string,
+): ResolvedDatabaseTarget | null {
+  const socketDir = process.env.PAPERCLIP_DATABASE_SOCKET_DIR?.trim();
+  const name = process.env.PAPERCLIP_DATABASE_NAME?.trim();
+  const user = process.env.PAPERCLIP_DATABASE_USER?.trim();
+  const portRaw = process.env.PAPERCLIP_DATABASE_PORT?.trim();
+
+  const provided = [
+    ["PAPERCLIP_DATABASE_SOCKET_DIR", socketDir],
+    ["PAPERCLIP_DATABASE_NAME", name],
+    ["PAPERCLIP_DATABASE_USER", user],
+  ] as const;
+
+  const anyProvided = provided.some(([, value]) => Boolean(value));
+  const allProvided = provided.every(([, value]) => Boolean(value));
+
+  if (!anyProvided) return null;
+
+  if (!allProvided) {
+    const missing = provided.filter(([, value]) => !value).map(([key]) => key);
+    throw new Error(
+      `PAPERCLIP_DATABASE_SOCKET_DIR requires PAPERCLIP_DATABASE_NAME and PAPERCLIP_DATABASE_USER; missing: ${missing.join(", ")}`,
+    );
+  }
+
+  let port: number | undefined;
+  if (portRaw) {
+    const parsed = Number(portRaw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+      throw new Error(
+        `PAPERCLIP_DATABASE_PORT must be an integer between 1 and 65535, got "${portRaw}"`,
+      );
+    }
+    port = parsed;
+  }
+
+  return {
+    mode: "postgres",
+    target: {
+      kind: "socket",
+      socketDir: socketDir!,
+      database: name!,
+      user: user!,
+      ...(port !== undefined ? { port } : {}),
+    },
+    source: "PAPERCLIP_DATABASE_SOCKET",
+    configPath,
+    envPath,
+  };
+}
+
 export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
   const configPath = resolvePaperclipConfigPath();
   const envPath = resolvePaperclipEnvPath(configPath);
@@ -190,18 +276,21 @@ export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
   if (envUrl) {
     return {
       mode: "postgres",
-      connectionString: envUrl,
+      target: { kind: "url", connectionString: envUrl },
       source: "DATABASE_URL",
       configPath,
       envPath,
     };
   }
 
+  const socketEnvTarget = resolveSocketEnvTarget(configPath, envPath);
+  if (socketEnvTarget) return socketEnvTarget;
+
   const fileEnvUrl = envEntries.DATABASE_URL?.trim();
   if (fileEnvUrl) {
     return {
       mode: "postgres",
-      connectionString: fileEnvUrl,
+      target: { kind: "url", connectionString: fileEnvUrl },
       source: "paperclip-env",
       configPath,
       envPath,
@@ -209,11 +298,28 @@ export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
   }
 
   const config = readConfig(configPath);
+  const socket = config?.database?.socket;
+  if (socket) {
+    return {
+      mode: "postgres",
+      target: {
+        kind: "socket",
+        socketDir: socket.socketDir,
+        database: socket.name,
+        user: socket.user,
+        ...(socket.port !== undefined ? { port: socket.port } : {}),
+      },
+      source: "config.database.socket",
+      configPath,
+      envPath,
+    };
+  }
+
   const connectionString = config?.database?.connectionString?.trim();
   if (config?.database?.mode === "postgres" && connectionString) {
     return {
       mode: "postgres",
-      connectionString,
+      target: { kind: "url", connectionString },
       source: "config.database.connectionString",
       configPath,
       envPath,

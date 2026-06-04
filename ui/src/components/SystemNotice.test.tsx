@@ -1,20 +1,18 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import type { ReactElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { SystemNotice } from "./SystemNotice";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+import { JYLHIS_DESIGN_CONTRACT_VERSION } from "../lib/jylhis-design";
 
 let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
 
 afterEach(() => {
   if (root) {
-    act(() => root?.unmount());
+    flushSync(() => root?.unmount());
   }
   root = null;
   container?.remove();
@@ -25,9 +23,24 @@ function render(element: ReactElement) {
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
-  act(() => root?.render(element));
+  flushSync(() => root?.render(element));
   return container;
 }
+
+function renderInTheme(themeClass: string | null, element: ReactElement) {
+  return render(
+    <div className={themeClass ?? undefined}>
+      {element}
+    </div>,
+  );
+}
+
+const EXPECTED_TONE_TOKENS = {
+  info: { status: "status-info", ansi: "ansi-info" },
+  success: { status: "status-ok", ansi: "ansi-ok" },
+  warning: { status: "status-warn", ansi: "ansi-warn" },
+  danger: { status: "status-err", ansi: "ansi-err" },
+} as const;
 
 describe("SystemNotice", () => {
   it("renders the warning tone label and body in a single status container", () => {
@@ -64,6 +77,44 @@ describe("SystemNotice", () => {
     expect(status?.getAttribute("aria-label")).toBe("System notice");
   });
 
+  it("maps each tone to the expected design token family in light and dark contexts", () => {
+    for (const themeClass of [null, "dark"]) {
+      for (const [tone, expectedTokens] of Object.entries(EXPECTED_TONE_TOKENS)) {
+        const node = renderInTheme(
+          themeClass,
+          <SystemNotice
+            tone={tone as keyof typeof EXPECTED_TONE_TOKENS}
+            body={`${themeClass ?? "light"} ${tone} contract wiring check.`}
+            detailsDefaultOpen
+            metadata={[
+              {
+                rows: [{ kind: "issue", label: "Issue", identifier: "PAP-1" }],
+              },
+            ]}
+          />,
+        );
+
+        const status = node.querySelector('[role="status"]');
+        expect(status?.getAttribute("data-jylhis-design-contract")).toBe(
+          JYLHIS_DESIGN_CONTRACT_VERSION,
+        );
+        expect(status?.getAttribute("data-jylhis-tone")).toBe(tone);
+        expect(status?.className).toContain("jylhis-system-notice");
+        expect(status?.className).toContain(expectedTokens.status);
+        expect(status?.className).toContain(expectedTokens.ansi);
+        expect(status?.className).toContain("jylhis-system-notice-status-surface");
+
+        const iconWrap = status?.querySelector("header span[aria-hidden]");
+        expect(iconWrap?.className).toContain("jylhis-system-notice-status-icon");
+
+        expect(status?.innerHTML).toContain("jylhis-system-notice-status-ink");
+
+        const details = status?.querySelector('[id]');
+        expect(details?.className).toContain("jylhis-system-notice-status-divider");
+      }
+    }
+  });
+
   it("collapses metadata details by default and toggles aria-expanded on click", () => {
     const node = render(
       <SystemNotice
@@ -91,7 +142,7 @@ describe("SystemNotice", () => {
     expect(button?.getAttribute("aria-controls")).not.toBeNull();
     expect(node.textContent).not.toContain("PAP-3440");
 
-    act(() => {
+    flushSync(() => {
       (button as HTMLButtonElement).click();
     });
 

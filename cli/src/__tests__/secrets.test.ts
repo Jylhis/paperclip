@@ -99,9 +99,6 @@ function configWithSecretsProvider(provider: PaperclipConfig["secrets"]["provide
       baseUrlMode: "auto",
       disableSignUp: false,
     },
-    telemetry: {
-      enabled: true,
-    },
     storage: {
       provider: "local_disk",
       localDisk: {

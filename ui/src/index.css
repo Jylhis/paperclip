@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@import "./styles/jylhis-design-v0.4.0.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -89,6 +90,17 @@
   --chip-match-identifier-bg: var(--muted);
   --chip-match-identifier-fg: var(--muted-foreground);
   --chip-match-identifier-border: var(--border);
+  --command-item-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, var(--accent) 72%, var(--background) 28%));
+  --command-item-selected-border: var(--jylhis-color-accent, color-mix(in oklab, var(--border) 86%, var(--foreground) 14%));
+  --command-item-selected-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.97 0.02 245) 72%, var(--background) 28%));
+  --command-search-all-border: var(--jylhis-color-decorator, color-mix(in oklab, oklch(0.72 0.09 245) 24%, var(--border) 76%));
+  --command-search-all-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.94 0.03 245) 78%, var(--background) 22%));
+  --command-keycap-bg: var(--jylhis-color-bg-subtle, color-mix(in oklab, var(--muted) 88%, var(--background) 12%));
+  --command-keycap-border: var(--jylhis-color-border-strong, color-mix(in oklab, var(--border) 88%, var(--foreground) 12%));
+  --command-keycap-foreground: var(--jylhis-color-text-muted, color-mix(in oklab, var(--foreground) 92%, var(--muted-foreground) 8%));
+  --command-keycap-shadow: var(--jylhis-color-border, color-mix(in oklab, var(--border) 88%, transparent));
 }
 
 .dark {
@@ -136,6 +148,17 @@
   --chip-match-identifier-bg: var(--muted);
   --chip-match-identifier-fg: var(--muted-foreground);
   --chip-match-identifier-border: var(--border);
+  --command-item-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, var(--accent) 84%, var(--background) 16%));
+  --command-item-selected-border: var(--jylhis-color-accent, color-mix(in oklab, var(--border) 82%, var(--foreground) 18%));
+  --command-item-selected-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.31 0.05 245) 80%, var(--background) 20%));
+  --command-search-all-border: var(--jylhis-color-decorator, color-mix(in oklab, oklch(0.58 0.09 245) 34%, var(--border) 66%));
+  --command-search-all-foreground: var(--jylhis-color-text-heading, var(--foreground));
+  --command-search-all-selected-bg: var(--jylhis-color-accent-subtle, color-mix(in oklab, oklch(0.36 0.06 245) 88%, var(--background) 12%));
+  --command-keycap-bg: var(--jylhis-color-bg-subtle, color-mix(in oklab, var(--muted) 76%, var(--background) 24%));
+  --command-keycap-border: var(--jylhis-color-border-strong, color-mix(in oklab, var(--border) 78%, var(--foreground) 22%));
+  --command-keycap-foreground: var(--jylhis-color-text-muted, color-mix(in oklab, var(--foreground) 88%, var(--muted-foreground) 12%));
+  --command-keycap-shadow: var(--jylhis-color-border, color-mix(in oklab, var(--border) 70%, transparent));
 }
 
 @layer base {
@@ -173,6 +196,169 @@
   }
 }
 
+@layer components {
+  .jylhis-command-dialog {
+    border: 1px solid var(--jylhis-color-border, var(--border));
+    background: var(--jylhis-color-surface-raised, var(--popover));
+    color: var(--jylhis-color-text, var(--popover-foreground));
+    border-radius: var(--jylhis-radius-md, 0.5rem);
+    box-shadow: none;
+  }
+
+  .jylhis-command-surface {
+    background: var(--jylhis-color-surface-raised, var(--popover));
+    color: var(--jylhis-color-text, var(--popover-foreground));
+  }
+
+  .jylhis-command-input-wrap {
+    border-bottom-color: var(--jylhis-color-border, var(--border));
+    padding-inline: var(--jylhis-space-md, 0.75rem);
+  }
+
+  .jylhis-command-input-wrap svg {
+    color: var(--jylhis-color-text-muted, var(--muted-foreground));
+  }
+
+  .jylhis-command-group-heading {
+    color: var(--jylhis-color-text-faint, var(--muted-foreground));
+    letter-spacing: 0.12em;
+  }
+
+  .jylhis-command-separator {
+    background: var(--jylhis-color-border, var(--border));
+  }
+
+  .jylhis-command-item {
+    border-left: 3px solid transparent;
+    border-radius: var(--jylhis-radius-sm, 0.375rem);
+    color: var(--jylhis-color-text, var(--foreground));
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      border-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-command-item:hover {
+    background: var(--jylhis-color-bg-subtle, var(--accent));
+    color: var(--jylhis-color-text-heading, var(--foreground));
+  }
+
+  .jylhis-command-item[data-selected="true"] {
+    background: var(--jylhis-color-accent-subtle, var(--accent));
+    color: var(--jylhis-color-text-heading, var(--foreground));
+    border-left-color: var(--jylhis-color-accent, var(--ring));
+  }
+
+  .jylhis-command-item[data-selected="true"] svg,
+  .jylhis-command-item:hover svg {
+    color: var(--jylhis-color-accent, var(--foreground));
+  }
+
+  .jylhis-command-search-all {
+    border: 1px solid var(--jylhis-color-decorator, var(--border));
+    background: var(--jylhis-color-accent-subtle, var(--accent));
+  }
+
+  .jylhis-command-kbd {
+    border: 1px solid var(--jylhis-color-border-strong, var(--border));
+    background: var(--jylhis-color-bg-subtle, var(--muted));
+    color: var(--jylhis-color-text-muted, var(--muted-foreground));
+    border-radius: var(--jylhis-radius-sm, 3px);
+    padding: 0.15em 0.4em;
+  }
+
+  .jylhis-activity-row {
+    padding: var(--jylhis-space-md, 1rem);
+    color: var(--jylhis-color-text, var(--foreground));
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-activity-row:hover {
+    background: var(--jylhis-color-bg-subtle, var(--accent));
+  }
+
+  .jylhis-system-notice {
+    border-radius: var(--jylhis-radius-md, 0.5rem);
+    box-shadow: none;
+  }
+
+  .status-info {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-info);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-info);
+  }
+
+  .status-ok {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-ok);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-ok);
+  }
+
+  .status-warn {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-warn);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-warn);
+  }
+
+  .status-err {
+    --jylhis-system-notice-status-color: var(--jylhis-color-status-err);
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-err);
+  }
+
+  .ansi-info {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-info);
+  }
+
+  .ansi-ok {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-ok);
+  }
+
+  .ansi-warn {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-warn);
+  }
+
+  .ansi-err {
+    --jylhis-system-notice-ansi-color: var(--jylhis-color-status-err);
+  }
+
+  .jylhis-system-notice-status-surface {
+    border-color: var(--jylhis-system-notice-status-color);
+    background: color-mix(in srgb, var(--jylhis-system-notice-status-color) 12%, transparent);
+  }
+
+  .jylhis-system-notice-status-icon {
+    background: color-mix(in srgb, var(--jylhis-system-notice-ansi-color) 18%, transparent);
+    color: var(--jylhis-system-notice-ansi-color);
+  }
+
+  .jylhis-system-notice-status-ink {
+    color: var(--jylhis-system-notice-ansi-color);
+  }
+
+  .jylhis-system-notice-status-divider {
+    border-color: color-mix(in srgb, var(--jylhis-system-notice-status-color) 50%, transparent);
+  }
+
+  .jylhis-system-notice-detail-button {
+    transition:
+      background-color var(--jylhis-transition-fast, 150ms ease),
+      border-color var(--jylhis-transition-fast, 150ms ease),
+      color var(--jylhis-transition-fast, 150ms ease);
+  }
+
+  .jylhis-system-notice-detail-button:hover {
+    border-color: var(--jylhis-color-border, var(--border));
+    background: color-mix(in srgb, var(--jylhis-color-surface-raised, var(--background)) 80%, transparent);
+    color: var(--jylhis-color-text-heading, var(--foreground));
+  }
+
+  .jylhis-system-notice-code {
+    border: 1px solid var(--jylhis-color-code-border, var(--border));
+    background: var(--jylhis-color-code-bg, var(--muted));
+    color: var(--jylhis-color-code-text, var(--foreground));
+    border-radius: var(--jylhis-radius-sm, 3px);
+  }
+}
+
 @media (pointer: coarse) {
   button,
   [role="button"],
@@ -183,7 +369,18 @@
     min-height: 44px;
   }
 
-  [data-slot="toggle"] {
+  /* Small inline widgets keep their design size on touch devices —
+     forcing 44px here stretches checkboxes, chip menus, and icon buttons
+     that live inside dense rows (sidebar headers, issue rows, filter
+     popovers). The surrounding row provides the touch area. */
+  [data-slot="toggle"],
+  [data-slot="checkbox"],
+  [data-slot="icon-button"],
+  [data-size="xs"],
+  [data-size="icon-xs"],
+  [data-size="icon-sm"],
+  input[type="checkbox"],
+  input[type="radio"] {
     min-height: 0;
   }
 }
@@ -706,18 +903,28 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   background: none;
 }
 
-/* Copy-to-clipboard button on fenced code blocks */
+/* Actions for fenced and indented preformatted markdown blocks */
 .paperclip-markdown-codeblock {
   position: relative;
 }
 
-.paperclip-markdown-codeblock-copy {
+.paperclip-markdown-codeblock-actions {
   position: absolute;
   top: 0.4rem;
   right: 0.4rem;
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.paperclip-markdown-codeblock-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 1.55rem;
   padding: 0.2rem 0.4rem;
   border-radius: calc(var(--radius) - 4px);
   border: 1px solid color-mix(in oklab, var(--foreground) 14%, transparent);
@@ -726,30 +933,31 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   font-size: 0.7rem;
   line-height: 1;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
-.paperclip-markdown-codeblock:hover .paperclip-markdown-codeblock-copy,
-.paperclip-markdown-codeblock-copy:focus-visible,
-.paperclip-markdown-codeblock-copy[data-copied] {
+.paperclip-markdown-codeblock:hover .paperclip-markdown-codeblock-actions,
+.paperclip-markdown-codeblock-actions:focus-within,
+.paperclip-markdown-codeblock-actions[data-active] {
   opacity: 1;
 }
 
-.paperclip-markdown-codeblock-copy:hover {
+.paperclip-markdown-codeblock-action:hover {
   background-color: var(--accent);
   color: var(--accent-foreground);
 }
 
-.paperclip-markdown-codeblock-copy[data-copied] {
+.paperclip-markdown-codeblock-action[data-active],
+.paperclip-markdown-codeblock-action[data-copied] {
+  border-color: color-mix(in oklab, var(--primary) 38%, transparent);
   color: var(--primary);
 }
 
-.paperclip-markdown-codeblock-copy[data-failed] {
+.paperclip-markdown-codeblock-action[data-failed] {
   color: var(--destructive);
 }
 
-.paperclip-markdown-codeblock-copy-label {
+.paperclip-markdown-codeblock-action-label {
   font-weight: 500;
 }
 

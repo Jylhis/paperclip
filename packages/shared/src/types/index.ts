@@ -1,4 +1,17 @@
 export type { Company } from "./company.js";
+export {
+  AGENT_PLUGIN_CONFIG_KINDS,
+  AGENT_PLUGIN_RESTART_POLICIES,
+  AGENT_PLUGIN_WORKSPACE_SCOPES,
+  isSecretEnvKey,
+  redactPluginEnv,
+} from "./agent-plugin-config.js";
+export type {
+  AgentPluginConfigKind,
+  AgentPluginRestartPolicy,
+  AgentPluginWorkspaceScope,
+  AgentPluginConfig,
+} from "./agent-plugin-config.js";
 export type {
   Environment,
   EnvironmentLease,
@@ -13,15 +26,8 @@ export type {
 } from "./environment.js";
 export type {
   FeedbackVote,
-  FeedbackDataSharingPreference,
   FeedbackTargetType,
   FeedbackVoteValue,
-  FeedbackTrace,
-  FeedbackTraceStatus,
-  FeedbackTraceTargetSummary,
-  FeedbackTraceBundleCaptureStatus,
-  FeedbackTraceBundleFile,
-  FeedbackTraceBundle,
 } from "./feedback.js";
 export type {
   InstanceExperimentalSettings,
@@ -207,6 +213,12 @@ export type {
   RequestConfirmationTarget,
   RequestConfirmationPayload,
   RequestConfirmationResult,
+  AcceptedPlanDecompositionStatus,
+  AcceptedPlanDecompositionChild,
+  AcceptedPlanDecomposition,
+  AcceptedPlanDecompositionResult,
+  AcceptedPlanDecompositionChildIssue,
+  AcceptedPlanDecompositionSummary,
   IssueThreadInteractionBase,
   SuggestTasksInteraction,
   AskUserQuestionsInteraction,
@@ -258,6 +270,10 @@ export type {
   SecretProviderConfigPayload,
   SecretProviderConfigHealthDetails,
   SecretProviderConfigHealthResponse,
+  SecretProviderConfigDiscoveryCandidate,
+  SecretProviderConfigDiscoveryPreviewResult,
+  SecretProviderConfigDiscoverySample,
+  SecretProviderConfigDiscoverySignal,
   CompanySecretBinding,
   CompanySecretBindingTarget,
   CompanySecretUsageBinding,

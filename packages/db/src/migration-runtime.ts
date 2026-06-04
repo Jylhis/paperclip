@@ -3,7 +3,9 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { ensurePostgresDatabase, getPostgresDataDirectory } from "./client.js";
 import { createEmbeddedPostgresLogBuffer, formatEmbeddedPostgresError } from "./embedded-postgres-error.js";
+import { prepareEmbeddedPostgresNativeRuntime } from "./embedded-postgres-native.js";
 import { resolveDatabaseTarget } from "./runtime-config.js";
+import { type DatabaseTarget, targetFromUrl } from "./target.js";
 
 type EmbeddedPostgresInstance = {
   initialise(): Promise<void>;
@@ -23,7 +25,7 @@ type EmbeddedPostgresCtor = new (opts: {
 }) => EmbeddedPostgresInstance;
 
 export type MigrationConnection = {
-  connectionString: string;
+  target: DatabaseTarget;
   source: string;
   stop: () => Promise<void>;
 };
@@ -92,6 +94,7 @@ async function ensureEmbeddedPostgresConnection(
   preferredPort: number,
 ): Promise<MigrationConnection> {
   const EmbeddedPostgres = await loadEmbeddedPostgresCtor();
+  await prepareEmbeddedPostgresNativeRuntime();
   const selectedPort = await findAvailablePort(preferredPort);
   const postmasterPidFile = path.resolve(dataDir, "postmaster.pid");
   const pgVersionFile = path.resolve(dataDir, "PG_VERSION");
@@ -102,19 +105,21 @@ async function ensureEmbeddedPostgresConnection(
 
   if (!runningPid && existsSync(pgVersionFile)) {
     try {
-      const actualDataDir = await getPostgresDataDirectory(preferredAdminConnectionString);
+      const actualDataDir = await getPostgresDataDirectory(targetFromUrl(preferredAdminConnectionString));
       const matchesDataDir =
         typeof actualDataDir === "string" &&
         path.resolve(actualDataDir) === path.resolve(dataDir);
       if (!matchesDataDir) {
         throw new Error("reachable postgres does not use the expected embedded data directory");
       }
-      await ensurePostgresDatabase(preferredAdminConnectionString, "paperclip");
+      await ensurePostgresDatabase(targetFromUrl(preferredAdminConnectionString), "paperclip");
       process.emitWarning(
         `Adopting an existing PostgreSQL instance on port ${preferredPort} for embedded data dir ${dataDir} because postmaster.pid is missing.`,
       );
       return {
-        connectionString: `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/paperclip`,
+        target: targetFromUrl(
+          `postgres://paperclip:paperclip@127.0.0.1:${preferredPort}/paperclip`,
+        ),
         source: `embedded-postgres@${preferredPort}`,
         stop: async () => {},
       };
@@ -126,9 +131,9 @@ async function ensureEmbeddedPostgresConnection(
   if (runningPid) {
     const port = runningPort ?? preferredPort;
     const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
-    await ensurePostgresDatabase(adminConnectionString, "paperclip");
+    await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
     return {
-      connectionString: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
+      target: targetFromUrl(`postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`),
       source: `embedded-postgres@${port}`,
       stop: async () => {},
     };
@@ -169,10 +174,10 @@ async function ensureEmbeddedPostgresConnection(
   }
 
   const adminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${selectedPort}/postgres`;
-  await ensurePostgresDatabase(adminConnectionString, "paperclip");
+  await ensurePostgresDatabase(targetFromUrl(adminConnectionString), "paperclip");
 
   return {
-    connectionString: `postgres://paperclip:paperclip@127.0.0.1:${selectedPort}/paperclip`,
+    target: targetFromUrl(`postgres://paperclip:paperclip@127.0.0.1:${selectedPort}/paperclip`),
     source: `embedded-postgres@${selectedPort}`,
     stop: async () => {
       await instance.stop();
@@ -181,14 +186,14 @@ async function ensureEmbeddedPostgresConnection(
 }
 
 export async function resolveMigrationConnection(): Promise<MigrationConnection> {
-  const target = resolveDatabaseTarget();
-  if (target.mode === "postgres") {
+  const resolved = resolveDatabaseTarget();
+  if (resolved.mode === "postgres") {
     return {
-      connectionString: target.connectionString,
-      source: target.source,
+      target: resolved.target,
+      source: resolved.source,
       stop: async () => {},
     };
   }
 
-  return ensureEmbeddedPostgresConnection(target.dataDir, target.port);
+  return ensureEmbeddedPostgresConnection(resolved.dataDir, resolved.port);
 }

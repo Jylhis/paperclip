@@ -36,7 +36,10 @@ describe("resolveDatabaseTarget", () => {
 
     expect(target).toMatchObject({
       mode: "postgres",
-      connectionString: "postgres://env-user:env-pass@db.example.com:5432/paperclip",
+      target: {
+        kind: "url",
+        connectionString: "postgres://env-user:env-pass@db.example.com:5432/paperclip",
+      },
       source: "DATABASE_URL",
     });
   });
@@ -59,7 +62,10 @@ describe("resolveDatabaseTarget", () => {
 
     expect(target).toMatchObject({
       mode: "postgres",
-      connectionString: "postgres://file-user:file-pass@db.example.com:6543/paperclip",
+      target: {
+        kind: "url",
+        connectionString: "postgres://file-user:file-pass@db.example.com:6543/paperclip",
+      },
       source: "paperclip-env",
     });
   });
@@ -79,9 +85,98 @@ describe("resolveDatabaseTarget", () => {
 
     expect(target).toMatchObject({
       mode: "postgres",
-      connectionString: "postgres://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+      target: {
+        kind: "url",
+        connectionString: "postgres://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+      },
       source: "config.database.connectionString",
     });
+  });
+
+  it("uses PAPERCLIP_DATABASE_SOCKET env vars when all three are provided", () => {
+    process.env.PAPERCLIP_DATABASE_SOCKET_DIR = "/run/postgresql";
+    process.env.PAPERCLIP_DATABASE_NAME = "paperclip";
+    process.env.PAPERCLIP_DATABASE_USER = "paperclip";
+
+    const target = resolveDatabaseTarget();
+
+    expect(target).toMatchObject({
+      mode: "postgres",
+      target: {
+        kind: "socket",
+        socketDir: "/run/postgresql",
+        database: "paperclip",
+        user: "paperclip",
+      },
+      source: "PAPERCLIP_DATABASE_SOCKET",
+    });
+  });
+
+  it("uses config.database.socket when provided", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-db-runtime-"));
+    const configPath = path.join(tempDir, "instance", "config.json");
+    process.env.PAPERCLIP_CONFIG = configPath;
+    writeJson(configPath, {
+      database: {
+        mode: "postgres",
+        socket: {
+          socketDir: "/run/postgresql",
+          name: "paperclip",
+          user: "paperclip",
+        },
+      },
+    });
+
+    const target = resolveDatabaseTarget();
+
+    expect(target).toMatchObject({
+      mode: "postgres",
+      target: {
+        kind: "socket",
+        socketDir: "/run/postgresql",
+        database: "paperclip",
+        user: "paperclip",
+      },
+      source: "config.database.socket",
+    });
+  });
+
+  it("env-var socket beats a config.database.connectionString set in config", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-db-runtime-"));
+    const configPath = path.join(tempDir, "instance", "config.json");
+    process.env.PAPERCLIP_CONFIG = configPath;
+    writeJson(configPath, {
+      database: {
+        mode: "postgres",
+        connectionString: "postgres://cfg-user:cfg-pass@db.example.com:5432/paperclip",
+      },
+    });
+    process.env.PAPERCLIP_DATABASE_SOCKET_DIR = "/run/postgresql";
+    process.env.PAPERCLIP_DATABASE_NAME = "paperclip";
+    process.env.PAPERCLIP_DATABASE_USER = "paperclip";
+
+    const target = resolveDatabaseTarget();
+
+    expect(target).toMatchObject({
+      mode: "postgres",
+      target: {
+        kind: "socket",
+        socketDir: "/run/postgresql",
+        database: "paperclip",
+        user: "paperclip",
+      },
+      source: "PAPERCLIP_DATABASE_SOCKET",
+    });
+  });
+
+  it("throws when PAPERCLIP_DATABASE_SOCKET_DIR is set without name and user", () => {
+    process.env.PAPERCLIP_DATABASE_SOCKET_DIR = "/run/postgresql";
+    delete process.env.PAPERCLIP_DATABASE_NAME;
+    delete process.env.PAPERCLIP_DATABASE_USER;
+
+    expect(() => resolveDatabaseTarget()).toThrow(
+      /PAPERCLIP_DATABASE_SOCKET_DIR requires PAPERCLIP_DATABASE_NAME and PAPERCLIP_DATABASE_USER/,
+    );
   });
 
   it("falls back to embedded postgres settings from config", () => {

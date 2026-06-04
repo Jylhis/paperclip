@@ -1,4 +1,4 @@
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { issues } from "./issues.js";
 
@@ -13,9 +13,6 @@ export const feedbackVotes = pgTable(
     authorUserId: text("author_user_id").notNull(),
     vote: text("vote").notNull(),
     reason: text("reason"),
-    sharedWithLabs: boolean("shared_with_labs").notNull().default(false),
-    sharedAt: timestamp("shared_at", { withTimezone: true }),
-    consentVersion: text("consent_version"),
     redactionSummary: jsonb("redaction_summary"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

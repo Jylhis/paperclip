@@ -12,6 +12,17 @@ export {
   type Db,
 } from "./client.js";
 export {
+  type DatabaseTarget,
+  describeTarget,
+  postgresOptions,
+  targetFromUrl,
+} from "./target.js";
+export {
+  resolveDatabaseTarget,
+  type ResolvedDatabaseTarget,
+  type ResolvedDatabaseTargetSource,
+} from "./runtime-config.js";
+export {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
   type EmbeddedPostgresTestDatabase,
@@ -21,6 +32,7 @@ export {
   runDatabaseBackup,
   runDatabaseRestore,
   formatDatabaseBackupResult,
+  pgToolArgs,
   type BackupRetentionPolicy,
   type RunDatabaseBackupOptions,
   type RunDatabaseBackupResult,
@@ -30,6 +42,10 @@ export {
   createEmbeddedPostgresLogBuffer,
   formatEmbeddedPostgresError,
 } from "./embedded-postgres-error.js";
+export {
+  ensureLinuxSharedLibraryAliases,
+  prepareEmbeddedPostgresNativeRuntime,
+} from "./embedded-postgres-native.js";
 export { issueRelations } from "./schema/issue_relations.js";
 export { issueReferenceMentions } from "./schema/issue_reference_mentions.js";
 export * from "./schema/index.js";

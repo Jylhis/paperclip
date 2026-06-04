@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
-import { act } from "react";
 import type { KeyboardEventHandler, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandPalette } from "./CommandPalette";
@@ -102,10 +102,11 @@ vi.mock("@/components/ui/command", () => ({
     onSelect?: () => void;
     "data-testid"?: string;
   }) => (
-    <button data-testid={testId} onClick={onSelect}>
-      {children}
-    </button>
+      <button data-testid={testId} onClick={onSelect}>
+        {children}
+      </button>
   ),
+  CommandKeycap: ({ children }: { children: ReactNode }) => <kbd>{children}</kbd>,
   CommandList: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CommandSeparator: () => <hr />,
 }));
@@ -114,9 +115,8 @@ vi.mock("@/components/ui/command", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 async function flush() {
-  await act(async () => {
-    await Promise.resolve();
-  });
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 async function waitForAssertion(assertion: () => void, attempts = 20) {
@@ -143,7 +143,7 @@ function renderWithQueryClient(node: ReactNode, container: HTMLDivElement) {
     },
   });
 
-  act(() => {
+  flushSync(() => {
     root.render(
       <QueryClientProvider client={queryClient}>
         {node}
@@ -179,16 +179,15 @@ describe("CommandPalette", () => {
   it("includes routine execution issues in search queries", async () => {
     const { root } = renderWithQueryClient(<CommandPalette />, container);
 
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+
+    let setQueryButton: HTMLButtonElement | null = null;
+    await waitForAssertion(() => {
+      setQueryButton = container.querySelector('button[aria-label="Set query"]');
+      expect(setQueryButton).not.toBeNull();
     });
 
-    const setQueryButton = container.querySelector('button[aria-label="Set query"]');
-    expect(setQueryButton).not.toBeNull();
-
-    act(() => {
-      setQueryButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    setQueryButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await waitForAssertion(() => {
       expect(mockIssuesApi.list).toHaveBeenCalledWith("company-1", {
@@ -198,7 +197,7 @@ describe("CommandPalette", () => {
       });
     });
 
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
   });
@@ -207,18 +206,17 @@ describe("CommandPalette", () => {
     mockIssuesApi.list.mockResolvedValue([]);
     const { root } = renderWithQueryClient(<CommandPalette />, container);
 
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+
+    let input: HTMLInputElement | null = null;
+    await waitForAssertion(() => {
+      input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
     });
 
-    const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
-    expect(input).not.toBeNull();
-
-    act(() => {
-      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      nativeSetter.call(input, "auth flake");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-    });
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    nativeSetter.call(input!, "auth flake");
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
 
     await waitForAssertion(() => {
       const searchAllButton = container.querySelector(
@@ -228,15 +226,13 @@ describe("CommandPalette", () => {
       expect(searchAllButton!.textContent).toContain("auth flake");
     });
 
-    act(() => {
-      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    });
+    input!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
 
     await waitForAssertion(() => {
       expect(navigateState.navigate).toHaveBeenCalledWith("/search?q=auth%20flake");
     });
 
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
   });
@@ -245,16 +241,16 @@ describe("CommandPalette", () => {
     mockIssuesApi.list.mockResolvedValue([]);
     const { root } = renderWithQueryClient(<CommandPalette />, container);
 
-    act(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
-    });
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
 
-    const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
-    act(() => {
-      const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
-      nativeSetter.call(input, "deflake");
-      input.dispatchEvent(new Event("input", { bubbles: true }));
+    let input: HTMLInputElement | null = null;
+    await waitForAssertion(() => {
+      input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement | null;
+      expect(input).not.toBeNull();
     });
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    nativeSetter.call(input!, "deflake");
+    input!.dispatchEvent(new Event("input", { bubbles: true }));
 
     let searchAllButton: HTMLButtonElement | null = null;
     await waitForAssertion(() => {
@@ -264,15 +260,13 @@ describe("CommandPalette", () => {
       expect(searchAllButton).not.toBeNull();
     });
 
-    act(() => {
-      searchAllButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
+    searchAllButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
     await waitForAssertion(() => {
       expect(navigateState.navigate).toHaveBeenCalledWith("/search?q=deflake");
     });
 
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
   });

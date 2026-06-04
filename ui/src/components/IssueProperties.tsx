@@ -1772,6 +1772,13 @@ export function IssueProperties({
           />
         </PropertyRow>
 
+        <PropertyRow label="Cross-product">
+          <ToggleSwitch
+            checked={issue.crossProduct ?? false}
+            onCheckedChange={(next) => onUpdate({ crossProduct: next })}
+          />
+        </PropertyRow>
+
         <PropertyPicker
           inline={inline}
           label="Labels"

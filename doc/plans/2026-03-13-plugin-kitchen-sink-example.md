@@ -482,7 +482,7 @@ It should also declare one or more `ui.launchers` entries to exercise launcher b
 
 New package:
 
-- `packages/plugins/examples/plugin-kitchen-sink-example/`
+- the former in-repo `plugin-kitchen-sink-example` package location
 
 Expected files:
 

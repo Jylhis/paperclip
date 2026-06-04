@@ -12,6 +12,7 @@ export const API = {
   approvals: `${API_PREFIX}/approvals`,
   secrets: `${API_PREFIX}/secrets`,
   secretProviderConfigs: `${API_PREFIX}/secret-provider-configs`,
+  secretProviderConfigDiscoveryPreview: `${API_PREFIX}/companies/:companyId/secret-provider-configs/discovery/preview`,
   costs: `${API_PREFIX}/costs`,
   activity: `${API_PREFIX}/activity`,
   dashboard: `${API_PREFIX}/dashboard`,
@@ -21,4 +22,5 @@ export const API = {
   joinRequests: `${API_PREFIX}/join-requests`,
   members: `${API_PREFIX}/members`,
   admin: `${API_PREFIX}/admin`,
+  agentPluginConfigs: `${API_PREFIX}/agents/:agentId/plugin-configs`,
 } as const;

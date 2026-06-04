@@ -34,8 +34,8 @@ const storyGroups = [
   {
     title: "UX Labs",
     icon: FlaskConical,
-    stories: "Issue chat, run transcripts, invite/access flows",
-    why: "The old `/tests/ux/*` pages are fixture-backed Storybook stories now.",
+    stories: "Targeted workflow review surfaces and fixture-backed interaction prototypes",
+    why: "High-friction UX changes still get isolated review surfaces without shipping extra app routes.",
   },
   {
     title: "Navigation & Layout",

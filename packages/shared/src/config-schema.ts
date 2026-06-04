@@ -27,18 +27,36 @@ export const databaseBackupConfigSchema = z.object({
   dir: z.string().default("~/.paperclip/instances/default/data/backups"),
 });
 
-export const databaseConfigSchema = z.object({
-  mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
-  connectionString: z.string().optional(),
-  embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
-  embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
-  backup: databaseBackupConfigSchema.default({
-    enabled: true,
-    intervalMinutes: 60,
-    retentionDays: 7,
-    dir: "~/.paperclip/instances/default/data/backups",
-  }),
+export const databaseSocketConfigSchema = z.object({
+  socketDir: z.string().min(1),
+  name: z.string().min(1),
+  user: z.string().min(1),
+  port: z.number().int().min(1).max(65535).optional(),
 });
+
+export const databaseConfigSchema = z
+  .object({
+    mode: z.enum(["embedded-postgres", "postgres"]).default("embedded-postgres"),
+    connectionString: z.string().optional(),
+    socket: databaseSocketConfigSchema.optional(),
+    embeddedPostgresDataDir: z.string().default("~/.paperclip/instances/default/db"),
+    embeddedPostgresPort: z.number().int().min(1).max(65535).default(54329),
+    backup: databaseBackupConfigSchema.default({
+      enabled: true,
+      intervalMinutes: 60,
+      retentionDays: 7,
+      dir: "~/.paperclip/instances/default/data/backups",
+    }),
+  })
+  .superRefine((value, ctx) => {
+    if (value.connectionString && value.socket) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "database.connectionString and database.socket cannot both be set",
+        path: ["socket"],
+      });
+    }
+  });
 
 export const loggingConfigSchema = z.object({
   mode: z.enum(["file", "cloud"]),
@@ -99,10 +117,6 @@ export const secretsConfigSchema = z.object({
   }),
 });
 
-export const telemetryConfigSchema = z.object({
-  enabled: z.boolean().default(true),
-}).default({});
-
 export const paperclipConfigSchema = z
   .object({
     $meta: configMetaSchema,
@@ -110,7 +124,6 @@ export const paperclipConfigSchema = z
     database: databaseConfigSchema,
     logging: loggingConfigSchema,
     server: serverConfigSchema,
-    telemetry: telemetryConfigSchema,
     auth: authConfigSchema.default({
       baseUrlMode: "auto",
       disableSignUp: false,
@@ -186,6 +199,7 @@ export const paperclipConfigSchema = z
 export type PaperclipConfig = z.infer<typeof paperclipConfigSchema>;
 export type LlmConfig = z.infer<typeof llmConfigSchema>;
 export type DatabaseConfig = z.infer<typeof databaseConfigSchema>;
+export type DatabaseSocketConfig = z.infer<typeof databaseSocketConfigSchema>;
 export type LoggingConfig = z.infer<typeof loggingConfigSchema>;
 export type ServerConfig = z.infer<typeof serverConfigSchema>;
 export type StorageConfig = z.infer<typeof storageConfigSchema>;
@@ -194,6 +208,5 @@ export type StorageS3Config = z.infer<typeof storageS3ConfigSchema>;
 export type SecretsConfig = z.infer<typeof secretsConfigSchema>;
 export type SecretsLocalEncryptedConfig = z.infer<typeof secretsLocalEncryptedConfigSchema>;
 export type AuthConfig = z.infer<typeof authConfigSchema>;
-export type TelemetryConfig = z.infer<typeof telemetryConfigSchema>;
 export type ConfigMeta = z.infer<typeof configMetaSchema>;
 export type DatabaseBackupConfig = z.infer<typeof databaseBackupConfigSchema>;

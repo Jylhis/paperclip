@@ -60,6 +60,7 @@ const mockAgentService = vi.hoisted(() => ({
 
 const mockAccessService = vi.hoisted(() => ({
   canUser: vi.fn(),
+  decide: vi.fn(),
   hasPermission: vi.fn(),
   getMembership: vi.fn(),
   ensureMembership: vi.fn(),
@@ -104,16 +105,6 @@ const mockCompanySkillService = vi.hoisted(() => ({
 
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
-const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
-
-vi.mock("@paperclipai/shared/telemetry", () => ({
-  trackAgentCreated: vi.fn(),
-  trackErrorHandlerCrash: vi.fn(),
-}));
-
-vi.mock("../telemetry.js", () => ({
-  getTelemetryClient: mockGetTelemetryClient,
-}));
 
 vi.mock("../routes/authz.js", async () => {
   const { forbidden, unauthorized } = await vi.importActual<typeof import("../errors.js")>("../errors.js");
@@ -268,8 +259,6 @@ function resetMockDefaults() {
   for (const mock of Object.values(mockAgentInstructionsService)) mock.mockReset();
   for (const mock of Object.values(mockCompanySkillService)) mock.mockReset();
   mockLogActivity.mockReset();
-  mockGetTelemetryClient.mockReset();
-  mockGetTelemetryClient.mockReturnValue({ track: vi.fn() });
   currentKeyAgentId = agentId;
   currentAccessCanUser = false;
   mockAgentService.getById.mockImplementation(async () => ({ ...baseAgent }));
@@ -293,6 +282,17 @@ function resetMockDefaults() {
     revokedAt: new Date("2026-04-11T00:05:00.000Z"),
   }));
   mockAccessService.canUser.mockImplementation(async () => currentAccessCanUser);
+  mockAccessService.decide.mockImplementation(async (input: { actor?: { type?: string; source?: string }; action?: string }) => {
+    const allowed = input.actor?.type === "board" && input.actor.source === "local_implicit"
+      ? true
+      : currentAccessCanUser;
+    return {
+      allowed,
+      action: input.action,
+      reason: allowed ? "allow_explicit_grant" : "deny_missing_grant",
+      explanation: allowed ? "Allowed by test grant." : `Missing permission: ${input.action ?? "action"}`,
+    };
+  });
   mockAccessService.hasPermission.mockImplementation(async () => false);
   mockAccessService.getMembership.mockImplementation(async () => null);
   mockAccessService.listPrincipalGrants.mockImplementation(async () => []);

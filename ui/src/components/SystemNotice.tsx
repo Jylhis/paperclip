@@ -8,6 +8,7 @@ import {
   TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
+import { JYLHIS_DESIGN_CONTRACT_VERSION } from "@/lib/jylhis-design";
 import { cn } from "@/lib/utils";
 
 export type SystemNoticeTone = "neutral" | "info" | "success" | "warning" | "danger";
@@ -42,6 +43,7 @@ export type SystemNoticeProps = {
 };
 
 type ToneTokens = {
+  toneClass: string;
   container: string;
   iconWrap: string;
   icon: LucideIcon;
@@ -52,49 +54,50 @@ type ToneTokens = {
 
 const TONE_TOKENS: Record<SystemNoticeTone, ToneTokens> = {
   neutral: {
+    toneClass: "jylhis-system-notice--neutral",
     container:
-      "border-border bg-muted/35 dark:bg-muted/20",
-    iconWrap: "bg-muted text-foreground/70",
+      "border-[var(--jylhis-color-border,var(--border))] bg-[var(--jylhis-color-bg-subtle,var(--muted))]",
+    iconWrap: "bg-[var(--jylhis-color-surface,var(--muted))] text-[var(--jylhis-color-text-muted,var(--muted-foreground))]",
     icon: Info,
-    iconClass: "text-muted-foreground",
-    label: "text-muted-foreground",
-    divider: "border-border/70",
+    iconClass: "text-[var(--jylhis-color-text-muted,var(--muted-foreground))]",
+    label: "text-[var(--jylhis-color-text-muted,var(--muted-foreground))]",
+    divider: "border-[var(--jylhis-color-border,var(--border))]",
   },
   info: {
-    container:
-      "border-sky-300/70 bg-sky-50/70 dark:border-sky-500/30 dark:bg-sky-500/10",
-    iconWrap: "bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200",
+    toneClass: "status-info ansi-info",
+    container: "jylhis-system-notice-status-surface",
+    iconWrap: "jylhis-system-notice-status-icon",
     icon: Info,
-    iconClass: "text-sky-700 dark:text-sky-300",
-    label: "text-sky-800 dark:text-sky-200",
-    divider: "border-sky-300/50 dark:border-sky-500/30",
+    iconClass: "jylhis-system-notice-status-ink",
+    label: "jylhis-system-notice-status-ink",
+    divider: "jylhis-system-notice-status-divider",
   },
   success: {
-    container:
-      "border-emerald-300/70 bg-emerald-50/70 dark:border-emerald-500/30 dark:bg-emerald-500/10",
-    iconWrap: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200",
+    toneClass: "status-ok ansi-ok",
+    container: "jylhis-system-notice-status-surface",
+    iconWrap: "jylhis-system-notice-status-icon",
     icon: CircleCheck,
-    iconClass: "text-emerald-700 dark:text-emerald-300",
-    label: "text-emerald-800 dark:text-emerald-200",
-    divider: "border-emerald-300/50 dark:border-emerald-500/30",
+    iconClass: "jylhis-system-notice-status-ink",
+    label: "jylhis-system-notice-status-ink",
+    divider: "jylhis-system-notice-status-divider",
   },
   warning: {
-    container:
-      "border-amber-300/70 bg-amber-50/80 dark:border-amber-500/30 dark:bg-amber-500/10",
-    iconWrap: "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200",
+    toneClass: "status-warn ansi-warn",
+    container: "jylhis-system-notice-status-surface",
+    iconWrap: "jylhis-system-notice-status-icon",
     icon: TriangleAlert,
-    iconClass: "text-amber-700 dark:text-amber-300",
-    label: "text-amber-900 dark:text-amber-200",
-    divider: "border-amber-300/60 dark:border-amber-500/30",
+    iconClass: "jylhis-system-notice-status-ink",
+    label: "jylhis-system-notice-status-ink",
+    divider: "jylhis-system-notice-status-divider",
   },
   danger: {
-    container:
-      "border-red-400/60 bg-red-50/80 dark:border-red-500/35 dark:bg-red-500/10",
-    iconWrap: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200",
+    toneClass: "status-err ansi-err",
+    container: "jylhis-system-notice-status-surface",
+    iconWrap: "jylhis-system-notice-status-icon",
     icon: OctagonAlert,
-    iconClass: "text-red-700 dark:text-red-300",
-    label: "text-red-900 dark:text-red-200",
-    divider: "border-red-400/50 dark:border-red-500/30",
+    iconClass: "jylhis-system-notice-status-ink",
+    label: "jylhis-system-notice-status-ink",
+    divider: "jylhis-system-notice-status-divider",
   },
 };
 
@@ -124,7 +127,7 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
               return <span>{row.value}</span>;
             case "code":
               return (
-                <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-foreground/80">
+                <code className="jylhis-system-notice-code px-1.5 py-0.5 font-mono text-[11px]">
                   {row.value}
                 </code>
               );
@@ -177,7 +180,7 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
               const runShort = row.runId.length > 12 ? `${row.runId.slice(0, 8)}…` : row.runId;
               const inner = (
                 <>
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-foreground/80">{runShort}</code>
+                  <code className="jylhis-system-notice-code px-1.5 py-0.5">{runShort}</code>
                   {row.status ? (
                     <span className={cn("font-sans", tone.label)}>{row.status}</span>
                   ) : null}
@@ -235,8 +238,11 @@ export function SystemNotice({
     <section
       role="status"
       aria-label={resolvedLabel}
+      data-jylhis-design-contract={JYLHIS_DESIGN_CONTRACT_VERSION}
+      data-jylhis-tone={tone}
       className={cn(
-        "relative w-full overflow-hidden rounded-lg border text-sm shadow-[0_1px_0_rgba(15,23,42,0.02)]",
+        "jylhis-system-notice relative w-full overflow-hidden border text-sm",
+        tokens.toneClass,
         tokens.container,
         className,
       )}
@@ -289,8 +295,7 @@ export function SystemNotice({
             aria-expanded={open}
             aria-controls={detailsId}
             className={cn(
-              "ml-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground transition-[background-color,border-color,color]",
-              "hover:border-border/70 hover:bg-background/70 hover:text-foreground",
+              "jylhis-system-notice-detail-button ml-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             )}
           >

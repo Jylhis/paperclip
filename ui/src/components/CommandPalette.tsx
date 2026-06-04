@@ -14,6 +14,7 @@ import {
   CommandGroup,
   CommandInput,
   CommandItem,
+  CommandKeycap,
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
@@ -136,7 +137,7 @@ export function CommandPalette() {
           {showSearchAll ? (
             <span>
               No quick issue matches. Press{" "}
-              <kbd className="rounded border border-border bg-muted px-1 py-0.5 text-[10px]">↵</kbd>{" "}
+              <CommandKeycap>↵</CommandKeycap>{" "}
               to <span className="font-medium">search all</span> or keep typing to refine.
             </span>
           ) : (
@@ -149,7 +150,7 @@ export function CommandPalette() {
             <CommandItem
               value={`${SEARCH_ALL_VALUE} ${searchQuery}`}
               onSelect={goFullSearch}
-              className="bg-accent/40 border border-accent data-[selected=true]:bg-accent/60"
+              className="border-[var(--command-search-all-border)] bg-[var(--command-search-all-bg)] text-[var(--command-search-all-foreground)] data-[selected=true]:bg-[var(--command-search-all-selected-bg)]"
               data-testid="command-search-all"
             >
               <Search className="mr-2 h-4 w-4" />
@@ -158,7 +159,7 @@ export function CommandPalette() {
               </span>
               <span className="ml-auto inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <span>open full search</span>
-                <kbd className="rounded border border-border bg-background px-1 py-0.5 text-[10px]">↵</kbd>
+                <CommandKeycap className="bg-background">↵</CommandKeycap>
               </span>
             </CommandItem>
           </CommandGroup>

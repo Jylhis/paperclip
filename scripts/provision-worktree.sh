@@ -411,7 +411,11 @@ if [[ -f "$worktree_cwd/package.json" && -f "$worktree_cwd/pnpm-lock.yaml" ]]; t
 
       if (
         cd "$worktree_cwd"
-        pnpm install "$@"
+        if command -v nix >/dev/null 2>&1 && [[ -f flake.nix ]]; then
+          nix run .#install-deps -- "$@"
+        else
+          pnpm install "$@"
+        fi
       ) >"$stdout_path" 2>"$stderr_path"; then
         cat "$stdout_path"
         cat "$stderr_path" >&2
