@@ -75,6 +75,66 @@ describe("opencode remote environment diagnostics", () => {
     vi.clearAllMocks();
   });
 
+  it("does not forward host process.env to remote probe env", async () => {
+    const SENTINEL = "__PAPERCLIP_TEST_HOST_SECRET__";
+    process.env[SENTINEL] = "should-not-leak";
+    try {
+      const remoteTarget: AdapterExecutionTarget = {
+        kind: "remote",
+        transport: "sandbox",
+        providerKey: "cloudflare",
+        remoteCwd: "/remote/workspace",
+        runner: {
+          execute: async () => ({
+            exitCode: 0,
+            signal: null,
+            timedOut: false,
+            stdout: "",
+            stderr: "",
+            pid: null,
+            startedAt: new Date().toISOString(),
+          }),
+        },
+      };
+
+      await testEnvironment({
+        companyId: "company-1",
+        adapterType: "opencode_local",
+        config: { command: "opencode", model: "anthropic/claude-sonnet-4-5" },
+        executionTarget: remoteTarget,
+        environmentName: "QA Cloudflare",
+      });
+
+      const probeCall = runAdapterExecutionTargetProcess.mock.calls[0] as unknown as
+        | [string, AdapterExecutionTarget, string, string[], { cwd: string; env: Record<string, string> }]
+        | undefined;
+      expect(probeCall?.[4].env).not.toHaveProperty(SENTINEL);
+    } finally {
+      delete process.env[SENTINEL];
+    }
+  });
+
+  it("includes host process.env in local command resolution env", async () => {
+    const SENTINEL = "__PAPERCLIP_TEST_HOST_LOCAL__";
+    process.env[SENTINEL] = "should-be-present";
+    try {
+      await testEnvironment({
+        companyId: "company-1",
+        adapterType: "opencode_local",
+        config: { command: "opencode", model: "anthropic/claude-sonnet-4-5" },
+        executionTarget: undefined,
+        environmentName: undefined,
+      });
+
+      const cmdCheckCall = ensureAdapterExecutionTargetCommandResolvable.mock.calls[0] as unknown as
+        | [string, AdapterExecutionTarget | null, string, Record<string, string>]
+        | undefined;
+      expect(cmdCheckCall?.[3]).toHaveProperty(SENTINEL, "should-be-present");
+    } finally {
+      delete process.env[SENTINEL];
+    }
+  });
+
   it("stages remote runtime config assets for sandbox hello probes", async () => {
     const remoteTarget: AdapterExecutionTarget = {
       kind: "remote",
