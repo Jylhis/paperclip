@@ -180,6 +180,20 @@ describe("exe.dev sandbox provider plugin", () => {
     });
   });
 
+  it("rejects http (non-HTTPS) apiUrl values even on exe.dev hostname", async () => {
+    process.env.EXE_API_KEY = "host-key";
+
+    await expect(plugin.definition.onEnvironmentValidateConfig?.({
+      driverKey: "exe-dev",
+      config: {
+        apiUrl: "http://exe.dev/exec",
+      },
+    })).resolves.toMatchObject({
+      ok: false,
+      errors: ["apiUrl must be an HTTPS URL on exe.dev."],
+    });
+  });
+
   it("acquires a lease by creating a VM and preparing the SSH workspace", async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({
