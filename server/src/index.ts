@@ -86,6 +86,16 @@ export interface StartedServer {
   databaseUrl: string;
 }
 
+export function applyLongKeepAliveTimeouts(server: import("node:http").Server): void {
+  if (process.env.PAPERCLIP_HTTP_LONG_KEEPALIVE === "true") {
+    // Opt-in only: increase keep-alive timeouts when running behind a trusted
+    // reverse proxy/load balancer with shorter backend idle timeouts.
+    // This avoids exposing direct deployments to unnecessarily long idle socket retention.
+    server.keepAliveTimeout = 185000;
+    server.headersTimeout = 186000;
+  }
+}
+
 export async function startServer(): Promise<StartedServer> {
   let config = loadConfig();
   initTelemetry({ enabled: config.telemetryEnabled });
@@ -620,14 +630,7 @@ export async function startServer(): Promise<StartedServer> {
   });
   const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
 
-  const longKeepAliveEnabled = process.env.PAPERCLIP_HTTP_LONG_KEEPALIVE === "true";
-  if (longKeepAliveEnabled) {
-    // Opt-in only: increase keep-alive timeouts when running behind a trusted
-    // reverse proxy/load balancer with shorter backend idle timeouts.
-    // This avoids exposing direct deployments to unnecessarily long idle socket retention.
-    server.keepAliveTimeout = 185000;
-    server.headersTimeout = 186000;
-  }
+  applyLongKeepAliveTimeouts(server);
 
   if (listenPort !== requestedListenPort) {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${requestedListenPort}, selectedPort=${listenPort})`);
