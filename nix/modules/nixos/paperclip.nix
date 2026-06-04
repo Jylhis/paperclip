@@ -121,6 +121,22 @@ let
   // cfg.extraEnvironment;
 in
 {
+  imports = [
+    # database.url was removed in favour of database.urlFile to keep credentials
+    # out of the world-readable Nix store.  Give users a clear error instead of
+    # the opaque "unknown option" the evaluator would otherwise emit.
+    (lib.mkRemovedOptionModule
+      [ "services" "paperclip" "database" "url" ]
+      ''
+        services.paperclip.database.url has been removed for security reasons:
+        it baked the database credential into the Nix store and generated
+        systemd unit files (both world-readable).  Migrate to
+        services.paperclip.database.urlFile instead — set it to the path of a
+        file that contains the full DATABASE_URL (e.g. managed by sops-nix or
+        agenix), or pass the URL via environmentFile / environmentFiles.
+      '')
+  ];
+
   options.services.paperclip = {
     enable = mkEnableOption "Paperclip orchestration server";
 
@@ -711,7 +727,7 @@ in
           ExecStartPre = [
             (pkgs.writeShellScript "paperclip-build-external-db-env" ''
               set -euo pipefail
-              url=$(${pkgs.coreutils}/bin/tr -d '\n' < "${toString cfg.database.urlFile}")
+              url=$(${pkgs.coreutils}/bin/tr -d '\r\n' < "${toString cfg.database.urlFile}")
               umask 077
               ${pkgs.coreutils}/bin/printf 'DATABASE_URL=%s\n' "$url" > "${runtimeDbEnvFile}"
             '')
@@ -722,7 +738,10 @@ in
             envFiles =
               optional (cfg.environmentFile != null) cfg.environmentFile
               ++ map toString cfg.environmentFiles
-              ++ optional (cfg.database.mode == "postgresql" || (cfg.database.mode == "external" && cfg.database.urlFile != null)) "-${runtimeDbEnvFile}";
+              ++ optional (
+                cfg.database.mode == "postgresql"
+                || (cfg.database.mode == "external" && cfg.database.urlFile != null)
+              ) "-${runtimeDbEnvFile}";
           in
           optionalAttrs (envFiles != [ ]) { EnvironmentFile = envFiles; }
         );

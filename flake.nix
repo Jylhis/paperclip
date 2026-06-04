@@ -57,6 +57,15 @@
       nixosModules.paperclip = import ./nix/modules/nixos/paperclip.nix;
       nixosModules.default = self.nixosModules.paperclip;
 
+      # nixosTests only run on Linux; each test boots a VM and exercises the
+      # module path being changed in this PR (external urlFile mode).
+      checks = forSystems linuxSystems (pkgs: {
+        module-external = pkgs.callPackage ./nix/tests/module-external.nix {
+          paperclipModule = self.nixosModules.paperclip;
+          paperclipPackage = self.packages.${pkgs.stdenv.hostPlatform.system}.paperclip;
+        };
+      });
+
       devShells = forSystems shellSystems (pkgs: {
         default = pkgs.callPackage ./nix/shell.nix { };
       });
