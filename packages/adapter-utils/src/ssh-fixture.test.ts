@@ -511,4 +511,29 @@ describe("ssh env-lab fixture", () => {
     expect(recentSubjects).toContain("remote update a");
     expect(recentSubjects).toContain("remote update b");
   }, SSH_FIXTURE_TEST_TIMEOUT_MS);
+
+  it("surfaces stdin EPIPE as a handled error when the remote command exits early", async () => {
+    const rootDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-ssh-epipe-"));
+    cleanupDirs.push(rootDir);
+    const statePath = path.join(rootDir, "state.json");
+
+    const started = await startSshEnvLabFixtureOrSkip(statePath, "SSH stdin EPIPE test");
+    if (!started) return;
+    const config = await buildSshEnvLabFixtureConfig(started);
+
+    // A 1 MB stdin buffer reliably overflows the kernel pipe buffer (~64 KB)
+    // so the write fails with EPIPE once the remote exits without reading.
+    // Without the stdin error listener the EPIPE would be an unhandled stream
+    // error; with the fix it flows through finishReject as a normal rejection.
+    const largeStdin = "a".repeat(1024 * 1024);
+    await expect(
+      runSshCommand(config, "exit 1", {
+        stdin: largeStdin,
+        timeoutMs: 10_000,
+        maxBuffer: 1024 * 1024 * 10,
+      }),
+    ).rejects.toBeInstanceOf(Error);
+
+    await stopSshEnvLabFixture(statePath);
+  }, SSH_FIXTURE_TEST_TIMEOUT_MS);
 });
