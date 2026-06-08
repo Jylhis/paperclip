@@ -441,10 +441,10 @@ Good fits:
 
 - LLM Wiki page navigation in `packages/plugins/plugin-llm-wiki` builds a
   `FileTreeNode[]` from worker query results and renders it through `FileTree`.
-- The example `plugin-file-browser-example` lazily fetches a directory's
-  children through a `loadFileList` action when `onToggleDir` fires, then
-  merges the children into the local tree state — letting the shared component
-  handle rendering and selection.
+- A file-browser plugin can lazily fetch a directory's children through a
+  `loadFileList` action when `onToggleDir` fires, then merge the children into
+  the local tree state — letting the shared component handle rendering and
+  selection.
 
 Boundary rules:
 
@@ -508,10 +508,10 @@ flow worker-mediated:
 - The worker is the only side that touches the disk. The browser receives a
   serializable tree and never sees raw absolute paths it can replay.
 
-The example `plugin-file-browser-example` is the reference for this pattern:
-the worker registers `fileList` (data) and `loadFileList` (action) over the
-same handler, and the UI uses the action for on-toggle directory loading so the
-shared `FileTree` stays the rendering surface.
+The reference pattern is: the worker registers `fileList` (data) and
+`loadFileList` (action) over the same handler, and the UI uses the action for
+on-toggle directory loading so the shared `FileTree` stays the rendering
+surface.
 
 ### Mixing surfaces
 
