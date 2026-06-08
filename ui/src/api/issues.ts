@@ -5,7 +5,6 @@ import type {
   CreateIssueTreeHold,
   DocumentRevision,
   FeedbackTargetType,
-  FeedbackTrace,
   FeedbackVote,
   Issue,
   IssueAttachment,
@@ -229,15 +228,6 @@ export const issuesApi = {
     const qs = options.excludeRoot ? "?excludeRoot=true" : "";
     return api.get<IssueCostSummary>(`/issues/${id}/cost-summary${qs}`);
   },
-  listFeedbackTraces: (id: string, filters?: Record<string, string | boolean | undefined>) => {
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(filters ?? {})) {
-      if (value === undefined) continue;
-      params.set(key, String(value));
-    }
-    const qs = params.toString();
-    return api.get<FeedbackTrace[]>(`/issues/${id}/feedback-traces${qs ? `?${qs}` : ""}`);
-  },
   upsertFeedbackVote: (
     id: string,
     data: {
@@ -245,7 +235,6 @@ export const issuesApi = {
       targetId: string;
       vote: "up" | "down";
       reason?: string;
-      allowSharing?: boolean;
     },
   ) => api.post<FeedbackVote>(`/issues/${id}/feedback-votes`, data),
   addComment: (id: string, body: string, reopen?: boolean, interrupt?: boolean) =>

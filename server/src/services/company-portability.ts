@@ -2530,18 +2530,6 @@ function buildManifestFromPackageFiles(
         typeof paperclipCompany.requireBoardApprovalForNewAgents === "boolean"
           ? paperclipCompany.requireBoardApprovalForNewAgents
           : readCompanyApprovalDefault(companyFrontmatter),
-      feedbackDataSharingEnabled:
-        typeof paperclipCompany.feedbackDataSharingEnabled === "boolean"
-          ? paperclipCompany.feedbackDataSharingEnabled
-          : false,
-      feedbackDataSharingConsentAt:
-        typeof paperclipCompany.feedbackDataSharingConsentAt === "string"
-          ? paperclipCompany.feedbackDataSharingConsentAt
-          : null,
-      feedbackDataSharingConsentByUserId:
-        asString(paperclipCompany.feedbackDataSharingConsentByUserId),
-      feedbackDataSharingTermsVersion:
-        asString(paperclipCompany.feedbackDataSharingTermsVersion),
     },
     sidebar: paperclipSidebar,
     agents: [],
@@ -3576,10 +3564,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           logoPath: companyLogoPath,
           attachmentMaxBytes: company.attachmentMaxBytes,
           requireBoardApprovalForNewAgents: company.requireBoardApprovalForNewAgents ? true : undefined,
-          feedbackDataSharingEnabled: company.feedbackDataSharingEnabled ? true : undefined,
-          feedbackDataSharingConsentAt: company.feedbackDataSharingConsentAt?.toISOString() ?? null,
-          feedbackDataSharingConsentByUserId: company.feedbackDataSharingConsentByUserId ?? null,
-          feedbackDataSharingTermsVersion: company.feedbackDataSharingTermsVersion ?? null,
         }),
         sidebar: stripEmptyValues(sidebarOrder),
         agents: Object.keys(paperclipAgents).length > 0 ? paperclipAgents : undefined,
@@ -4102,18 +4086,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         requireBoardApprovalForNewAgents: include.company
           ? (sourceManifest.company?.requireBoardApprovalForNewAgents ?? false)
           : false,
-        feedbackDataSharingEnabled: include.company
-          ? (sourceManifest.company?.feedbackDataSharingEnabled ?? false)
-          : false,
-        feedbackDataSharingConsentAt: include.company && sourceManifest.company?.feedbackDataSharingConsentAt
-          ? new Date(sourceManifest.company.feedbackDataSharingConsentAt)
-          : null,
-        feedbackDataSharingConsentByUserId: include.company
-          ? (sourceManifest.company?.feedbackDataSharingConsentByUserId ?? null)
-          : null,
-        feedbackDataSharingTermsVersion: include.company
-          ? (sourceManifest.company?.feedbackDataSharingTermsVersion ?? null)
-          : null,
       });
       if (mode === "agent_safe" && options?.sourceCompanyId) {
         await access.copyActiveUserMemberships(options.sourceCompanyId, created.id);
@@ -4139,12 +4111,6 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           brandColor: sourceManifest.company.brandColor,
           attachmentMaxBytes: sourceManifest.company.attachmentMaxBytes ?? undefined,
           requireBoardApprovalForNewAgents: sourceManifest.company.requireBoardApprovalForNewAgents,
-          feedbackDataSharingEnabled: sourceManifest.company.feedbackDataSharingEnabled,
-          feedbackDataSharingConsentAt: sourceManifest.company.feedbackDataSharingConsentAt
-            ? new Date(sourceManifest.company.feedbackDataSharingConsentAt)
-            : null,
-          feedbackDataSharingConsentByUserId: sourceManifest.company.feedbackDataSharingConsentByUserId,
-          feedbackDataSharingTermsVersion: sourceManifest.company.feedbackDataSharingTermsVersion,
         });
         targetCompany = updated ?? targetCompany;
         companyAction = "updated";

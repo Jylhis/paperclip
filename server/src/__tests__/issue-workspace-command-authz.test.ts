@@ -217,7 +217,6 @@ describe("issue workspace command authorization", () => {
       id: "instance-settings-1",
       general: {
         censorUsernameInLogs: false,
-        feedbackDataSharingPreference: "prompt",
       },
     });
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1"]);

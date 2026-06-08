@@ -36,7 +36,6 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
     id: "instance-settings-1",
     general: {
       censorUsernameInLogs: false,
-      feedbackDataSharingPreference: "prompt",
     },
   })),
   listCompanyIds: vi.fn(async () => ["company-1"]),
@@ -194,7 +193,6 @@ describe("issue activity event routes", () => {
       id: "instance-settings-1",
       general: {
         censorUsernameInLogs: false,
-        feedbackDataSharingPreference: "prompt",
       },
     });
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue(["company-1"]);

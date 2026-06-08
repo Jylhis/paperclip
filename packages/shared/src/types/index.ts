@@ -13,15 +13,8 @@ export type {
 } from "./environment.js";
 export type {
   FeedbackVote,
-  FeedbackDataSharingPreference,
   FeedbackTargetType,
   FeedbackVoteValue,
-  FeedbackTrace,
-  FeedbackTraceStatus,
-  FeedbackTraceTargetSummary,
-  FeedbackTraceBundleCaptureStatus,
-  FeedbackTraceBundleFile,
-  FeedbackTraceBundle,
 } from "./feedback.js";
 export type {
   InstanceExperimentalSettings,

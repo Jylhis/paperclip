@@ -39,9 +39,7 @@ export {
   type ProbeEnvironmentConfig,
 } from "./environment.js";
 export {
-  feedbackDataSharingPreferenceSchema,
   feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   type UpsertIssueFeedbackVote,

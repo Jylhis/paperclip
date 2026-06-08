@@ -28,9 +28,6 @@ import {
   createIssueSchema,
   resolveCreateIssueStatusDefault,
   resolveIssueRecoveryActionSchema,
-  feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
-  feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   linkIssueApprovalSchema,
   issueDocumentKeySchema,
@@ -832,14 +829,6 @@ export function issueRoutes(
   db: Db,
   storage: StorageService,
   opts: {
-    feedbackExportService?: {
-      flushPendingFeedbackTraces(input?: {
-        companyId?: string;
-        traceId?: string;
-        limit?: number;
-        now?: Date;
-      }): Promise<unknown>;
-    };
     searchService?: CompanySearchService;
     searchRateLimiter?: CompanySearchRateLimiter;
     pluginWorkerManager?: PluginWorkerManager;
@@ -882,7 +871,6 @@ export function issueRoutes(
   const treeControlSvc = issueTreeControlFactory?.(db) ?? {
     getActivePauseHoldGate: async () => null,
   };
-  const feedbackExportService = opts?.feedbackExportService;
   const environmentsSvc = environmentService(db);
 
   async function cancelScheduledRetrySupersededByComment(input: {
@@ -1102,10 +1090,6 @@ export function issueRoutes(
     };
   }
 
-  function parseBooleanQuery(value: unknown) {
-    return value === true || value === "true" || value === "1";
-  }
-
   async function assertIssueEnvironmentSelection(
     companyId: string,
     environmentId: string | null | undefined,
@@ -1200,15 +1184,6 @@ export function issueRoutes(
     }
   }
 
-  function parseDateQuery(value: unknown, field: string) {
-    if (typeof value !== "string" || value.trim().length === 0) return undefined;
-    const parsed = new Date(value);
-    if (Number.isNaN(parsed.getTime())) {
-      throw new HttpError(400, `Invalid ${field} query value`);
-    }
-    return parsed;
-  }
-
   async function runSingleFileUpload(req: Request, res: Response, fileSizeLimit: number) {
     const upload = multer({
       storage: multer.memoryStorage(),
@@ -1237,13 +1212,6 @@ export function issueRoutes(
     if (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents)) return true;
     res.status(403).json({ error: "Missing permission to link approvals" });
     return false;
-  }
-
-  function actorCanAccessCompany(req: Request, companyId: string) {
-    if (req.actor.type === "none") return false;
-    if (req.actor.type === "agent") return req.actor.companyId === companyId;
-    if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) return true;
-    return (req.actor.companyIds ?? []).includes(companyId);
   }
 
   type TaskAssignmentAuthorizationScope = {
@@ -5167,69 +5135,6 @@ export function issueRoutes(
     res.json(votes);
   });
 
-  router.get("/issues/:id/feedback-traces", async (req, res) => {
-    const id = req.params.id as string;
-    const issue = await svc.getById(id);
-    if (!issue) {
-      res.status(404).json({ error: "Issue not found" });
-      return;
-    }
-    assertCompanyAccess(req, issue.companyId);
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Only board users can view feedback traces" });
-      return;
-    }
-
-    const targetTypeRaw = typeof req.query.targetType === "string" ? req.query.targetType : undefined;
-    const voteRaw = typeof req.query.vote === "string" ? req.query.vote : undefined;
-    const statusRaw = typeof req.query.status === "string" ? req.query.status : undefined;
-    const targetType = targetTypeRaw ? feedbackTargetTypeSchema.parse(targetTypeRaw) : undefined;
-    const vote = voteRaw ? feedbackVoteValueSchema.parse(voteRaw) : undefined;
-    const status = statusRaw ? feedbackTraceStatusSchema.parse(statusRaw) : undefined;
-
-    const traces = await feedback.listFeedbackTraces({
-      companyId: issue.companyId,
-      issueId: issue.id,
-      targetType,
-      vote,
-      status,
-      from: parseDateQuery(req.query.from, "from"),
-      to: parseDateQuery(req.query.to, "to"),
-      sharedOnly: parseBooleanQuery(req.query.sharedOnly),
-      includePayload: parseBooleanQuery(req.query.includePayload),
-    });
-    res.json(traces);
-  });
-
-  router.get("/feedback-traces/:traceId", async (req, res) => {
-    const traceId = req.params.traceId as string;
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Only board users can view feedback traces" });
-      return;
-    }
-    const includePayload = parseBooleanQuery(req.query.includePayload) || req.query.includePayload === undefined;
-    const trace = await feedback.getFeedbackTraceById(traceId, includePayload);
-    if (!trace || !actorCanAccessCompany(req, trace.companyId)) {
-      res.status(404).json({ error: "Feedback trace not found" });
-      return;
-    }
-    res.json(trace);
-  });
-
-  router.get("/feedback-traces/:traceId/bundle", async (req, res) => {
-    const traceId = req.params.traceId as string;
-    if (req.actor.type !== "board") {
-      res.status(403).json({ error: "Only board users can view feedback trace bundles" });
-      return;
-    }
-    const bundle = await feedback.getFeedbackTraceBundle(traceId);
-    if (!bundle || !actorCanAccessCompany(req, bundle.companyId)) {
-      res.status(404).json({ error: "Feedback trace not found" });
-      return;
-    }
-    res.json(bundle);
-  });
-
   router.post("/issues/:id/comments", validate(addIssueCommentSchema), async (req, res) => {
     const id = req.params.id as string;
     const issue = await svc.getById(id);
@@ -5570,7 +5475,6 @@ export function issueRoutes(
       vote: req.body.vote,
       reason: req.body.reason,
       authorUserId: req.actor.userId ?? "local-board",
-      allowSharing: req.body.allowSharing === true,
     });
 
     await logActivity(db, {
@@ -5588,62 +5492,8 @@ export function issueRoutes(
         targetId: result.vote.targetId,
         vote: result.vote.vote,
         hasReason: Boolean(result.vote.reason),
-        sharingEnabled: result.sharingEnabled,
       },
     });
-
-    if (result.consentEnabledNow) {
-      await logActivity(db, {
-        companyId: issue.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        runId: actor.runId,
-        action: "company.feedback_data_sharing_updated",
-        entityType: "company",
-        entityId: issue.companyId,
-        details: {
-          feedbackDataSharingEnabled: true,
-          source: "issue_feedback_vote",
-        },
-      });
-    }
-
-    if (result.persistedSharingPreference) {
-      const settings = await instanceSettings.get();
-      const companyIds = await instanceSettings.listCompanyIds();
-      await Promise.all(
-        companyIds.map((companyId) =>
-          logActivity(db, {
-            companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
-            action: "instance.settings.general_updated",
-            entityType: "instance_settings",
-            entityId: settings.id,
-            details: {
-              general: settings.general,
-              changedKeys: ["feedbackDataSharingPreference"],
-              source: "issue_feedback_vote",
-            },
-          }),
-        ),
-      );
-    }
-
-    if (result.sharingEnabled && result.traceId && feedbackExportService) {
-      try {
-        await feedbackExportService.flushPendingFeedbackTraces({
-          companyId: issue.companyId,
-          traceId: result.traceId,
-          limit: 1,
-        });
-      } catch (err) {
-        logger.warn({ err, issueId: issue.id, traceId: result.traceId }, "failed to flush shared feedback trace immediately");
-      }
-    }
 
     res.status(201).json(result.vote);
   });

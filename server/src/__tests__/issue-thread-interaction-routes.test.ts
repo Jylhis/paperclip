@@ -65,7 +65,6 @@ function registerModuleMocks() {
         id: "instance-settings-1",
         general: {
           censorUsernameInLogs: false,
-          feedbackDataSharingPreference: "prompt",
         },
       })),
       listCompanyIds: vi.fn(async () => ["company-1"]),

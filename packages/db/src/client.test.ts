@@ -263,12 +263,11 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             SELECT table_name
             FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('feedback_exports', 'feedback_votes')
+              AND table_name IN ('feedback_votes')
             ORDER BY table_name
           `,
         );
         expect(tables.map((row) => row.table_name)).toEqual([
-          "feedback_exports",
           "feedback_votes",
         ]);
 
@@ -278,19 +277,13 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             FROM information_schema.columns
             WHERE table_schema = 'public'
               AND (
-                (table_name = 'companies' AND column_name IN (
-                  'feedback_data_sharing_enabled',
-                  'feedback_data_sharing_consent_at',
-                  'feedback_data_sharing_consent_by_user_id',
-                  'feedback_data_sharing_terms_version'
-                ))
-                OR (table_name = 'document_revisions' AND column_name = 'created_by_run_id')
+                (table_name = 'document_revisions' AND column_name = 'created_by_run_id')
                 OR (table_name = 'issue_comments' AND column_name = 'created_by_run_id')
               )
             ORDER BY table_name, column_name
           `,
         );
-        expect(columns).toHaveLength(6);
+        expect(columns).toHaveLength(2);
       } finally {
         await sql.end();
       }
@@ -314,9 +307,6 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
             SELECT conname
             FROM pg_constraint
             WHERE conname IN (
-              'feedback_exports_company_id_companies_id_fk',
-              'feedback_exports_feedback_vote_id_feedback_votes_id_fk',
-              'feedback_exports_issue_id_issues_id_fk',
               'feedback_votes_company_id_companies_id_fk',
               'feedback_votes_issue_id_issues_id_fk'
             )
@@ -324,9 +314,6 @@ describeEmbeddedPostgres("applyPendingMigrations", () => {
           `,
         );
         expect(constraints.map((row) => row.conname)).toEqual([
-          "feedback_exports_company_id_companies_id_fk",
-          "feedback_exports_feedback_vote_id_feedback_votes_id_fk",
-          "feedback_exports_issue_id_issues_id_fk",
           "feedback_votes_company_id_companies_id_fk",
           "feedback_votes_issue_id_issues_id_fk",
         ]);

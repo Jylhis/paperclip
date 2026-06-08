@@ -164,10 +164,6 @@ describe("renderCompanyImportPreview", () => {
           brandColor: null,
           logoPath: null,
           requireBoardApprovalForNewAgents: false,
-          feedbackDataSharingEnabled: false,
-          feedbackDataSharingConsentAt: null,
-          feedbackDataSharingConsentByUserId: null,
-          feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
           agents: ["ceo"],
@@ -381,10 +377,6 @@ describe("import selection catalog", () => {
           brandColor: null,
           logoPath: "images/company-logo.png",
           requireBoardApprovalForNewAgents: false,
-          feedbackDataSharingEnabled: false,
-          feedbackDataSharingConsentAt: null,
-          feedbackDataSharingConsentByUserId: null,
-          feedbackDataSharingTermsVersion: null,
         },
         sidebar: {
           agents: ["ceo"],

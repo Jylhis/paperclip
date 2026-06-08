@@ -38,10 +38,6 @@ export interface CompanyPortabilityCompanyManifestEntry {
   logoPath: string | null;
   attachmentMaxBytes: number | null;
   requireBoardApprovalForNewAgents: boolean;
-  feedbackDataSharingEnabled: boolean;
-  feedbackDataSharingConsentAt: string | null;
-  feedbackDataSharingConsentByUserId: string | null;
-  feedbackDataSharingTermsVersion: string | null;
 }
 
 export interface CompanyPortabilitySidebarOrder {

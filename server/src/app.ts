@@ -64,7 +64,6 @@ import { DEFAULT_JSON_BODY_LIMIT, PORTABLE_JSON_BODY_LIMIT } from "./http/body-l
 import { COMPANY_IMPORT_API_PATH } from "./routes/company-import-paths.js";
 
 type UiMode = "none" | "static" | "vite-dev";
-const FEEDBACK_EXPORT_FLUSH_INTERVAL_MS = 5_000;
 const VITE_DEV_ASSET_PREFIXES = [
   "/@fs/",
   "/@id/",
@@ -126,14 +125,6 @@ export async function createApp(
     uiMode: UiMode;
     serverPort: number;
     storageService: StorageService;
-    feedbackExportService?: {
-      flushPendingFeedbackTraces(input?: {
-        companyId?: string;
-        traceId?: string;
-        limit?: number;
-        now?: Date;
-      }): Promise<unknown>;
-    };
     databaseBackupService?: InstanceDatabaseBackupService;
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;
@@ -213,7 +204,6 @@ export async function createApp(
   api.use(assetRoutes(db, opts.storageService));
   api.use(projectRoutes(db));
   api.use(issueRoutes(db, opts.storageService, {
-    feedbackExportService: opts.feedbackExportService,
     pluginWorkerManager: workerManager,
   }));
   api.use(issueTreeControlRoutes(db));
@@ -424,38 +414,6 @@ export async function createApp(
 
   jobCoordinator.start();
   scheduler.start();
-  let feedbackExportShuttingDown = false;
-  let feedbackExportTimer: ReturnType<typeof setInterval> | null = null;
-  const disableFeedbackExportFlushes = () => {
-    feedbackExportShuttingDown = true;
-    if (feedbackExportTimer) {
-      clearInterval(feedbackExportTimer);
-      feedbackExportTimer = null;
-    }
-  };
-  const flushPendingFeedbackExports = async () => {
-    if (feedbackExportShuttingDown) return;
-    try {
-      await opts.feedbackExportService?.flushPendingFeedbackTraces();
-    } catch (err) {
-      if (isDatabaseConnectionUnavailableError(err)) {
-        disableFeedbackExportFlushes();
-        logger.warn({ err }, "Disabling pending feedback export flushes because the database is unavailable");
-        return;
-      }
-      logger.error({ err }, "Failed to flush pending feedback exports");
-    }
-  };
-
-  feedbackExportTimer = opts.feedbackExportService
-    ? setInterval(() => {
-      void flushPendingFeedbackExports();
-    }, FEEDBACK_EXPORT_FLUSH_INTERVAL_MS)
-    : null;
-  feedbackExportTimer?.unref?.();
-  if (opts.feedbackExportService) {
-    void flushPendingFeedbackExports();
-  }
   void toolDispatcher.initialize().catch((err) => {
     logger.error({ err }, "Failed to initialize plugin tool dispatcher");
   });
@@ -477,7 +435,6 @@ export async function createApp(
   const shutdownAppServices = () => {
     if (appServicesShutdown) return;
     appServicesShutdown = true;
-    disableFeedbackExportFlushes();
     devWatcher?.close();
     viteHtmlRenderer?.dispose();
     hostServiceCleanup.disposeAll();

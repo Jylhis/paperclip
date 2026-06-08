@@ -271,15 +271,8 @@ export type {
   SandboxEnvironmentProvider,
   SshEnvironmentConfig,
   FeedbackVote,
-  FeedbackDataSharingPreference,
   FeedbackTargetType,
   FeedbackVoteValue,
-  FeedbackTrace,
-  FeedbackTraceStatus,
-  FeedbackTraceTargetSummary,
-  FeedbackTraceBundleCaptureStatus,
-  FeedbackTraceBundleFile,
-  FeedbackTraceBundle,
   CompanySkillSourceType,
   CompanySkillTrustLevel,
   CompanySkillCompatibility,
@@ -676,12 +669,8 @@ export {
 } from "./workspace-commands.js";
 
 export {
-  DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   FEEDBACK_TARGET_TYPES,
-  FEEDBACK_DATA_SHARING_PREFERENCES,
-  FEEDBACK_TRACE_STATUSES,
   FEEDBACK_VOTE_VALUES,
-  DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
 } from "./types/feedback.js";
 
 export {
@@ -731,7 +720,6 @@ export {
   updateCompanySchema,
   updateCompanyBrandingSchema,
   feedbackTargetTypeSchema,
-  feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   upsertIssueFeedbackVoteSchema,
   type CreateCompany,

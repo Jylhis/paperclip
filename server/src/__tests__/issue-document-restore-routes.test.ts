@@ -34,11 +34,10 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
     id: "instance-settings-1",
     general: {
       censorUsernameInLogs: false,
-      feedbackDataSharingPreference: "prompt",
     },
   })),
   getExperimental: vi.fn(async () => ({})),
-  getGeneral: vi.fn(async () => ({ feedbackDataSharingPreference: "prompt" })),
+  getGeneral: vi.fn(async () => ({})),
   listCompanyIds: vi.fn(async () => [companyId]),
 }));
 const mockRoutineService = vi.hoisted(() => ({
@@ -261,11 +260,10 @@ describe("issue document revision routes", () => {
       id: "instance-settings-1",
       general: {
         censorUsernameInLogs: false,
-        feedbackDataSharingPreference: "prompt",
       },
     });
     mockInstanceSettingsService.getExperimental.mockResolvedValue({});
-    mockInstanceSettingsService.getGeneral.mockResolvedValue({ feedbackDataSharingPreference: "prompt" });
+    mockInstanceSettingsService.getGeneral.mockResolvedValue({});
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue([companyId]);
     mockRoutineService.syncRunStatusForIssue.mockResolvedValue(undefined);
     mockLogActivity.mockResolvedValue(undefined);

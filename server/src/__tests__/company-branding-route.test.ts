@@ -34,8 +34,6 @@ const mockCompanyPortabilityService = vi.hoisted(() => ({
 const mockLogActivity = vi.hoisted(() => vi.fn());
 const mockFeedbackService = vi.hoisted(() => ({
   listIssueVotesForUser: vi.fn(),
-  listFeedbackTraces: vi.fn(),
-  getFeedbackTraceById: vi.fn(),
   saveIssueVote: vi.fn(),
 }));
 
